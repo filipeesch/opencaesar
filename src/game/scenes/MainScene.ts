@@ -1,0 +1,466 @@
+/**
+ * MainScene: the game view. A Phaser isometric tilemap renders the terrain;
+ * buildings and walkers are redrawn every frame from the sim state snapshot.
+ * The renderer is a dumb view — it never holds authoritative game data.
+ *
+ * Interactions: drag to pan, wheel to zoom, click to place in build mode,
+ * right-click or ESC to cancel build mode.
+ */
+
+import Phaser from 'phaser';
+import { BUILDINGS } from '../../sim/buildings';
+import { CONFIG } from '../../sim/config';
+import type { BuildingType, PlacementError, PlacementResult, SimState, TileType, Vec2 } from '../../sim/types';
+import { SimRunner } from '../../sim/runner';
+import { HOUSE_FOOT_TOP_Y, HOUSE_FRAME_H, houseFrame, isSheetLoaded } from '../art';
+import { drawBuilding } from '../buildingArt';
+import { BUILDING_COLORS, HOUSE_COLORS, TILE_H, TILE_W, WALKER_COLORS } from '../palette';
+
+const TILE_INDEX: Record<TileType, number> = { earth: 0, water: 1, fertile: 2, trees: 3, rock: 4, road: 5 };
+const BUILDABLE_TYPES: readonly BuildingType[] = ['road', 'house', 'farm', 'granary', 'market', 'well'];
+
+type RenderObj = Phaser.GameObjects.GameObject & {
+  setDepth(depth: number): unknown;
+  destroy(): void;
+};
+
+export class MainScene extends Phaser.Scene {
+  readonly runner: SimRunner;
+
+  private map: Phaser.Tilemaps.Tilemap | null = null;
+  private layer: Phaser.Tilemaps.TilemapLayer | null = null;
+  private cam: Phaser.Cameras.Scene2D.Camera | null = null;
+  /** Entity render objects (a Graphics per procedural entity, or a sprite Image), sorted by depth. */
+  private entityObjs: RenderObj[] = [];
+  private ghost: Phaser.GameObjects.Graphics | null = null;
+  private lastTiles: number[] = [];
+  private acc = 0;
+  /** Walker continuous positions at the previous tick (for smooth motion). */
+  private walkerPrev = new Map<number, { x: number; y: number }>();
+  private buildType: BuildingType | null = null;
+  private dragging = false;
+  private dragRight = false;
+  private camStart = { x: 0, y: 0, scrollX: 0, scrollY: 0 };
+  private lastPaint: Vec2 | null = null;
+  /** Whether the pointer-down attempt already placed at the tile (prevents a duplicate up-attempt). */
+  private downPlaced = false;
+
+  constructor() {
+    super('Main');
+    this.runner = new SimRunner(seedFromUrl());
+  }
+
+  create(): void {
+    const state = this.runner.getState();
+    this.lastTiles = new Array<number>(state.width * state.height).fill(-1);
+
+    const layerData = new Phaser.Tilemaps.LayerData({
+      tileWidth: TILE_W,
+      tileHeight: TILE_H,
+    });
+    layerData.orientation = Phaser.Tilemaps.Orientation.ISOMETRIC;
+    const mapData = new Phaser.Tilemaps.MapData({
+      tileWidth: TILE_W,
+      tileHeight: TILE_H,
+      format: Phaser.Tilemaps.Formats.ARRAY_2D,
+      orientation: Phaser.Tilemaps.Orientation.ISOMETRIC,
+      layers: [layerData],
+    });
+    mapData.width = layerData.width = state.width;
+    mapData.height = layerData.height = state.height;
+    mapData.widthInPixels = layerData.widthInPixels = state.width * TILE_W;
+    mapData.heightInPixels = layerData.heightInPixels = state.height * TILE_H;
+    layerData.data = state.tiles.map((row, y) =>
+      row.map((t, x) => new Phaser.Tilemaps.Tile(layerData, TILE_INDEX[t], x, y, TILE_W, TILE_H, TILE_W, TILE_H)),
+    );
+    this.map = new Phaser.Tilemaps.Tilemap(this, mapData);
+    const tileset = this.map.addTilesetImage('terrain', 'terrain', TILE_W, TILE_H, 0, 0);
+    if (!tileset) throw new Error('terrain tileset missing — BootScene must run first');
+    this.layer = this.map.createLayer(0, tileset, 0, 0);
+
+    const cam = this.cameras.main;
+    this.cam = cam;
+    // The isometric map is centered on world x = 0 (tile (0,0) tops at (0,0),
+    // the map spans x in [-W/2, W/2]); center the initial view on the middle.
+    cam.centerOn(0, mapData.heightInPixels / 2);
+
+    this.ghost = this.add.graphics();
+    this.ghost.setDepth(100000);
+
+    this.wireInput(cam);
+
+    this.input.keyboard?.on('keydown-ESC', () => this.setBuildMode(null));
+    this.scene.launch('HUD');
+
+    if (new URLSearchParams(window.location.search).has('test')) {
+      this.exposeTestApi();
+    }
+  }
+
+  override update(_time: number, delta: number): void {
+    this.acc += delta;
+    const stepMs = 1000 / CONFIG.ticksPerSecond;
+    while (this.acc >= stepMs) {
+      this.runner.tick();
+      this.acc -= stepMs;
+    }
+    const state = this.runner.getState();
+    this.syncTerrain(state);
+    this.syncEntities(state);
+    this.updateGhost();
+  }
+
+  /** Enter or leave build mode (called from the HUD). */
+  setBuildMode(type: BuildingType | null): void {
+    this.buildType = type;
+    this.input.setDefaultCursor(type ? 'crosshair' : 'default');
+    this.lastPaint = null;
+    if (!type) this.ghost?.clear();
+    this.game.events.emit('hud-build-mode', type);
+  }
+
+  getBuildMode(): BuildingType | null {
+    return this.buildType;
+  }
+
+  private wireInput(cam: Phaser.Cameras.Scene2D.Camera): void {
+    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      this.downPlaced = false;
+      if (p.middleButtonDown()) {
+        // Middle-drag always pans (so the map stays movable in build mode).
+        this.dragging = true;
+        this.dragRight = true;
+        this.camStart = { x: p.x, y: p.y, scrollX: cam.scrollX, scrollY: cam.scrollY };
+        this.lastPaint = null;
+        return;
+      }
+      this.dragging = true;
+      this.dragRight = p.rightButtonDown();
+      this.camStart = { x: p.x, y: p.y, scrollX: cam.scrollX, scrollY: cam.scrollY };
+      this.lastPaint = null;
+      if (!this.dragRight && this.buildType) this.paintAt(p);
+    });
+
+    this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
+      if (this.dragging) {
+        if (this.dragRight || !this.buildType) {
+          cam.scrollX = this.camStart.scrollX - (p.x - this.camStart.x);
+          cam.scrollY = this.camStart.scrollY - (p.y - this.camStart.y);
+          this.clampCamera(cam);
+        } else {
+          this.paintAt(p);
+        }
+      }
+      this.updateGhost();
+    });
+
+    this.input.on('pointerup', (p: Phaser.Input.Pointer) => {
+      if (!this.dragging) return;
+      const dragged = Math.abs(p.x - this.camStart.x) + Math.abs(p.y - this.camStart.y) > 6;
+      this.dragging = false;
+      if (this.dragRight) {
+        // A right-click without movement cancels build mode; a right-drag pans.
+        if (!dragged && p.rightButtonDown()) this.setBuildMode(null);
+        return;
+      }
+      if (dragged || !this.buildType) return;
+      // The pointer-down attempt already placed at this tile (single click):
+      // the up-attempt would only fail with a spurious "occupied" toast.
+      if (this.downPlaced) return;
+      const tile = this.tileAtPointer(p);
+      if (tile) this.tryPlace(tile.x, tile.y);
+    });
+
+    this.input.on('wheel', (p: Phaser.Input.Pointer, _g: unknown, _dx: number, dy: number) => {
+      const oldZoom = cam.zoom;
+      const zoom = Phaser.Math.Clamp(cam.zoom * (dy < 0 ? 1.12 : 0.9), 0.5, 2.5);
+      if (zoom === oldZoom) return;
+      // Keep the world point under the cursor fixed while zooming:
+      // screen = (world - scroll) * zoom, so scroll' = world - (world - scroll) * (oldZoom / zoom).
+      const worldX = cam.scrollX + (p.x - cam.x) / cam.zoom;
+      const worldY = cam.scrollY + (p.y - cam.y) / cam.zoom;
+      const factor = oldZoom / zoom;
+      cam.scrollX = worldX - (worldX - cam.scrollX) * factor;
+      cam.scrollY = worldY - (worldY - cam.scrollY) * factor;
+      cam.zoom = zoom;
+      this.clampCamera(cam);
+    });
+  }
+
+  /**
+   * Keep the camera over the map. Unlike Phaser's setBounds clamping (which
+   * pins the scroll when the bounds fit inside the viewport, making parts of
+   * the map unreachable), this allows the whole map to be visible when zoomed
+   * out and full panning at every zoom. The isometric map's world AABB is
+   * centered on x = 0, so the x bounds start at -width/2.
+   */
+  private clampCamera(cam: Phaser.Cameras.Scene2D.Camera): void {
+    const map = this.map;
+    if (!map) return;
+    const boundsX = -map.widthInPixels / 2;
+    const boundsY = 0;
+    const boundsW = map.widthInPixels;
+    const boundsH = map.heightInPixels;
+    const visibleW = cam.width / cam.zoom;
+    const visibleH = cam.height / cam.zoom;
+    if (visibleW >= boundsW) {
+      cam.scrollX = boundsX + (boundsW - visibleW) / 2;
+    } else {
+      cam.scrollX = Phaser.Math.Clamp(cam.scrollX, boundsX, boundsX + boundsW - visibleW);
+    }
+    if (visibleH >= boundsH) {
+      cam.scrollY = boundsY + (boundsH - visibleH) / 2;
+    } else {
+      cam.scrollY = Phaser.Math.Clamp(cam.scrollY, boundsY, boundsY + boundsH - visibleH);
+    }
+  }
+
+  private tileAtPointer(p: Phaser.Input.Pointer): Vec2 | null {
+    const map = this.map;
+    const cam = this.cam;
+    // Pointer.worldX/worldY rely on the camera matrix, which drifts when
+    // scroll/zoom are assigned directly; compute the world point ourselves.
+    if (!map || !cam) return null;
+    const wx = cam.scrollX + (p.x - cam.x) / cam.zoom;
+    const wy = cam.scrollY + (p.y - cam.y) / cam.zoom;
+    // Inverse of tileTop: a tile's diamond top vertex sits at
+    // ((tx-ty)*W/2 + W/2, (tx+ty)*H/2), and its center at + (30, 15). The
+    // tilemap renders the diamond with that offset (Phaser's
+    // IsometricWorldToTileXY subtracts half the tile width before converting),
+    // so tileAtPointer must reproduce it or the pick drifts by half a tile.
+    const tx = Math.floor((wx + 2 * wy - TILE_W / 2) / TILE_W);
+    const ty = Math.floor((2 * wy - wx + TILE_W / 2) / TILE_W);
+    if (tx < 0 || ty < 0 || tx >= map.width || ty >= map.height) return null;
+    return { x: tx, y: ty };
+  }
+
+  private tryPlace(x: number, y: number, silent = false): PlacementResult | null {
+    if (!this.buildType) return null;
+    const result = this.runner.placeBuilding(this.buildType, x, y);
+    if (!result.ok && !silent) {
+      this.game.events.emit('hud-toast', `Cannot place ${BUILDINGS[this.buildType].name}: ${describeError(result.error)}`);
+    }
+    return result;
+  }
+
+  /** Place at the tile under the pointer; ignores repeats while dragging. */
+  private paintAt(p: Phaser.Input.Pointer): void {
+    if (!this.buildType) return;
+    const tile = this.tileAtPointer(p);
+    if (!tile) return;
+    if (this.lastPaint && this.lastPaint.x === tile.x && this.lastPaint.y === tile.y) return;
+    this.lastPaint = tile;
+    this.downPlaced = this.tryPlace(tile.x, tile.y, true)?.ok === true;
+  }
+
+  private syncTerrain(state: SimState): void {
+    if (!this.layer) return;
+    const width = state.width;
+    for (let y = 0; y < state.height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = y * width + x;
+        const tile = TILE_INDEX[state.tiles[y][x]];
+        if (tile !== this.lastTiles[idx]) {
+          this.layer.putTileAt(tile, x, y);
+          this.lastTiles[idx] = tile;
+        }
+      }
+    }
+  }
+
+  private syncEntities(state: SimState): void {
+    // Rebuild per-entity render objects each frame: depth = the tile's bottom
+    // y, so the display list interleaves sprites and procedural shapes in the
+    // same painter's order the old single-Graphics pass used.
+    for (const obj of this.entityObjs) obj.destroy();
+    this.entityObjs = [];
+
+    const houseOn = isSheetLoaded('house');
+    const items: { depth: number; make: () => RenderObj }[] = [];
+
+    for (const b of state.buildings) {
+      const base = b.type === 'house' ? HOUSE_COLORS[b.house?.tier ?? 0] : BUILDING_COLORS[b.type];
+      const n = b.footprint;
+      const top = tileTop(b.x, b.y);
+      const depth = top.y + n * TILE_H;
+      const tier = b.house?.tier ?? 0;
+      if (b.type === 'house' && houseOn) {
+        items.push({
+          depth,
+          make: () => {
+            // The house frame's footprint diamond top vertex sits at
+            // (HOUSE_FRAME_H/2, HOUSE_FOOT_TOP_Y) within the frame; anchor the
+            // image there so the diamond aligns with the tile, with the roof
+            // rising above it.
+            const img = this.add.image(top.x, top.y, 'house', houseFrame(tier));
+            img.setOrigin(0.5, HOUSE_FOOT_TOP_Y / HOUSE_FRAME_H);
+            return img;
+          },
+        });
+        continue;
+      }
+      const alpha = b.active || b.type === 'house' ? 0.95 : 0.55;
+      items.push({
+        depth,
+        make: () => {
+          const g = this.add.graphics();
+          if (b.type === 'road') {
+            drawDiamond(g, top.x, top.y, (n * TILE_W) / 2, (n * TILE_H) / 2, base, alpha);
+          } else {
+            drawBuilding(g, top.x, top.y, n, b.type, { color: base, alpha, tier });
+          }
+          return g;
+        },
+      });
+    }
+
+    // Walkers move sub-tile per sim tick; interpolate the rendered position
+    // between the previous tick's position and this tick's over the current
+    // tick's elapsed fraction so movement is smooth at any frame rate.
+    const stepMs = 1000 / CONFIG.ticksPerSecond;
+    const t = Phaser.Math.Clamp(this.acc / stepMs, 0, 1);
+    const seen = new Set<number>();
+    for (const w of state.walkers) {
+      seen.add(w.id);
+      const cur = {
+        x: w.next ? w.x + (w.next.x - w.x) * w.progress : w.x,
+        y: w.next ? w.y + (w.next.y - w.y) * w.progress : w.y,
+      };
+      const prev = this.walkerPrev.get(w.id);
+      const px = prev ? prev.x + (cur.x - prev.x) * t : cur.x;
+      const py = prev ? prev.y + (cur.y - prev.y) * t : cur.y;
+      this.walkerPrev.set(w.id, cur);
+      const top = tileTop(px, py);
+      const depth = top.y + TILE_H;
+      items.push({
+        depth,
+        make: () => {
+          const g = this.add.graphics();
+          const c = WALKER_COLORS[w.type];
+          g.fillStyle(c, 0.95);
+          g.fillCircle(top.x, top.y + TILE_H / 2, 6);
+          g.lineStyle(1, 0x000000, 0.4);
+          g.strokeCircle(top.x, top.y + TILE_H / 2, 6);
+          return g;
+        },
+      });
+    }
+    for (const id of this.walkerPrev.keys()) {
+      if (!seen.has(id)) this.walkerPrev.delete(id);
+    }
+
+    items.sort((a, b) => a.depth - b.depth);
+    for (const item of items) {
+      const obj = item.make();
+      obj.setDepth(item.depth);
+      this.entityObjs.push(obj);
+    }
+  }
+
+  private updateGhost(): void {
+    const ghost = this.ghost;
+    if (!ghost) return;
+    if (!this.buildType) {
+      ghost.clear();
+      return;
+    }
+    const tile = this.tileAtPointer(this.input.activePointer);
+    if (!tile) {
+      ghost.clear();
+      return;
+    }
+    const def = BUILDINGS[this.buildType];
+    const top = tileTop(tile.x, tile.y);
+    const valid = this.runner.canPlace(this.buildType, tile.x, tile.y).ok;
+    const n = def.footprint;
+    ghost.clear();
+    ghost.fillStyle(valid ? 0x7dff7d : 0xff5c5c, 0.35);
+    ghost.lineStyle(2, valid ? 0x2f9e2f : 0xc0392b, 0.9);
+    ghost.beginPath();
+    ghost.moveTo(top.x, top.y);
+    ghost.lineTo(top.x + (n * TILE_W) / 2, top.y + (n * TILE_H) / 2);
+    ghost.lineTo(top.x, top.y + n * TILE_H);
+    ghost.lineTo(top.x - (n * TILE_W) / 2, top.y + (n * TILE_H) / 2);
+    ghost.closePath();
+    ghost.fillPath();
+    ghost.strokePath();
+  }
+
+  private exposeTestApi(): void {
+    const api = {
+      place: (type: BuildingType, x: number, y: number) => this.runner.placeBuilding(type, x, y),
+      runTicks: (n: number) => {
+        for (let i = 0; i < n; i++) this.runner.tick();
+      },
+      state: () => this.runner.getState(),
+      setBuildMode: (type: BuildingType | null) => this.setBuildMode(type),
+      buildTypes: BUILDABLE_TYPES,
+      camera: () => {
+        const c = this.cam;
+        return c ? { zoom: c.zoom, scrollX: c.scrollX, scrollY: c.scrollY } : null;
+      },
+    };
+    (window as unknown as Record<string, unknown>).__cityApi = api;
+  }
+}
+
+/**
+ * World-space top vertex of the rendered isometric diamond for a tile:
+ * tile (tx,ty) renders with its diamond top vertex at
+ * ((tx-ty)*W/2 + W/2, (tx+ty)*H/2). Phaser's tilemap draws each tile's
+ * texture diamond centered on ((tx-ty)*W/2 + W/2, (tx+ty)*H/2 + H/2); the
+ * tileAtPointer inverse reproduces this same mapping.
+ */
+export function tileTop(tx: number, ty: number): { x: number; y: number } {
+  return { x: (tx - ty) * (TILE_W / 2) + TILE_W / 2, y: (tx + ty) * (TILE_H / 2) };
+}
+
+/**
+ * Draw a flat isometric diamond (used for roads).
+ */
+function drawDiamond(
+  g: Phaser.GameObjects.Graphics,
+  x: number,
+  y: number,
+  halfW: number,
+  halfH: number,
+  color: number,
+  alpha: number,
+): void {
+  g.fillStyle(color, alpha);
+  g.lineStyle(1, 0x000000, 0.2);
+  g.beginPath();
+  g.moveTo(x, y);
+  g.lineTo(x + halfW, y + halfH);
+  g.lineTo(x, y + halfH * 2);
+  g.lineTo(x - halfW, y + halfH);
+  g.closePath();
+  g.fillPath();
+  g.strokePath();
+}
+
+function describeError(error: PlacementError): string {
+  switch (error) {
+    case 'invalid-type':
+      return 'Unknown building type';
+    case 'out-of-bounds':
+      return 'Outside the map';
+    case 'occupied':
+      return 'Tile already occupied';
+    case 'terrain':
+      return 'Invalid terrain for this building';
+    case 'road-access':
+      return 'Needs a road beside it';
+    case 'not-enough-money':
+      return 'Not enough money';
+    default:
+      return 'Placement failed';
+  }
+}
+
+function seedFromUrl(): number {
+  const raw = new URLSearchParams(window.location.search).get('seed');
+  if (raw === null) return 1337;
+  const n = Number.parseInt(raw, 10);
+  return Number.isNaN(n) ? 1337 : n;
+}

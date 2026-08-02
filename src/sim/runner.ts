@@ -1,0 +1,414 @@
+/**
+ * SimRunner — the single public interface to the simulation.
+ *
+ * Deterministic: all randomness flows through the seeded RNG injected at
+ * construction. Same seed + same map + same command sequence → identical
+ * state after N ticks (see determinism tests).
+ *
+ * API: tick(), getState(), placeBuilding(type, x, y), setPolicy(tax, wage),
+ * getCommandLog(). getState() returns plain serializable data.
+ */
+
+import { BUILDINGS } from './buildings';
+import { CONFIG, HOUSE_TIERS } from './config';
+import { assignedWorkers, computeRatings, tickEconomy, workerPool } from './economy';
+import { tickHousing } from './housing';
+import { Map as SimMap } from './map';
+import { checkPlacement } from './placement';
+import type { Rng } from './rng';
+import { mulberry32 } from './rng';
+import type {
+  BuildingState,
+  BuildingType,
+  CommandLogEntry,
+  MessageType,
+  PlacementResult,
+  Policy,
+  SimMessage,
+  SimState,
+  Vec2,
+  WalkerState,
+} from './types';
+import type { BuildingInstance, WalkerInstance } from './walkers';
+import { createWalker, updateWalker } from './walkers';
+
+export class SimRunner {
+  private readonly map: SimMap;
+  private readonly rng: Rng;
+  private readonly width: number;
+  private readonly height: number;
+
+  private tickCount = 0;
+  private treasury: number;
+  private policy: Policy = { taxRate: 0.1, wageRate: 0.1 };
+  private lastWagesUnpaid = 0;
+
+  private buildings: BuildingInstance[] = [];
+  private walkers: WalkerInstance[] = [];
+  private readonly buildingById = new Map<number, BuildingInstance>();
+  private readonly occupiedTiles = new Map<number, number>();
+  private nextBuildingId = 1;
+  private nextWalkerId = 1;
+
+  private messages: SimMessage[] = [];
+  private commandLog: CommandLogEntry[] = [];
+  private lowFoodWarnCooldown = 0;
+
+  constructor(seed: number, map?: SimMap) {
+    this.rng = mulberry32(seed);
+    if (map) {
+      this.map = map;
+      this.width = map.width;
+      this.height = map.height;
+    } else {
+      this.width = CONFIG.defaultMapSize;
+      this.height = CONFIG.defaultMapSize;
+      this.map = SimMap.generate(this.width, this.height, this.rng);
+    }
+    this.treasury = CONFIG.startingTreasury;
+  }
+
+  // Public API -----------------------------------------------------------------
+
+  /** Advance the simulation by exactly one tick. */
+  tick(): void {
+    this.tickCount += 1;
+
+    this.tickSpawns();
+    this.tickLabor();
+    this.tickFood();
+    this.tickEconomyInternal();
+    tickHousing(this.map, this.buildings, this.policy, this.lastWagesUnpaid > 0, (type, text) =>
+      this.emitMessage(type, text),
+    );
+
+    // Walkers move last: coverage and arrivals see the tick's final services.
+    for (const w of [...this.walkers]) updateWalker(this.simInternals(), w);
+  }
+
+  /** Place a building at footprint anchor (x, y). Rejected commands leave state unchanged. */
+  placeBuilding(type: BuildingType, x: number, y: number): PlacementResult {
+    const result = checkPlacement(
+      this.map,
+      (tx, ty) => this.occupiedTiles.has(this.tileKey(tx, ty)),
+      this.treasury,
+      type,
+      x,
+      y,
+    );
+    if (!result.ok) {
+      this.commandLog.push({ tick: this.tickCount, command: `place ${type}@${x},${y}`, result: result.error });
+      return result;
+    }
+
+    const def = BUILDINGS[type];
+    this.treasury -= def.cost;
+
+    const id = this.nextBuildingId++;
+    const building: BuildingInstance = {
+      id,
+      type,
+      x,
+      y,
+      footprint: def.footprint,
+      workersAssigned: 0,
+      workersRequired: def.workers,
+      active: false,
+      laborConnected: false,
+      laborCooldown: 0,
+      spawnCooldown: 0,
+      stock: {},
+    };
+    if (type === 'house') {
+      building.house = { tier: 0, foodCooldown: 0, waterCooldown: 0, laborCooldown: 0, evolveCounter: 0, devolveCounter: 0 };
+    } else if (def.production || def.storageCapacity !== undefined) {
+      building.stock.wheat = 0;
+    }
+
+    if (type === 'road') {
+      this.map.setRect(x, y, x + def.footprint - 1, y + def.footprint - 1, 'road');
+    }
+
+    this.buildings.push(building);
+    this.buildingById.set(id, building);
+    for (let dy = 0; dy < def.footprint; dy++) {
+      for (let dx = 0; dx < def.footprint; dx++) {
+        this.occupiedTiles.set(this.tileKey(x + dx, y + dy), id);
+      }
+    }
+
+    this.commandLog.push({ tick: this.tickCount, command: `place ${type}@${x},${y}`, result: 'ok' });
+    return { ok: true };
+  }
+
+  /** Non-mutating placement check (used by the renderer ghost preview). */
+  canPlace(type: BuildingType, x: number, y: number): PlacementResult {
+    return checkPlacement(
+      this.map,
+      (tx, ty) => this.occupiedTiles.has(this.tileKey(tx, ty)),
+      this.treasury,
+      type,
+      x,
+      y,
+    );
+  }
+
+  /** Set the tax and wage rates (each clamped to 0..1). */
+  setPolicy(taxRate: number, wageRate: number): Policy {
+    this.policy = { taxRate: clamp01(taxRate), wageRate: clamp01(wageRate) };
+    return { ...this.policy };
+  }
+
+  /** Current policy snapshot (for UI that edits one slider at a time). */
+  getPolicy(): Policy {
+    return { ...this.policy };
+  }
+
+  /** Plain serializable snapshot of the current simulation state. */
+  getState(): SimState {
+    return {
+      tick: this.tickCount,
+      width: this.width,
+      height: this.height,
+      tiles: this.map.toGrid(),
+      buildings: this.buildings.map((b) => this.toBuildingState(b)),
+      walkers: this.walkers.map((w) => this.toWalkerState(w)),
+      treasury: this.treasury,
+      policy: { ...this.policy },
+      ratings: computeRatings(this.buildings, this.treasury),
+      totalWorkers: workerPool(this.buildings),
+      assignedWorkers: assignedWorkers(this.buildings),
+      messages: [...this.messages],
+      lastTickWagesUnpaid: this.lastWagesUnpaid > 0,
+    };
+  }
+
+  /** Stable JSON rendering of the snapshot (used by determinism and golden tests). */
+  getStateJson(): string {
+    return JSON.stringify(this.getState());
+  }
+
+  /** Every accepted and rejected command since construction, in order. */
+  getCommandLog(): CommandLogEntry[] {
+    return [...this.commandLog];
+  }
+
+  // Tick steps -----------------------------------------------------------------
+
+  /** Spawn walkers from staffed markets, wells, and from every house. */
+  private tickSpawns(): void {
+    for (const b of this.buildings) {
+      let interval: number;
+      if (b.type === 'house') interval = CONFIG.laborSpawnEveryTicks;
+      else interval = BUILDINGS[b.type].spawnEveryTicks ?? 0;
+      if (interval <= 0) continue;
+      if (b.type !== 'house' && !b.active) continue;
+
+      b.spawnCooldown -= 1;
+      if (b.spawnCooldown > 0) continue;
+      b.spawnCooldown = interval;
+
+      const start = this.adjacentRoadTile(b);
+      if (!start) continue;
+
+      const walkerType = b.type === 'house' ? 'labor' : b.type === 'market' ? 'market' : 'well';
+      const w = createWalker(walkerType, start.x, start.y, this.nextWalkerId++);
+      this.walkers.push(w);
+      if (b.type === 'house' && b.house) b.house.laborCooldown = CONFIG.serviceCooldownTicks;
+    }
+  }
+
+  /** Decay labor connections, then assign workers from the pool to connected buildings. */
+  private tickLabor(): void {
+    for (const b of this.buildings) {
+      if (b.workersRequired <= 0) continue;
+      if (b.laborCooldown > 0) {
+        b.laborCooldown -= 1;
+        if (b.laborCooldown <= 0) {
+          b.laborConnected = false;
+          b.workersAssigned = 0;
+        }
+      }
+    }
+
+    let pool = workerPool(this.buildings);
+    for (const b of this.buildings) {
+      if (b.workersRequired <= 0) continue;
+      if (!b.laborConnected) {
+        b.workersAssigned = 0;
+        this.setActive(b, false);
+        continue;
+      }
+      const want = b.workersRequired;
+      const give = Math.min(want, pool);
+      pool -= give;
+      b.workersAssigned = give;
+      this.setActive(b, give >= want);
+    }
+  }
+
+  /** Farm production, then cart transfer from farms to touching granaries. */
+  private tickFood(): void {
+    for (const b of this.buildings) {
+      if (b.type !== 'farm' || !b.active) continue;
+      const stock = b.stock.wheat ?? 0;
+      if (stock < CONFIG.farmStorageCapacity) {
+        b.stock.wheat = Math.min(CONFIG.farmStorageCapacity, stock + CONFIG.farmProductionPerTick);
+      }
+    }
+
+    for (const farm of this.buildings) {
+      if (farm.type !== 'farm') continue;
+      const stock = farm.stock.wheat ?? 0;
+      if (stock <= 0) continue;
+      const granary = this.findTouchingGranary(farm);
+      if (!granary) continue;
+      const free = CONFIG.granaryCapacity - (granary.stock.wheat ?? 0);
+      if (free <= 0) continue;
+      const transfer = Math.min(CONFIG.cartTransferPerTick, stock, free);
+      farm.stock.wheat = stock - transfer;
+      granary.stock.wheat = (granary.stock.wheat ?? 0) + transfer;
+    }
+
+    this.lowFoodWarnCooldown = Math.max(0, this.lowFoodWarnCooldown - 1);
+    let hasHouse = false;
+    let granaryWheat = 0;
+    for (const b of this.buildings) {
+      if (b.house) hasHouse = true;
+      else if (b.type === 'granary') granaryWheat += b.stock.wheat ?? 0;
+    }
+    if (hasHouse && granaryWheat === 0 && this.lowFoodWarnCooldown === 0) {
+      this.emitMessage('warning', 'Food supply is low — build farms and granaries');
+      this.lowFoodWarnCooldown = CONFIG.lowFoodWarnCooldownTicks;
+    }
+  }
+
+  /** Collect taxes, pay wages (treasury never goes below zero). */
+  private tickEconomyInternal(): void {
+    const { treasury, result } = tickEconomy(this.buildings, this.policy, this.treasury);
+    this.treasury = treasury;
+    this.lastWagesUnpaid = result.wagesUnpaid;
+  }
+
+  // Helpers --------------------------------------------------------------------
+
+  private setActive(b: BuildingInstance, active: boolean): void {
+    if (b.active === active) return;
+    b.active = active;
+    const name = BUILDINGS[b.type].name;
+    if (active) this.emitMessage('building-active', `${name} staffed and operational`);
+    else this.emitMessage('building-inactive', `${name} needs workers`);
+  }
+
+  private findTouchingGranary(b: BuildingInstance): BuildingInstance | null {
+    for (const other of this.buildings) {
+      if (other.type !== 'granary') continue;
+      if ((other.stock.wheat ?? 0) >= CONFIG.granaryCapacity) continue;
+      if (footprintsTouch(b, other)) return other;
+    }
+    return null;
+  }
+
+  private adjacentRoadTile(b: BuildingInstance): Vec2 | null {
+    const n = b.footprint;
+    for (let i = 0; i < n; i++) {
+      if (this.map.get(b.x + i, b.y - 1) === 'road') return { x: b.x + i, y: b.y - 1 };
+      if (this.map.get(b.x + i, b.y + n) === 'road') return { x: b.x + i, y: b.y + n };
+      if (this.map.get(b.x - 1, b.y + i) === 'road') return { x: b.x - 1, y: b.y + i };
+      if (this.map.get(b.x + n, b.y + i) === 'road') return { x: b.x + n, y: b.y + i };
+    }
+    return null;
+  }
+
+  private buildingAt(x: number, y: number): BuildingInstance | null {
+    const id = this.occupiedTiles.get(this.tileKey(x, y));
+    if (id === undefined) return null;
+    return this.buildingById.get(id) ?? null;
+  }
+
+  private despawnWalker(w: WalkerInstance): void {
+    this.walkers = this.walkers.filter((x) => x.id !== w.id);
+  }
+
+  private simInternals() {
+    return {
+      map: this.map,
+      rng: this.rng,
+      buildings: this.buildings,
+      buildingById: (id: number) => this.buildingById.get(id) ?? null,
+      buildingAt: (x: number, y: number) => this.buildingAt(x, y),
+      adjacentRoadTile: (b: BuildingInstance) => this.adjacentRoadTile(b),
+      despawn: (w: WalkerInstance) => this.despawnWalker(w),
+    };
+  }
+
+  private emitMessage(type: MessageType, text: string): void {
+    this.messages.push({ tick: this.tickCount, type, text });
+    if (this.messages.length > CONFIG.messageLogCapacity) {
+      this.messages.splice(0, this.messages.length - CONFIG.messageLogCapacity);
+    }
+  }
+
+  private toBuildingState(b: BuildingInstance): BuildingState {
+    const house = b.house
+      ? {
+          tier: b.house.tier,
+          tierName: HOUSE_TIERS[b.house.tier].name,
+          populationCapacity: HOUSE_TIERS[b.house.tier].population,
+          foodCooldown: b.house.foodCooldown,
+          waterCooldown: b.house.waterCooldown,
+          laborCooldown: b.house.laborCooldown,
+        }
+      : undefined;
+    return {
+      id: b.id,
+      type: b.type,
+      x: b.x,
+      y: b.y,
+      footprint: b.footprint,
+      workersAssigned: b.workersAssigned,
+      workersRequired: b.workersRequired,
+      active: b.active,
+      laborConnected: b.laborConnected,
+      stock: { ...b.stock },
+      house,
+    };
+  }
+
+  private toWalkerState(w: WalkerInstance): WalkerState {
+    return {
+      id: w.id,
+      type: w.type,
+      x: w.x,
+      y: w.y,
+      next: w.next ? { ...w.next } : null,
+      progress: w.progress,
+      state: w.state,
+      lifetime: w.lifetime,
+      targetBuildingId: w.targetBuildingId,
+      carryingGood: w.carryingGood,
+    };
+  }
+
+  private tileKey(x: number, y: number): number {
+    // 20 bits each — ample for maps up to 1024x1024 (same scheme as pathfind).
+    return (x << 20) | y;
+  }
+}
+
+function footprintsTouch(a: BuildingInstance, b: BuildingInstance): boolean {
+  const ax2 = a.x + a.footprint - 1;
+  const ay2 = a.y + a.footprint - 1;
+  const bx2 = b.x + b.footprint - 1;
+  const by2 = b.y + b.footprint - 1;
+  if (a.x > bx2 + 1 || b.x > ax2 + 1) return false;
+  if (a.y > by2 + 1 || b.y > ay2 + 1) return false;
+  // Reject actual overlap (placement should prevent it).
+  return !(a.x <= bx2 && b.x <= ax2 && a.y <= by2 && b.y <= ay2);
+}
+
+function clamp01(v: number): number {
+  if (v < 0) return 0;
+  if (v > 1) return 1;
+  return v;
+}

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Roman City Builder</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #2b1d0e;
+        font-family: Georgia, 'Times New Roman', serif;
+      }
+      #game {
+        width: 100vw;
+        height: 100vh;
+      }
+      #game canvas {
+        display: block;
+      }
+
+      /* ---- HUD overlay ---- */
+      #hud {
+        position: fixed;
+        top: 0;
+        right: 0;
+        z-index: 10;
+        width: 260px;
+        padding: 8px;
+        box-sizing: border-box;
+        color: #f3e9d2;
+        user-select: none;
+        pointer-events: none;
+      }
+      #hud .hud-panel,
+      #hud .hud-toast {
+        pointer-events: auto;
+      }
+      .hud-panel {
+        background: rgba(40, 28, 14, 0.9);
+        border: 1px solid #7a6234;
+        border-radius: 6px;
+        padding: 8px 10px;
+        margin-bottom: 8px;
+      }
+      .hud-title {
+        font-size: 15px;
+        font-weight: bold;
+        color: #e8c46b;
+        margin-bottom: 6px;
+        letter-spacing: 1px;
+      }
+      .hud-subtitle {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #b39a62;
+        margin-bottom: 6px;
+      }
+      .hud-stat {
+        display: flex;
+        justify-content: space-between;
+        font-size: 13px;
+        padding: 2px 0;
+      }
+      .hud-stat b {
+        color: #e8c46b;
+      }
+      .hud-build-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+      }
+      .hud-build-btn {
+        font: inherit;
+        font-size: 12px;
+        color: #f3e9d2;
+        background: #4a3517;
+        border: 1px solid #7a6234;
+        border-radius: 4px;
+        padding: 5px 4px;
+        cursor: pointer;
+        text-align: left;
+      }
+      .hud-build-btn:hover {
+        background: #5d4420;
+      }
+      .hud-build-btn.active {
+        background: #7a5c22;
+        border-color: #e8c46b;
+      }
+      .hud-policy label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 12px;
+        padding: 2px 0;
+      }
+      .hud-policy input[type='range'] {
+        width: 110px;
+      }
+      .hud-log ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        max-height: 180px;
+        overflow-y: auto;
+        font-size: 12px;
+      }
+      .hud-log li {
+        padding: 2px 0;
+        border-bottom: 1px dotted rgba(243, 233, 210, 0.15);
+      }
+      .msg-house-evolved {
+        color: #8bd46f;
+      }
+      .msg-house-devolved {
+        color: #e09070;
+      }
+      .msg-building-inactive {
+        color: #d0b080;
+      }
+      .msg-building-active {
+        color: #7fc4e8;
+      }
+      .msg-warning {
+        color: #e8c46b;
+      }
+      .hud-toast {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(30, 20, 10, 0.95);
+        border: 1px solid #c06040;
+        border-radius: 6px;
+        color: #ffd9c0;
+        padding: 8px 16px;
+        font-size: 14px;
+        z-index: 20;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game"></div>
+    <div id="hud"></div>
+    <script type="module" src="/src/game/main.ts"></script>
+  </body>
+</html>
