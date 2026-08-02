@@ -13,6 +13,8 @@ export interface BuildingDef {
   allowedTerrains: TileType[];
   /** If set, every footprint tile must be this terrain (e.g. farm → fertile). */
   requiredTerrain?: TileType;
+  /** Minimum number of footprint tiles that must be `requiredTerrain` (farm needs fertile). */
+  minRequiredTiles?: number;
   /** True if at least one footprint edge must touch a road tile. */
   requiresRoad: boolean;
   /** Workers required for the building to be active. */
@@ -52,8 +54,11 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     category: 'food',
     footprint: 2,
     cost: 80,
-    allowedTerrains: ['fertile'],
+    allowedTerrains: ['fertile', 'earth', 'trees', 'rock'],
     requiredTerrain: 'fertile',
+    // A farm needs at least 2 fertile tiles in its 2x2 footprint; the rest may
+    // be other buildable terrain (so clumps of fertile land are enough).
+    minRequiredTiles: 2,
     requiresRoad: true,
     workers: 1,
     production: { good: 'wheat', perTick: CONFIG.farmProductionPerTick, localCapacity: CONFIG.farmStorageCapacity },
@@ -66,7 +71,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     cost: 120,
     allowedTerrains: ['earth', 'fertile', 'trees', 'rock'],
     requiresRoad: true,
-    workers: 0,
+    workers: 1,
     storageCapacity: CONFIG.granaryCapacity,
   },
   market: {

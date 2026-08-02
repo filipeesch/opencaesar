@@ -75,17 +75,26 @@ export class Map {
       if (t === 'earth' && rng.next() < 0.15) map.set(x, y, 'trees');
     });
 
-    // Fertile soil as patches of at least 2x2 (never over water) so farms are buildable.
-    const patches = 4 + Math.floor(rng.next() * 3);
+    // Fertile soil as coherent patches so farms (which need >=2 fertile tiles)
+    // are buildable on generated maps. Bigger, tighter patches than before so
+    // fertile land reads as a few farmable regions rather than scattered specks.
+    const patches = 3 + Math.floor(rng.next() * 2);
     for (let i = 0; i < patches; i++) {
-      const ax = Math.floor(rng.next() * width);
-      const ay = Math.floor(rng.next() * height);
-      const w = 2 + Math.floor(rng.next() * 2);
-      const h = 2 + Math.floor(rng.next() * 2);
-      for (let dy = 0; dy < h; dy++) {
-        for (let dx = 0; dx < w; dx++) {
-          if (map.get(ax + dx, ay + dy) === 'water') continue;
-          if (rng.next() < 0.85) map.set(ax + dx, ay + dy, 'fertile');
+      const cx = Math.floor(rng.next() * width);
+      const cy = Math.floor(rng.next() * height);
+      blob(map, cx, cy, 4 + rng.next() * 3, 'fertile');
+    }
+    // Guarantee at least one buildable farm site: force a full 2x2 fertile
+    // square somewhere (a farm needs at least 2 fertile in its footprint, but a
+    // solid 2x2 guarantees it on any map).
+    outerFarm: for (let y = 1; y < height - 3; y++) {
+      for (let x = 1; x < width - 3; x++) {
+        if (!(map.get(x, y) === 'water' || map.get(x + 1, y) === 'water' || map.get(x, y + 1) === 'water' || map.get(x + 1, y + 1) === 'water')) {
+          map.set(x, y, 'fertile');
+          map.set(x + 1, y, 'fertile');
+          map.set(x, y + 1, 'fertile');
+          map.set(x + 1, y + 1, 'fertile');
+          break outerFarm;
         }
       }
     }

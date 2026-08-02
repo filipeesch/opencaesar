@@ -36,7 +36,14 @@ export class BootScene extends Phaser.Scene {
     await this.loadManifestSheets();
     if (!this.textures.exists('terrain')) this.generateTerrainTexture();
     if (!this.textures.exists('house')) this.generateHouseTexture();
-    this.scene.start('Main');
+    // Direct-to-game for tests and dev (`?test` / `?skipHome`); otherwise the
+    // home screen menu is the entry point.
+    const q = new URLSearchParams(window.location.search);
+    if (q.has('test') || q.has('skipHome')) {
+      this.scene.start('Main');
+    } else {
+      this.scene.start('Home');
+    }
   }
 
   /**

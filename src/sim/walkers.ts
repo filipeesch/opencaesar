@@ -290,7 +290,8 @@ function nearestBuildingNeedingLabor(sim: SimInternals, w: WalkerInstance): Buil
   let bestDist = Infinity;
   for (const b of sim.buildings) {
     if (b.workersRequired <= 0) continue;
-    if (b.laborCooldown > 0) continue;
+    // Reachability is durable; only buildings not yet connected need a labor walker.
+    if (b.laborConnected) continue;
     const d = manhattan(w.x, w.y, b.x, b.y);
     if (d < bestDist) {
       bestDist = d;

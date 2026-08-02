@@ -30,6 +30,25 @@ describe('placement validation', () => {
     expect(checkPlacement(map, notOccupied, 1000, 'farm', 6, 0)).toEqual({ ok: false, error: 'terrain' });
   });
 
+  it('accepts a farm when at least 2 footprint tiles are fertile', () => {
+    const map = baseMap();
+    // Fertile patch is (3..4, 3..4). A farm anchored at (3,4) covers
+    // (3,4),(4,4) fertile + (3,5),(4,5) earth = exactly 2 fertile tiles.
+    map.set(2, 4, 'road');
+    expect(checkPlacement(map, notOccupied, 1000, 'farm', 3, 4)).toEqual({ ok: true });
+  });
+
+  it('rejects a farm with only 1 fertile tile even if the rest is buildable', () => {
+    const map = baseMap();
+    // To get a footprint with exactly one fertile tile, carve the patch down:
+    // anchor at (3,3) covers (3,3),(4,3),(3,4),(4,4); set three of them to earth.
+    map.set(4, 3, 'earth');
+    map.set(3, 4, 'earth');
+    map.set(4, 4, 'earth');
+    map.set(2, 3, 'road');
+    expect(checkPlacement(map, notOccupied, 1000, 'farm', 3, 3)).toEqual({ ok: false, error: 'terrain' });
+  });
+
   it('rejects a market with no road access', () => {
     const map = baseMap();
     expect(checkPlacement(map, notOccupied, 1000, 'market', 4, 6)).toEqual({ ok: false, error: 'road-access' });

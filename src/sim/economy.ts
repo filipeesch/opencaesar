@@ -30,6 +30,13 @@ export function assignedWorkers(buildings: BuildingInstance[]): number {
   return total;
 }
 
+/** Total job positions = sum of all buildings' worker requirements. */
+export function totalJobs(buildings: BuildingInstance[]): number {
+  let total = 0;
+  for (const b of buildings) total += b.workersRequired;
+  return total;
+}
+
 /**
  * Advance the economy one tick: collect taxes, pay wages (never pushing the
  * treasury below zero). The unpaid remainder is returned for the housing
@@ -72,8 +79,13 @@ export function populationOf(buildings: BuildingInstance[]): number {
  * Prosperity (0..100) blends housing quality, employment, and revenue:
  * 40% housing quality (average tier / max tier), 30% employment
  * (assigned / pool), 30% revenue (treasury / target, capped).
+ * `cityHappiness` is provided by the caller (it needs map + policy context).
  */
-export function computeRatings(buildings: BuildingInstance[], treasury: number): Ratings {
+export function computeRatings(
+  buildings: BuildingInstance[],
+  treasury: number,
+  cityHappiness?: number,
+): Ratings {
   const population = populationOf(buildings);
 
   let tierSum = 0;
@@ -94,5 +106,5 @@ export function computeRatings(buildings: BuildingInstance[], treasury: number):
 
   const prosperity = Math.round(100 * (0.4 * housingScore + 0.3 * employment + 0.3 * revenueScore));
 
-  return { population, prosperity };
+  return { population, prosperity, happiness: cityHappiness ?? 0 };
 }

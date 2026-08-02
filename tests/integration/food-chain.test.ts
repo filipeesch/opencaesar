@@ -50,4 +50,40 @@ describe('food supply chain', () => {
       if (b.type === 'granary') expect(b.stock.wheat ?? 0).toBeLessThanOrEqual(100);
     }
   });
+
+  it('stays solvent at default policy: treasury positive and healthy prosperity', () => {
+    const runner = runScenario(
+      1337,
+      foodChainMap(),
+      (r) => {
+        buildFoodCity(r);
+        r.setPolicy(0.1, 0.1);
+      },
+      3000,
+    );
+    const state = runner.getState();
+    // The balance fix (raised tax tiers) keeps a growing city from bleeding out.
+    expect(state.treasury).toBeGreaterThan(0);
+    expect(state.ratings.prosperity).toBeGreaterThanOrEqual(40);
+    // A served city is broadly happy.
+    expect(state.ratings.happiness).toBeGreaterThan(0);
+  });
+
+  it('keeps worker-requiring buildings staffed most of the time', () => {
+    const runner = runScenario(
+      1337,
+      foodChainMap(),
+      (r) => {
+        buildFoodCity(r);
+        r.setPolicy(0.1, 0.1);
+      },
+      3000,
+    );
+    const jobs = runner.getState().buildings.filter((b) => b.workersRequired > 0);
+    expect(jobs.length).toBeGreaterThan(0);
+    // At least the majority of jobs are filled at steady state (labor churn is
+    // momentary, not systemic).
+    const filled = jobs.filter((b) => b.workersAssigned >= b.workersRequired).length;
+    expect(filled).toBeGreaterThanOrEqual(Math.ceil(jobs.length / 2));
+  });
 });

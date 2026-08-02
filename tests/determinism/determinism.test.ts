@@ -24,4 +24,30 @@ describe('determinism', () => {
     const b = JSON.parse(scriptedRun(2, 1000));
     expect(JSON.stringify(a.walkers)).not.toBe(JSON.stringify(b.walkers));
   });
+
+  it('save/load round-trips a seed-generated map to a byte-identical state', () => {
+    // Seed-generated map (no map passed) so map gen and sim share one RNG,
+    // exercising the real save/load replay path.
+    const runner = new SimRunner(777);
+    runner.placeBuilding('road', 3, 3);
+    runner.placeBuilding('road', 3, 4);
+    runner.placeBuilding('house', 3, 5);
+    runner.setPolicy(0.1, 0.2);
+    for (let i = 0; i < 500; i++) runner.tick();
+    const original = runner.getStateJson();
+
+    const loaded = SimRunner.fromSaveData(runner.getSaveData());
+    expect(loaded.getStateJson()).toBe(original);
+  });
+
+  it('fromSaveData reproduces state even with policy changes replayed', () => {
+    const runner = new SimRunner(888);
+    runner.placeBuilding('road', 5, 5);
+    runner.setPolicy(0.2, 0.5);
+    for (let i = 0; i < 300; i++) runner.tick();
+    runner.setPolicy(0.15, 0.35);
+
+    const loaded = SimRunner.fromSaveData(runner.getSaveData());
+    expect(loaded.getStateJson()).toBe(runner.getStateJson());
+  });
 });

@@ -138,6 +138,16 @@ Houses SHALL provide workers based on tier (higher tiers provide more). Building
 - **WHEN** total reachable workers are below the building's requirement
 - **THEN** the building is understaffed and inactive
 
+#### Scenario: Connected building stays staffed
+
+- **WHEN** a building has received a labor walker and is labor-connected
+- **THEN** it remains labor-connected and keeps its workers assigned across ticks, rather than dropping the connection merely because a walker cooldown or the walker's lifetime expired
+
+#### Scenario: Unconnected building needs a labor walker
+
+- **WHEN** a worker-requiring building has not yet been reached by a labor walker
+- **THEN** it stays disconnected and unstaffed until a labor walker reaches it
+
 ### Requirement: Housing evolution
 
 Houses SHALL have tiers (shack → villa, 5 tiers) with population capacity per tier. A house SHALL evolve up when food, water, labor, and desirability thresholds are satisfied for a sustained window of ticks; SHALL devolve on persistent shortfall; and SHALL never exceed the max tier.
@@ -171,9 +181,19 @@ Houses SHALL pay taxes per tick based on tier. The treasury SHALL accumulate tax
 - **WHEN** the treasury is zero and wages are due
 - **THEN** the treasury does not go below zero (wages unpaid, with a desirability penalty)
 
-### Requirement: Ratings — population and prosperity
+#### Scenario: Growing city stays solvent
 
-The system SHALL track Population (sum of house population capacities) and Prosperity (computed from housing quality, employment, and revenue). Ratings SHALL be exposed in state for HUD display.
+- **WHEN** a city grows houses and employs workers at default policy rates
+- **THEN** the treasury does not structurally bleed to zero from wages exceeding taxes
+
+#### Scenario: Treasury recovers from temporary deficit
+
+- **WHEN** the treasury hits zero and wages go unpaid briefly
+- **THEN** the city can recover as taxes resume and the unpaid-wage penalty clears
+
+### Requirement: Ratings — population, prosperity, and happiness
+
+The system SHALL track Population (sum of house population capacities), Prosperity (computed from housing quality, employment, and revenue), and a city Happiness rating (population-weighted average of per-house happiness). Ratings SHALL be exposed in state for HUD display.
 
 #### Scenario: Population tracks housing
 
@@ -184,6 +204,25 @@ The system SHALL track Population (sum of house population capacities) and Prosp
 
 - **WHEN** housing tiers, employment, and treasury change
 - **THEN** the Prosperity rating is recomputed from those factors
+
+#### Scenario: Ratings include happiness
+
+- **WHEN** the sim computes ratings
+- **THEN** the ratings include a Happiness value alongside Population and Prosperity
+
+### Requirement: Desirability exposed in state
+
+The system SHALL expose a house's current desirability value in the building snapshot returned by `getState()`, so the UI can display it. The exposed value SHALL equal the desirability computed during housing evolution for the same tick.
+
+#### Scenario: House snapshot includes desirability
+
+- **WHEN** a house exists and `getState()` is called
+- **THEN** the house's snapshot includes a desirability number in the same range the evolution logic uses
+
+#### Scenario: Desirability tracks services and policy
+
+- **WHEN** a house gains water/food coverage or the wage/tax policy changes
+- **THEN** the exposed desirability updates to reflect the new coverage or policy
 
 ### Requirement: Deterministic simulation
 

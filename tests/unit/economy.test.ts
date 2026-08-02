@@ -57,11 +57,11 @@ describe('worker pool', () => {
 describe('taxes and wages', () => {
   it('collects taxes per house tier at the tax rate', () => {
     const houses = [
-      mkHouse({ id: 1, house: { tier: 0 } }), // tax 1
-      mkHouse({ id: 2, house: { tier: 3 } }), // tax 7
+      mkHouse({ id: 1, house: { tier: 0 } }), // tax 5
+      mkHouse({ id: 2, house: { tier: 3 } }), // tax 11
     ];
     const { result } = tickEconomy(houses, { taxRate: 0.5, wageRate: 0 }, 1000);
-    expect(result.taxIncome).toBeCloseTo(4);
+    expect(result.taxIncome).toBeCloseTo(8);
   });
 
   it('pays wages based on the reachable worker pool and wage rate', () => {
@@ -83,9 +83,9 @@ describe('taxes and wages', () => {
   });
 
   it('adds tax income to the treasury', () => {
-    const houses = [mkHouse({ id: 1, house: { tier: 1 } })]; // tax 2
+    const houses = [mkHouse({ id: 1, house: { tier: 1 } })]; // tax 7
     const { treasury } = tickEconomy(houses, { taxRate: 1, wageRate: 0 }, 100);
-    expect(treasury).toBe(102);
+    expect(treasury).toBe(107);
   });
 });
 

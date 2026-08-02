@@ -517,10 +517,10 @@
       "x": 2,
       "y": 1,
       "footprint": 2,
-      "workersAssigned": 0,
-      "workersRequired": 0,
-      "active": false,
-      "laborConnected": false,
+      "workersAssigned": 1,
+      "workersRequired": 1,
+      "active": true,
+      "laborConnected": true,
       "stock": {
         "wheat": 100
       }
@@ -531,10 +531,10 @@
       "x": 4,
       "y": 1,
       "footprint": 2,
-      "workersAssigned": 0,
+      "workersAssigned": 1,
       "workersRequired": 1,
-      "active": false,
-      "laborConnected": false,
+      "active": true,
+      "laborConnected": true,
       "stock": {}
     },
     {
@@ -552,9 +552,11 @@
         "tier": 2,
         "tierName": "Insula",
         "populationCapacity": 20,
-        "foodCooldown": 51,
-        "waterCooldown": 114,
-        "laborCooldown": 60
+        "foodCooldown": 58,
+        "waterCooldown": 120,
+        "laborCooldown": 60,
+        "desirability": 75,
+        "happiness": 69
       }
     },
     {
@@ -572,9 +574,11 @@
         "tier": 2,
         "tierName": "Insula",
         "populationCapacity": 20,
-        "foodCooldown": 55,
-        "waterCooldown": 119,
-        "laborCooldown": 60
+        "foodCooldown": 86,
+        "waterCooldown": 116,
+        "laborCooldown": 60,
+        "desirability": 75,
+        "happiness": 69
       }
     },
     {
@@ -592,9 +596,11 @@
         "tier": 2,
         "tierName": "Insula",
         "populationCapacity": 20,
-        "foodCooldown": 96,
+        "foodCooldown": 90,
         "waterCooldown": 120,
-        "laborCooldown": 60
+        "laborCooldown": 60,
+        "desirability": 75,
+        "happiness": 69
       }
     },
     {
@@ -612,9 +618,11 @@
         "tier": 2,
         "tierName": "Insula",
         "populationCapacity": 20,
-        "foodCooldown": 104,
+        "foodCooldown": 118,
         "waterCooldown": 120,
-        "laborCooldown": 60
+        "laborCooldown": 60,
+        "desirability": 75,
+        "happiness": 69
       }
     },
     {
@@ -632,110 +640,290 @@
   ],
   "walkers": [
     {
-      "id": 112,
-      "type": "well",
-      "x": 4,
-      "y": 5,
-      "next": {
-        "x": 3,
-        "y": 5
-      },
-      "progress": 0.5,
-      "state": "wandering",
-      "lifetime": 15,
-      "targetBuildingId": null,
-      "carryingGood": null
-    },
-    {
-      "id": 117,
-      "type": "well",
-      "x": 1,
-      "y": 5,
-      "next": {
-        "x": 2,
-        "y": 5
-      },
-      "progress": 0.5,
-      "state": "wandering",
-      "lifetime": 45,
-      "targetBuildingId": null,
-      "carryingGood": null
-    },
-    {
-      "id": 118,
-      "type": "market",
-      "x": 2,
-      "y": 0,
-      "next": null,
-      "progress": 0,
-      "state": "wandering",
-      "lifetime": 52,
-      "targetBuildingId": null,
-      "carryingGood": "wheat"
-    },
-    {
-      "id": 119,
-      "type": "well",
-      "x": 7,
-      "y": 4,
-      "next": {
-        "x": 7,
-        "y": 3
-      },
-      "progress": 0.5,
-      "state": "wandering",
-      "lifetime": 75,
-      "targetBuildingId": null,
-      "carryingGood": null
-    },
-    {
-      "id": 124,
-      "type": "market",
-      "x": 7,
-      "y": 1,
-      "next": null,
-      "progress": 0,
-      "state": "wandering",
-      "lifetime": 92,
-      "targetBuildingId": null,
-      "carryingGood": "wheat"
-    },
-    {
       "id": 125,
       "type": "well",
-      "x": 5,
+      "x": 3,
       "y": 3,
-      "next": {
-        "x": 4,
-        "y": 3
-      },
-      "progress": 0.5,
+      "next": null,
+      "progress": 0,
       "state": "wandering",
-      "lifetime": 105,
+      "lifetime": 10,
       "targetBuildingId": null,
       "carryingGood": null
     },
     {
       "id": 126,
       "type": "market",
-      "x": 6,
+      "x": 7,
+      "y": 2,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 14,
+      "targetBuildingId": null,
+      "carryingGood": "wheat"
+    },
+    {
+      "id": 127,
+      "type": "labor",
+      "x": 4,
+      "y": 3,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 20,
+      "targetBuildingId": null,
+      "carryingGood": null
+    },
+    {
+      "id": 128,
+      "type": "labor",
+      "x": 5,
       "y": 0,
       "next": null,
       "progress": 0,
       "state": "wandering",
-      "lifetime": 132,
+      "lifetime": 20,
       "targetBuildingId": null,
-      "carryingGood": "wheat"
+      "carryingGood": null
+    },
+    {
+      "id": 129,
+      "type": "labor",
+      "x": 7,
+      "y": 2,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 20,
+      "targetBuildingId": null,
+      "carryingGood": null
+    },
+    {
+      "id": 130,
+      "type": "labor",
+      "x": 3,
+      "y": 0,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 20,
+      "targetBuildingId": null,
+      "carryingGood": null
     },
     {
       "id": 131,
       "type": "well",
       "x": 2,
+      "y": 3,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 40,
+      "targetBuildingId": null,
+      "carryingGood": null
+    },
+    {
+      "id": 132,
+      "type": "market",
+      "x": 7,
+      "y": 2,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 54,
+      "targetBuildingId": null,
+      "carryingGood": "wheat"
+    },
+    {
+      "id": 133,
+      "type": "well",
+      "x": 1,
+      "y": 3,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 70,
+      "targetBuildingId": null,
+      "carryingGood": null
+    },
+    {
+      "id": 134,
+      "type": "labor",
+      "x": 6,
+      "y": 3,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 80,
+      "targetBuildingId": null,
+      "carryingGood": null
+    },
+    {
+      "id": 135,
+      "type": "labor",
+      "x": 2,
+      "y": 3,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 80,
+      "targetBuildingId": null,
+      "carryingGood": null
+    },
+    {
+      "id": 136,
+      "type": "labor",
+      "x": 4,
+      "y": 3,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 80,
+      "targetBuildingId": null,
+      "carryingGood": null
+    },
+    {
+      "id": 137,
+      "type": "labor",
+      "x": 2,
+      "y": 3,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 80,
+      "targetBuildingId": null,
+      "carryingGood": null
+    },
+    {
+      "id": 138,
+      "type": "market",
+      "x": 6,
+      "y": 3,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 94,
+      "targetBuildingId": null,
+      "carryingGood": "wheat"
+    },
+    {
+      "id": 139,
+      "type": "well",
+      "x": 7,
+      "y": 2,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 100,
+      "targetBuildingId": null,
+      "carryingGood": null
+    },
+    {
+      "id": 140,
+      "type": "well",
+      "x": 5,
       "y": 5,
       "next": null,
       "progress": 0,
       "state": "wandering",
-      "lifetime": 184,
+      "lifetime": 130,
+      "targetBuildingId": null,
+      "carryingGood": null
+    },
+    {
+      "id": 141,
+      "type": "market",
+      "x": 3,
+      "y": 0,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 134,
+      "targetBuildingId": null,
+      "carryingGood": "wheat"
+    },
+    {
+      "id": 142,
+      "type": "labor",
+      "x": 0,
+      "y": 3,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 140,
+      "targetBuildingId": null,
+      "carryingGood": null
+    },
+    {
+      "id": 143,
+      "type": "labor",
+      "x": 6,
+      "y": 3,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 140,
+      "targetBuildingId": null,
+      "carryingGood": null
+    },
+    {
+      "id": 144,
+      "type": "labor",
+      "x": 7,
+      "y": 2,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 140,
+      "targetBuildingId": null,
+      "carryingGood": null
+    },
+    {
+      "id": 145,
+      "type": "labor",
+      "x": 6,
+      "y": 5,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 140,
+      "targetBuildingId": null,
+      "carryingGood": null
+    },
+    {
+      "id": 146,
+      "type": "well",
+      "x": 7,
+      "y": 4,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 160,
+      "targetBuildingId": null,
+      "carryingGood": null
+    },
+    {
+      "id": 147,
+      "type": "market",
+      "x": 7,
+      "y": 0,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 174,
+      "targetBuildingId": null,
+      "carryingGood": "wheat"
+    },
+    {
+      "id": 148,
+      "type": "well",
+      "x": 1,
+      "y": 5,
+      "next": null,
+      "progress": 0,
+      "state": "wandering",
+      "lifetime": 190,
       "targetBuildingId": null,
       "carryingGood": null
     }
@@ -747,10 +935,12 @@
   },
   "ratings": {
     "population": 80,
-    "prosperity": 28
+    "prosperity": 32,
+    "happiness": 69
   },
   "totalWorkers": 16,
-  "assignedWorkers": 2,
+  "assignedWorkers": 4,
+  "totalJobs": 4,
   "messages": [
     {
       "tick": 1,
@@ -763,7 +953,12 @@
       "text": "Market staffed and operational"
     },
     {
-      "tick": 30,
+      "tick": 26,
+      "type": "building-active",
+      "text": "Granary staffed and operational"
+    },
+    {
+      "tick": 34,
       "type": "building-active",
       "text": "Farm staffed and operational"
     },
@@ -773,229 +968,44 @@
       "text": "Well staffed and operational"
     },
     {
-      "tick": 137,
-      "type": "building-inactive",
-      "text": "Market needs workers"
-    },
-    {
-      "tick": 141,
+      "tick": 143,
       "type": "house-evolved",
       "text": "House evolved to Hovel"
     },
     {
-      "tick": 142,
-      "type": "building-active",
-      "text": "Market staffed and operational"
-    },
-    {
-      "tick": 145,
+      "tick": 149,
       "type": "house-evolved",
       "text": "House evolved to Hovel"
     },
     {
-      "tick": 153,
-      "type": "building-inactive",
-      "text": "Farm needs workers"
-    },
-    {
-      "tick": 169,
+      "tick": 161,
       "type": "house-evolved",
       "text": "House evolved to Hovel"
     },
     {
       "tick": 201,
       "type": "house-evolved",
-      "text": "House evolved to Insula"
-    },
-    {
-      "tick": 202,
-      "type": "building-active",
-      "text": "Farm staffed and operational"
-    },
-    {
-      "tick": 205,
-      "type": "house-evolved",
-      "text": "House evolved to Insula"
-    },
-    {
-      "tick": 211,
-      "type": "building-inactive",
-      "text": "Well needs workers"
-    },
-    {
-      "tick": 229,
-      "type": "house-evolved",
-      "text": "House evolved to Insula"
-    },
-    {
-      "tick": 259,
-      "type": "house-evolved",
       "text": "House evolved to Hovel"
     },
     {
-      "tick": 260,
-      "type": "building-active",
-      "text": "Well staffed and operational"
-    },
-    {
-      "tick": 277,
-      "type": "building-inactive",
-      "text": "Market needs workers"
-    },
-    {
-      "tick": 314,
-      "type": "building-active",
-      "text": "Market staffed and operational"
-    },
-    {
-      "tick": 319,
+      "tick": 203,
       "type": "house-evolved",
       "text": "House evolved to Insula"
     },
     {
-      "tick": 333,
-      "type": "building-inactive",
-      "text": "Farm needs workers"
+      "tick": 209,
+      "type": "house-evolved",
+      "text": "House evolved to Insula"
     },
     {
-      "tick": 382,
-      "type": "building-active",
-      "text": "Farm staffed and operational"
+      "tick": 221,
+      "type": "house-evolved",
+      "text": "House evolved to Insula"
     },
     {
-      "tick": 391,
-      "type": "building-inactive",
-      "text": "Well needs workers"
-    },
-    {
-      "tick": 440,
-      "type": "building-active",
-      "text": "Well staffed and operational"
-    },
-    {
-      "tick": 445,
-      "type": "building-inactive",
-      "text": "Market needs workers"
-    },
-    {
-      "tick": 494,
-      "type": "building-active",
-      "text": "Market staffed and operational"
-    },
-    {
-      "tick": 513,
-      "type": "building-inactive",
-      "text": "Farm needs workers"
-    },
-    {
-      "tick": 562,
-      "type": "building-active",
-      "text": "Farm staffed and operational"
-    },
-    {
-      "tick": 571,
-      "type": "building-inactive",
-      "text": "Well needs workers"
-    },
-    {
-      "tick": 620,
-      "type": "building-active",
-      "text": "Well staffed and operational"
-    },
-    {
-      "tick": 625,
-      "type": "building-inactive",
-      "text": "Market needs workers"
-    },
-    {
-      "tick": 674,
-      "type": "building-active",
-      "text": "Market staffed and operational"
-    },
-    {
-      "tick": 693,
-      "type": "building-inactive",
-      "text": "Farm needs workers"
-    },
-    {
-      "tick": 742,
-      "type": "building-active",
-      "text": "Farm staffed and operational"
-    },
-    {
-      "tick": 751,
-      "type": "building-inactive",
-      "text": "Well needs workers"
-    },
-    {
-      "tick": 800,
-      "type": "building-active",
-      "text": "Well staffed and operational"
-    },
-    {
-      "tick": 805,
-      "type": "building-inactive",
-      "text": "Market needs workers"
-    },
-    {
-      "tick": 854,
-      "type": "building-active",
-      "text": "Market staffed and operational"
-    },
-    {
-      "tick": 873,
-      "type": "building-inactive",
-      "text": "Farm needs workers"
-    },
-    {
-      "tick": 922,
-      "type": "building-active",
-      "text": "Farm staffed and operational"
-    },
-    {
-      "tick": 931,
-      "type": "building-inactive",
-      "text": "Well needs workers"
-    },
-    {
-      "tick": 980,
-      "type": "building-active",
-      "text": "Well staffed and operational"
-    },
-    {
-      "tick": 985,
-      "type": "building-inactive",
-      "text": "Market needs workers"
-    },
-    {
-      "tick": 1034,
-      "type": "building-active",
-      "text": "Market staffed and operational"
-    },
-    {
-      "tick": 1053,
-      "type": "building-inactive",
-      "text": "Farm needs workers"
-    },
-    {
-      "tick": 1102,
-      "type": "building-active",
-      "text": "Farm staffed and operational"
-    },
-    {
-      "tick": 1111,
-      "type": "building-inactive",
-      "text": "Well needs workers"
-    },
-    {
-      "tick": 1160,
-      "type": "building-active",
-      "text": "Well staffed and operational"
-    },
-    {
-      "tick": 1165,
-      "type": "building-inactive",
-      "text": "Market needs workers"
+      "tick": 261,
+      "type": "house-evolved",
+      "text": "House evolved to Insula"
     }
   ],
   "lastTickWagesUnpaid": true

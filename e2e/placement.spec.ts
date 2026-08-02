@@ -177,6 +177,11 @@ test('a full supply chain grows the HUD population with no console errors', asyn
   // above the empty-map baseline (the HUD reflects the sim's ratings).
   const prosperityAfter = Number(await page.getByTestId('stat-prosperity').textContent());
   expect(prosperityAfter).toBeGreaterThan(prosperityStart);
+
+  // A fed, watered, staffed city is broadly happy (Happiness rating > 0).
+  const happinessAfter = Number(await page.getByTestId('stat-happiness').textContent());
+  expect(happinessAfter).toBeGreaterThan(0);
+  expect(state.ratings.happiness).toBeGreaterThan(0);
   expect(errors).toEqual([]);
 });
 

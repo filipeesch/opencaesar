@@ -37,16 +37,19 @@ export function checkPlacement(
     }
   }
 
+  let matching = 0;
   for (let dy = 0; dy < n; dy++) {
     for (let dx = 0; dx < n; dx++) {
       const t = map.get(x + dx, y + dy);
       if (t === 'out-of-bounds') return { ok: false, error: 'out-of-bounds' };
-      if (def.requiredTerrain !== undefined && t !== def.requiredTerrain) {
-        return { ok: false, error: 'terrain' };
-      }
       if (!def.allowedTerrains.includes(t)) return { ok: false, error: 'terrain' };
+      if (def.requiredTerrain !== undefined && t === def.requiredTerrain) matching++;
     }
   }
+  // Every footprint tile must be the required terrain unless a minimum count
+  // is specified (e.g. farm needs at least 2 fertile tiles, rest buildable).
+  const need = def.minRequiredTiles ?? (def.requiredTerrain !== undefined ? n * n : 0);
+  if (matching < need) return { ok: false, error: 'terrain' };
 
   if (def.requiresRoad && !hasRoadEdge(map, x, y, n)) {
     return { ok: false, error: 'road-access' };

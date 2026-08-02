@@ -9,7 +9,7 @@ export const CONFIG = {
   /** Starting treasury in denarii. */
   startingTreasury: 1000,
   /** Simulation ticks executed per real second (used by the game shell only). */
-  ticksPerSecond: 10,
+  ticksPerSecond: 4,
 
   // Walker timings -----------------------------------------------------------
   /** Fraction of a tile a walker travels per tick (1 = one tile per tick). */
@@ -59,6 +59,18 @@ export const CONFIG = {
   /** Treasury value treated as full prosperity revenue score. */
   prosperityRevenueTarget: 2000,
 
+  // Happiness -----------------------------------------------------------------
+  /** Weight of food coverage toward a house's happiness (out of 100). */
+  happinessFoodWeight: 25,
+  /** Weight of water coverage toward a house's happiness. */
+  happinessWaterWeight: 20,
+  /** Weight of labor coverage toward a house's happiness. */
+  happinessLaborWeight: 15,
+  /** Weight of desirability (normalized 0..1) toward a house's happiness. */
+  happinessDesirabilityWeight: 25,
+  /** Weight of wages being paid toward a house's happiness. */
+  happinessWagesWeight: 15,
+
   // Messages ------------------------------------------------------------------
   /** Maximum number of messages retained in state. */
   messageLogCapacity: 50,
@@ -75,9 +87,9 @@ export interface HouseTier {
 }
 
 export const HOUSE_TIERS: readonly HouseTier[] = [
-  { name: 'Shack', population: 5, workers: 1, taxPerTick: 1 },
-  { name: 'Hovel', population: 10, workers: 2, taxPerTick: 2 },
-  { name: 'Insula', population: 20, workers: 4, taxPerTick: 4 },
-  { name: 'Domus', population: 35, workers: 7, taxPerTick: 7 },
-  { name: 'Villa', population: 55, workers: 11, taxPerTick: 11 },
+  { name: 'Shack', population: 5, workers: 1, taxPerTick: 5 },
+  { name: 'Hovel', population: 10, workers: 2, taxPerTick: 7 },
+  { name: 'Insula', population: 20, workers: 4, taxPerTick: 9 },
+  { name: 'Domus', population: 35, workers: 7, taxPerTick: 11 },
+  { name: 'Villa', population: 55, workers: 11, taxPerTick: 13 },
 ];

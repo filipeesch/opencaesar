@@ -10,7 +10,7 @@
 import Phaser from 'phaser';
 import { BUILDINGS } from '../../sim/buildings';
 import { CONFIG } from '../../sim/config';
-import type { BuildingType, PlacementError, PlacementResult, SimState, TileType, Vec2 } from '../../sim/types';
+import type { BuildingType, PlacementError, PlacementResult, SaveData, SimState, TileType, Vec2 } from '../../sim/types';
 import { SimRunner } from '../../sim/runner';
 import { HOUSE_FOOT_TOP_Y, HOUSE_FRAME_H, houseFrame, isSheetLoaded } from '../art';
 import { drawBuilding } from '../buildingArt';
@@ -25,7 +25,10 @@ type RenderObj = Phaser.GameObjects.GameObject & {
 };
 
 export class MainScene extends Phaser.Scene {
-  readonly runner: SimRunner;
+  runner: SimRunner;
+
+  /** Scene data used to start a run: { seed, mapSize } or { save }. */
+  private runtimeConfig: { seed: number; mapSize: number } | { save: SaveData } | null = null;
 
   private map: Phaser.Tilemaps.Tilemap | null = null;
   private layer: Phaser.Tilemaps.TilemapLayer | null = null;
@@ -44,6 +47,18 @@ export class MainScene extends Phaser.Scene {
   private lastPaint: Vec2 | null = null;
   /** Whether the pointer-down attempt already placed at the tile (prevents a duplicate up-attempt). */
   private downPlaced = false;
+  /** True while the pause overlay is open — the sim clock halts. */
+  private paused = false;
+
+  init(data: { seed?: number; mapSize?: number; save?: SaveData }): void {
+    if (data?.save) {
+      this.runtimeConfig = { save: data.save };
+    } else if (data?.seed !== undefined) {
+      this.runtimeConfig = { seed: data.seed, mapSize: data.mapSize ?? CONFIG.defaultMapSize };
+    } else {
+      this.runtimeConfig = null;
+    }
+  }
 
   constructor() {
     super('Main');
@@ -51,6 +66,13 @@ export class MainScene extends Phaser.Scene {
   }
 
   create(): void {
+    if (this.runtimeConfig) {
+      this.runner =
+        'save' in this.runtimeConfig
+          ? SimRunner.fromSaveData(this.runtimeConfig.save)
+          : new SimRunner(this.runtimeConfig.seed, undefined, this.runtimeConfig.mapSize);
+      this.runtimeConfig = null;
+    }
     const state = this.runner.getState();
     this.lastTiles = new Array<number>(state.width * state.height).fill(-1);
 
@@ -89,7 +111,18 @@ export class MainScene extends Phaser.Scene {
 
     this.wireInput(cam);
 
-    this.input.keyboard?.on('keydown-ESC', () => this.setBuildMode(null));
+    this.input.keyboard?.on('keydown-ESC', () => {
+      // Precedence: build mode cancels first; otherwise toggle pause.
+      if (this.paused) {
+        this.setPaused(false);
+        return;
+      }
+      if (this.buildType) {
+        this.setBuildMode(null);
+        return;
+      }
+      this.setPaused(true);
+    });
     this.scene.launch('HUD');
 
     if (new URLSearchParams(window.location.search).has('test')) {
@@ -98,11 +131,13 @@ export class MainScene extends Phaser.Scene {
   }
 
   override update(_time: number, delta: number): void {
-    this.acc += delta;
-    const stepMs = 1000 / CONFIG.ticksPerSecond;
-    while (this.acc >= stepMs) {
-      this.runner.tick();
-      this.acc -= stepMs;
+    if (!this.paused) {
+      this.acc += delta;
+      const stepMs = 1000 / CONFIG.ticksPerSecond;
+      while (this.acc >= stepMs) {
+        this.runner.tick();
+        this.acc -= stepMs;
+      }
     }
     const state = this.runner.getState();
     this.syncTerrain(state);
@@ -121,6 +156,37 @@ export class MainScene extends Phaser.Scene {
 
   getBuildMode(): BuildingType | null {
     return this.buildType;
+  }
+
+  /** Pause or resume the sim clock (used by the pause overlay). */
+  setPaused(paused: boolean): void {
+    if (this.paused === paused) return;
+    this.paused = paused;
+    if (paused) {
+      this.setBuildMode(null);
+      this.game.events.emit('hud-inspect', null);
+      this.game.events.emit('game-pause');
+    } else {
+      this.acc = 0;
+      this.game.events.emit('game-resume');
+    }
+  }
+
+  isPaused(): boolean {
+    return this.paused;
+  }
+
+  /** Capture the current sim as a save payload for persistence. */
+  getSaveData(): SaveData {
+    return this.runner.getSaveData();
+  }
+
+  /** Discard the current run and return to the home screen. */
+  restartToHome(): void {
+    this.paused = false;
+    this.scene.stop('Main');
+    this.scene.stop('HUD');
+    this.scene.start('Home');
   }
 
   private wireInput(cam: Phaser.Cameras.Scene2D.Camera): void {
@@ -163,12 +229,18 @@ export class MainScene extends Phaser.Scene {
         if (!dragged && p.rightButtonDown()) this.setBuildMode(null);
         return;
       }
-      if (dragged || !this.buildType) return;
-      // The pointer-down attempt already placed at this tile (single click):
-      // the up-attempt would only fail with a spurious "occupied" toast.
-      if (this.downPlaced) return;
+      if (dragged) return;
       const tile = this.tileAtPointer(p);
-      if (tile) this.tryPlace(tile.x, tile.y);
+      if (!tile) return;
+      if (this.buildType) {
+        // The pointer-down attempt already placed at this tile (single click):
+        // the up-attempt would only fail with a spurious "occupied" toast.
+        if (this.downPlaced) return;
+        this.tryPlace(tile.x, tile.y);
+      } else {
+        // Click without build mode inspects the building under the pointer.
+        this.emitInspect(tile.x, tile.y);
+      }
     });
 
     this.input.on('wheel', (p: Phaser.Input.Pointer, _g: unknown, _dx: number, dy: number) => {
@@ -355,6 +427,18 @@ export class MainScene extends Phaser.Scene {
       obj.setDepth(item.depth);
       this.entityObjs.push(obj);
     }
+  }
+
+  /** Emit the building at (tx, ty) for the HUD popup, or null for empty terrain. */
+  private emitInspect(tx: number, ty: number): void {
+    const state = this.runner.getState();
+    const building = state.buildings.find((b) => {
+      const inX = tx >= b.x && tx < b.x + b.footprint;
+      const inY = ty >= b.y && ty < b.y + b.footprint;
+      return inX && inY;
+    });
+    // Roads have no detail popup (design D4) — treat them like empty terrain.
+    this.game.events.emit('hud-inspect', building && building.type !== 'road' ? building.id : null);
   }
 
   private updateGhost(): void {

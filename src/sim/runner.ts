@@ -11,8 +11,9 @@
 
 import { BUILDINGS } from './buildings';
 import { CONFIG, HOUSE_TIERS } from './config';
-import { assignedWorkers, computeRatings, tickEconomy, workerPool } from './economy';
-import { tickHousing } from './housing';
+import { assignedWorkers, computeRatings, tickEconomy, totalJobs, workerPool } from './economy';
+import { cityHappiness, houseHappiness } from './happiness';
+import { desirabilityOf, tickHousing } from './housing';
 import { Map as SimMap } from './map';
 import { checkPlacement } from './placement';
 import type { Rng } from './rng';
@@ -24,6 +25,8 @@ import type {
   MessageType,
   PlacementResult,
   Policy,
+  SaveCommand,
+  SaveData,
   SimMessage,
   SimState,
   Vec2,
@@ -37,6 +40,8 @@ export class SimRunner {
   private readonly rng: Rng;
   private readonly width: number;
   private readonly height: number;
+  private readonly seed: number;
+  private readonly mapSize: number;
 
   private tickCount = 0;
   private treasury: number;
@@ -52,17 +57,25 @@ export class SimRunner {
 
   private messages: SimMessage[] = [];
   private commandLog: CommandLogEntry[] = [];
+  /** Ordered list of state-changing commands, used to reconstruct a deterministic save. */
+  private saveCommands: SaveCommand[] = [];
   private lowFoodWarnCooldown = 0;
 
-  constructor(seed: number, map?: SimMap) {
+  constructor(seed: number, map?: SimMap, mapSize?: number) {
+    this.seed = seed;
     this.rng = mulberry32(seed);
     if (map) {
       this.map = map;
       this.width = map.width;
       this.height = map.height;
+      this.mapSize = map.width;
     } else {
-      this.width = CONFIG.defaultMapSize;
-      this.height = CONFIG.defaultMapSize;
+      this.width = mapSize ?? CONFIG.defaultMapSize;
+      this.height = mapSize ?? CONFIG.defaultMapSize;
+      this.mapSize = this.width;
+      // Generate the map with THIS rng so the sim body continues the same
+      // RNG stream the map generation consumed (required for deterministic
+      // replay from a save).
       this.map = SimMap.generate(this.width, this.height, this.rng);
     }
     this.treasury = CONFIG.startingTreasury;
@@ -138,6 +151,7 @@ export class SimRunner {
     }
 
     this.commandLog.push({ tick: this.tickCount, command: `place ${type}@${x},${y}`, result: 'ok' });
+    this.saveCommands.push({ kind: 'place', type, x, y });
     return { ok: true };
   }
 
@@ -156,6 +170,12 @@ export class SimRunner {
   /** Set the tax and wage rates (each clamped to 0..1). */
   setPolicy(taxRate: number, wageRate: number): Policy {
     this.policy = { taxRate: clamp01(taxRate), wageRate: clamp01(wageRate) };
+    this.commandLog.push({
+      tick: this.tickCount,
+      command: `setPolicy ${this.policy.taxRate} ${this.policy.wageRate}`,
+      result: 'ok',
+    });
+    this.saveCommands.push({ kind: 'setPolicy', taxRate: this.policy.taxRate, wageRate: this.policy.wageRate });
     return { ...this.policy };
   }
 
@@ -166,6 +186,14 @@ export class SimRunner {
 
   /** Plain serializable snapshot of the current simulation state. */
   getState(): SimState {
+    const happiness = cityHappiness(
+      this.buildings
+        .filter((b) => b.house)
+        .map((b) => ({
+          population: HOUSE_TIERS[b.house!.tier].population,
+          happiness: houseHappiness(this.houseHappinessInput(b)),
+        })),
+    );
     return {
       tick: this.tickCount,
       width: this.width,
@@ -175,11 +203,28 @@ export class SimRunner {
       walkers: this.walkers.map((w) => this.toWalkerState(w)),
       treasury: this.treasury,
       policy: { ...this.policy },
-      ratings: computeRatings(this.buildings, this.treasury),
+      ratings: computeRatings(this.buildings, this.treasury, happiness),
       totalWorkers: workerPool(this.buildings),
       assignedWorkers: assignedWorkers(this.buildings),
+      totalJobs: totalJobs(this.buildings),
       messages: [...this.messages],
       lastTickWagesUnpaid: this.lastWagesUnpaid > 0,
+    };
+  }
+
+  /** Inputs used to derive a house's happiness for the snapshot. */
+  private houseHappinessInput(b: BuildingInstance) {
+    const services = {
+      food: b.house!.foodCooldown > 0,
+      water: b.house!.waterCooldown > 0,
+      labor: b.house!.laborCooldown > 0,
+    };
+    return {
+      hasFood: services.food,
+      hasWater: services.water,
+      hasLabor: services.labor,
+      desirability: desirabilityOf(this.map, b.x, b.y, this.policy, this.lastWagesUnpaid > 0, services),
+      wagesUnpaid: this.lastWagesUnpaid > 0,
     };
   }
 
@@ -191,6 +236,38 @@ export class SimRunner {
   /** Every accepted and rejected command since construction, in order. */
   getCommandLog(): CommandLogEntry[] {
     return [...this.commandLog];
+  }
+
+  /** Serializable payload that captures this sim for deterministic resume. */
+  getSaveData(): SaveData {
+    return {
+      version: 1,
+      seed: this.seed,
+      mapSize: this.mapSize,
+      commands: [...this.saveCommands],
+      tickCount: this.tickCount,
+      savedAt: Date.now(),
+    };
+  }
+
+  /**
+   * Reconstruct a sim from a save by replaying its command sequence, then
+   * ticking to the saved tick count. Because the sim is deterministic, the
+   * resulting state equals the original run at save time.
+   */
+  static fromSaveData(save: SaveData): SimRunner {
+    // Reconstruct through the no-map path so map generation and the sim body
+    // share the same RNG stream, exactly as the original run did.
+    const runner = new SimRunner(save.seed, undefined, save.mapSize);
+    for (const c of save.commands) {
+      if (c.kind === 'place') {
+        runner.placeBuilding(c.type, c.x, c.y);
+      } else {
+        runner.setPolicy(c.taxRate, c.wageRate);
+      }
+    }
+    while (runner.tickCount < save.tickCount) runner.tick();
+    return runner;
   }
 
   // Tick steps -----------------------------------------------------------------
@@ -218,19 +295,14 @@ export class SimRunner {
     }
   }
 
-  /** Decay labor connections, then assign workers from the pool to connected buildings. */
+  /**
+   * Assign workers from the reachable pool to labor-connected buildings.
+   * Labor connectivity is durable once a labor walker reaches a building (it
+   * must be re-established only if the road network is severed, which the sim
+   * never does) — so a connected building keeps drawing workers each tick,
+   * limited only by the pool and its requirement.
+   */
   private tickLabor(): void {
-    for (const b of this.buildings) {
-      if (b.workersRequired <= 0) continue;
-      if (b.laborCooldown > 0) {
-        b.laborCooldown -= 1;
-        if (b.laborCooldown <= 0) {
-          b.laborConnected = false;
-          b.workersAssigned = 0;
-        }
-      }
-    }
-
     let pool = workerPool(this.buildings);
     for (const b of this.buildings) {
       if (b.workersRequired <= 0) continue;
@@ -351,14 +423,19 @@ export class SimRunner {
 
   private toBuildingState(b: BuildingInstance): BuildingState {
     const house = b.house
-      ? {
-          tier: b.house.tier,
-          tierName: HOUSE_TIERS[b.house.tier].name,
-          populationCapacity: HOUSE_TIERS[b.house.tier].population,
-          foodCooldown: b.house.foodCooldown,
-          waterCooldown: b.house.waterCooldown,
-          laborCooldown: b.house.laborCooldown,
-        }
+      ? (() => {
+          const input = this.houseHappinessInput(b);
+          return {
+            tier: b.house!.tier,
+            tierName: HOUSE_TIERS[b.house!.tier].name,
+            populationCapacity: HOUSE_TIERS[b.house!.tier].population,
+            foodCooldown: b.house!.foodCooldown,
+            waterCooldown: b.house!.waterCooldown,
+            laborCooldown: b.house!.laborCooldown,
+            desirability: input.desirability,
+            happiness: houseHappiness(input),
+          };
+        })()
       : undefined;
     return {
       id: b.id,

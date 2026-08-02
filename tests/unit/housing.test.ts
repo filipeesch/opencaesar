@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CONFIG, HOUSE_TIERS } from '../../src/sim/config';
 import { desirabilityOf, tierThreshold, tickHousing } from '../../src/sim/housing';
 import { Map as SimMap } from '../../src/sim/map';
+import { SimRunner } from '../../src/sim/runner';
 import type { MessageType } from '../../src/sim/types';
 import type { BuildingInstance } from '../../src/sim/walkers';
 
@@ -66,6 +67,43 @@ describe('desirability', () => {
 
   it('higher tiers require higher desirability thresholds', () => {
     expect(tierThreshold(1)).toBeLessThan(tierThreshold(5));
+  });
+});
+
+describe('house snapshot desirability', () => {
+  it('exposes the same desirability the evolution logic uses', () => {
+    const m = SimMap.fromLayout(5, 5, (x, y) => ((x === 1 && y === 1) ? 'fertile' : 'earth'));
+    m.set(0, 1, 'road');
+    const runner = new SimRunner(1, m);
+    runner.placeBuilding('house', 1, 1);
+
+    const state = runner.getState();
+    const house = state.buildings.find((b) => b.type === 'house');
+    expect(house?.house?.desirability).toBe(
+      desirabilityOf(m, 1, 1, state.policy, false, {
+        food: false,
+        water: false,
+        labor: false,
+      }),
+    );
+  });
+
+  it('rises when the house gains services', () => {
+    const m = SimMap.fromLayout(5, 5, () => 'earth');
+    m.set(0, 1, 'road');
+    const runner = new SimRunner(1, m);
+    runner.placeBuilding('house', 1, 1);
+
+    const before = runner.getState().buildings.find((b) => b.type === 'house')?.house?.desirability ?? 0;
+
+    // Grant food + water coverage directly and re-read the snapshot.
+    const instance = runner['buildings'].find((b) => b.type === 'house') as BuildingInstance;
+    if (instance.house) {
+      instance.house.foodCooldown = 50;
+      instance.house.waterCooldown = 50;
+    }
+    const after = runner.getState().buildings.find((b) => b.type === 'house')?.house?.desirability ?? 0;
+    expect(after).toBeGreaterThan(before);
   });
 });
 

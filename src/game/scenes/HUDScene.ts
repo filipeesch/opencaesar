@@ -5,7 +5,9 @@
 
 import Phaser from 'phaser';
 import { BUILDINGS } from '../../sim/buildings';
-import type { BuildingCategory, BuildingType } from '../../sim/types';
+import { HOUSE_TIERS } from '../../sim/config';
+import type { BuildingCategory, BuildingState, BuildingType } from '../../sim/types';
+import { writeSave } from '../save';
 import type { MainScene } from './MainScene';
 
 const BUILD_ORDER: readonly BuildingType[] = ['road', 'house', 'farm', 'granary', 'market', 'well'];
@@ -18,6 +20,8 @@ export class HUDScene extends Phaser.Scene {
   private lastTick = -1;
   private lastMsgCount = -1;
   private activeCategory: CategoryFilter = 'all';
+  /** Building id currently shown in the detail popup, or null when closed. */
+  private inspectId: number | null = null;
 
   constructor() {
     super('HUD');
@@ -37,8 +41,9 @@ export class HUDScene extends Phaser.Scene {
 
     this.els.pop.textContent = String(state.ratings.population);
     this.els.prosperity.textContent = String(state.ratings.prosperity);
+    this.els.happiness.textContent = String(state.ratings.happiness);
     this.els.treasury.textContent = String(Math.floor(state.treasury));
-    this.els.workers.textContent = `${state.assignedWorkers}/${state.totalWorkers}`;
+    this.els.workers.textContent = `${state.assignedWorkers}/${state.totalJobs}`;
     this.els.tax.textContent = `${Math.round(state.policy.taxRate * 100)}%`;
     this.els.wage.textContent = `${Math.round(state.policy.wageRate * 100)}%`;
 
@@ -46,9 +51,14 @@ export class HUDScene extends Phaser.Scene {
       this.lastMsgCount = state.messages.length;
       this.renderLog(state.messages);
     }
+
+    if (this.inspectId !== null) this.renderPopup(state.buildings.find((b) => b.id === this.inspectId) ?? null);
   }
 
   private buildDom(): void {
+    // Remove any previous HUD DOM (a fresh HUD is built each time it launches,
+    // e.g. after a restart).
+    document.querySelector('#hud .hud')?.remove();
     const root = document.createElement('div');
     root.className = 'hud';
 
@@ -58,8 +68,9 @@ export class HUDScene extends Phaser.Scene {
       <div class="hud-title">Roman City Builder</div>
       <div class="hud-stat"><span>Population</span><b data-testid="stat-population"></b></div>
       <div class="hud-stat"><span>Prosperity</span><b data-testid="stat-prosperity"></b></div>
+      <div class="hud-stat"><span>Happiness</span><b data-testid="stat-happiness"></b></div>
       <div class="hud-stat"><span>Treasury</span><b data-testid="stat-treasury"></b></div>
-      <div class="hud-stat"><span>Workers</span><b data-testid="stat-workers"></b></div>
+      <div class="hud-stat"><span>Employed</span><b data-testid="stat-workers"></b></div>
     `;
 
     const build = document.createElement('div');
@@ -117,17 +128,47 @@ export class HUDScene extends Phaser.Scene {
     toast.dataset.testid = 'toast';
     toast.style.display = 'none';
 
-    root.append(stats, build, policy, log, toast);
+    const popup = document.createElement('div');
+    popup.className = 'hud-popup';
+    popup.dataset.testid = 'building-popup';
+    popup.style.display = 'none';
+
+    const pauseBtn = document.createElement('button');
+    pauseBtn.className = 'hud-pause-btn';
+    pauseBtn.dataset.testid = 'pause-button';
+    pauseBtn.textContent = '❚❚';
+    pauseBtn.addEventListener('click', () => this.main?.setPaused(true));
+
+    const overlay = document.createElement('div');
+    overlay.className = 'hud-overlay';
+    overlay.dataset.testid = 'pause-overlay';
+    overlay.innerHTML = `
+      <div class="hud-overlay-card">
+        <div class="hud-overlay-title">Paused</div>
+        <button class="home-btn primary" data-testid="resume-button">Resume</button>
+        <button class="home-btn" data-testid="save-button">Save</button>
+        <button class="home-btn" data-testid="restart-button">Restart</button>
+      </div>
+    `;
+    overlay.style.display = 'none';
+    overlay.querySelector('[data-testid="resume-button"]')?.addEventListener('click', () => this.main?.setPaused(false));
+    overlay.querySelector('[data-testid="save-button"]')?.addEventListener('click', () => this.saveGame());
+    overlay.querySelector('[data-testid="restart-button"]')?.addEventListener('click', () => this.main?.restartToHome());
+
+    root.append(stats, build, policy, log, toast, popup, pauseBtn, overlay);
     document.getElementById('hud')?.appendChild(root);
 
     this.els.pop = root.querySelector('[data-testid="stat-population"]') as HTMLElement;
     this.els.prosperity = root.querySelector('[data-testid="stat-prosperity"]') as HTMLElement;
+    this.els.happiness = root.querySelector('[data-testid="stat-happiness"]') as HTMLElement;
     this.els.treasury = root.querySelector('[data-testid="stat-treasury"]') as HTMLElement;
     this.els.workers = root.querySelector('[data-testid="stat-workers"]') as HTMLElement;
     this.els.tax = root.querySelector('[data-testid="policy-tax-value"]') as HTMLElement;
     this.els.wage = root.querySelector('[data-testid="policy-wage-value"]') as HTMLElement;
     this.els.log = root.querySelector('[data-testid="message-log"]') as HTMLElement;
     this.els.toast = root.querySelector('[data-testid="toast"]') as HTMLElement;
+    this.els.popup = popup;
+    this.els.overlay = overlay;
     this.els.cats = cats;
     this.els.build = grid;
     this.els.taxInput = root.querySelector('[data-testid="policy-tax"]') as HTMLInputElement;
@@ -161,7 +202,25 @@ export class HUDScene extends Phaser.Scene {
     });
 
     this.game.events.on('hud-toast', (text: string) => this.showToast(text));
+    this.game.events.on('game-pause', () => {
+      this.closePopup();
+      this.els.overlay.style.display = 'flex';
+    });
+    this.game.events.on('game-resume', () => {
+      this.els.overlay.style.display = 'none';
+    });
+    this.game.events.on('hud-inspect', (id: number | null) => {
+      if (id === null) {
+        this.closePopup();
+      } else {
+        this.inspectId = id;
+        const state = this.main?.runner.getState();
+        const building = state?.buildings.find((b) => b.id === id);
+        if (building) this.renderPopup(building);
+      }
+    });
     this.game.events.on('hud-build-mode', () => {
+      this.closePopup();
       this.els.build.querySelectorAll('.hud-build-btn').forEach((btn) => {
         const active = this.main?.getBuildMode() === (btn as HTMLElement).dataset.build;
         btn.classList.toggle('active', active === true);
@@ -197,4 +256,64 @@ export class HUDScene extends Phaser.Scene {
       this.els.toast.style.display = 'none';
     }, 3000);
   }
+
+  private closePopup(): void {
+    this.inspectId = null;
+    this.els.popup.style.display = 'none';
+    this.els.popup.innerHTML = '';
+  }
+
+  private saveGame(): void {
+    if (!this.main) return;
+    const result = writeSave(this.main.getSaveData());
+    this.showToast(result.ok ? 'Game saved' : 'Save failed');
+  }
+
+  /** Render the popup for a building snapshot, or close it if the building is gone. */
+  private renderPopup(building: BuildingState | null | undefined): void {
+    if (!building) {
+      this.closePopup();
+      return;
+    }
+    const popup = this.els.popup;
+    const rows: string[] = [];
+    const status = (ok: boolean) => (ok ? '<span class="ok">Yes</span>' : '<span class="bad">No</span>');
+
+    if (building.house) {
+      const h = building.house;
+      rows.push(row('Tier', `${HOUSE_TIERS[h.tier].name} (${h.tier + 1}/5)`));
+      rows.push(row('Population', `${h.populationCapacity}`));
+      rows.push(row('Food', status(h.foodCooldown > 0)));
+      rows.push(row('Water', status(h.waterCooldown > 0)));
+      rows.push(row('Labor', status(h.laborCooldown > 0)));
+      rows.push(row('Desirability', `${h.desirability}`));
+      const happiness = (h as { happiness?: number }).happiness;
+      if (typeof happiness === 'number') {
+        rows.push(row('Happiness', `${happiness}`));
+      }
+    } else {
+      rows.push(row('Workers', `${building.workersAssigned}/${building.workersRequired}`));
+      rows.push(row('Active', status(building.active)));
+      const stock = building.stock.wheat;
+      if (building.type === 'granary') {
+        rows.push(row('Wheat', `${stock ?? 0}/${BUILDINGS.granary.storageCapacity ?? 0}`));
+      } else if (building.type === 'farm') {
+        rows.push(row('Wheat', `${Math.floor(stock ?? 0)}/${BUILDINGS.farm.production?.localCapacity ?? 0}`));
+      }
+    }
+
+    popup.innerHTML = `
+      <div class="hud-popup-header">
+        <span class="hud-popup-title">${BUILDINGS[building.type].name}</span>
+        <button class="hud-popup-close" data-testid="popup-close" aria-label="Close">×</button>
+      </div>
+      ${rows.join('')}
+    `;
+    popup.style.display = 'block';
+    popup.querySelector('.hud-popup-close')?.addEventListener('click', () => this.closePopup());
+  }
+}
+
+function row(label: string, value: string): string {
+  return `<div class="row"><span>${label}</span><b>${value}</b></div>`;
 }

@@ -51,6 +51,21 @@ export interface CommandLogEntry {
   result: 'ok' | PlacementError;
 }
 
+/** A replayable command (structured form of a CommandLogEntry for save/load). */
+export type SaveCommand =
+  | { kind: 'place'; type: BuildingType; x: number; y: number }
+  | { kind: 'setPolicy'; taxRate: number; wageRate: number };
+
+/** Serializable save payload capturing everything needed to resume a sim deterministically. */
+export interface SaveData {
+  version: 1;
+  seed: number;
+  mapSize: number;
+  commands: SaveCommand[];
+  tickCount: number;
+  savedAt: number;
+}
+
 /** Public state of a single building. */
 export interface BuildingState {
   id: number;
@@ -71,6 +86,10 @@ export interface BuildingState {
     foodCooldown: number;
     waterCooldown: number;
     laborCooldown: number;
+    /** Current desirability of the house tile (same value the evolution logic uses). */
+    desirability: number;
+    /** Resident happiness 0..100, derived from coverage, desirability, and wages. */
+    happiness: number;
   };
 }
 
@@ -95,6 +114,8 @@ export interface WalkerState {
 export interface Ratings {
   population: number;
   prosperity: number;
+  /** City-wide happiness 0..100 (population-weighted average of house happiness). */
+  happiness: number;
 }
 
 /** Full public snapshot of the simulation — plain serializable data. */
@@ -110,6 +131,8 @@ export interface SimState {
   ratings: Ratings;
   totalWorkers: number;
   assignedWorkers: number;
+  /** Total jobs = sum of all buildings' worker requirements. */
+  totalJobs: number;
   messages: SimMessage[];
   lastTickWagesUnpaid: boolean;
 }
