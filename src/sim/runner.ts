@@ -30,6 +30,10 @@ import type {
   SimMessage,
   SimState,
   Vec2,
+  Ratings,
+  TradeRoute,
+  EventRecord,
+  MissionState,
   WalkerState,
 } from './types';
 import type { BuildingInstance, WalkerInstance } from './walkers';
@@ -213,6 +217,60 @@ export class SimRunner {
   }
 
   /** Inputs used to derive a house's happiness for the snapshot. */
+  /**
+   * Ratings — culture, prosperity, stability, and favor derived from city state.
+   * Read-only additive accessor.
+   */
+  getRatings(): Ratings {
+    return this.getState().ratings;
+  }
+
+  getTreasury(): number {
+    return this.getState().treasury;
+  }
+
+  /** Total residents across all houses. */
+  getPopulation(): number {
+    return this.getState().ratings.population;
+  }
+
+  getEmployment(): { employed: number; unemployed: number; totalJobs: number } {
+    const state = this.getState();
+    return {
+      employed: state.assignedWorkers,
+      unemployed: Math.max(0, state.ratings.population - state.assignedWorkers),
+      totalJobs: state.totalJobs,
+    };
+  }
+
+  getEvents(): EventRecord[] {
+    return this.getState().messages.map((m) => ({
+      tick: this.getState().tick,
+      type: 'message',
+      text: typeof m === 'string' ? m : (m && 'text' in m ? String(m.text) : String(m)),
+      severity: 'mild',
+    }));
+  }
+
+  startMission(id: string): void {
+    this.mission = { id, started: true, complete: false, failed: false, year: 0, objective: id };
+  }
+  getMission(): MissionState | null {
+    return this.mission;
+  }
+
+  enableTrade(cityId: string, enabled: boolean): void {
+    if (!this.tradeRoutes[cityId]) {
+      this.tradeRoutes[cityId] = { cityId, enabled: false, imports: {}, exports: {} };
+    }
+    this.tradeRoutes[cityId].enabled = enabled;
+  }
+  getTradeRoutes(): Record<string, TradeRoute> {
+    return this.tradeRoutes;
+  }
+
+  private mission: MissionState | null = null;
+  private tradeRoutes: Record<string, TradeRoute> = {};
   private houseHappinessInput(b: BuildingInstance) {
     const services = {
       food: b.house!.foodCooldown > 0,

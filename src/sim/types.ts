@@ -119,6 +119,30 @@ export interface Ratings {
 }
 
 /** Full public snapshot of the simulation — plain serializable data. */
+
+export interface TradeRoute {
+  cityId: string;
+  enabled: boolean;
+  imports: Partial<Record<string, number>>;
+  exports: Partial<Record<string, number>>;
+}
+
+export interface EventRecord {
+  tick: number;
+  type: string;
+  text: string;
+  severity: 'mild' | 'serious' | 'disaster';
+}
+
+export interface MissionState {
+  id: string;
+  started: boolean;
+  complete: boolean;
+  failed: boolean;
+  year: number;
+  objective: string;
+}
+
 export interface SimState {
   tick: number;
   width: number;
