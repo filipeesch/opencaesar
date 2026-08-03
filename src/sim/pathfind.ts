@@ -27,10 +27,20 @@ function key(x: number, y: number): number {
 /**
  * A* over the road graph. Deterministic: identical inputs → identical paths
  * (open list is FIFO, so ties resolve by insertion order, never by object
- * identity or hash order). Returns the list of tiles from start to goal
- * (inclusive of start, exclusive of goal) or null when unreachable.
+ * identity or hash order). Returns the list of intermediate road tiles strictly
+ * between start and goal — both endpoints excluded; a walker already stands on
+ * start and reaches goal by adjacency — or null when unreachable.
+ *
+ * `isTraversable` lets callers restrict which road tiles may be crossed (e.g.
+ * per-walker roadblock policies); it defaults to the terrain-only check, so
+ * existing callers are unchanged.
  */
-export function findRoadPath(map: SimMap, start: Vec2, goal: Vec2): Vec2[] | null {
+export function findRoadPath(
+  map: SimMap,
+  start: Vec2,
+  goal: Vec2,
+  isTraversable: (x: number, y: number) => boolean = (x, y) => map.get(x, y) === 'road',
+): Vec2[] | null {
   if (!map.inBounds(start.x, start.y) || !map.inBounds(goal.x, goal.y)) return null;
   if (start.x === goal.x && start.y === goal.y) return [];
   if (map.get(goal.x, goal.y) !== 'road') return null;
@@ -59,7 +69,9 @@ export function findRoadPath(map: SimMap, start: Vec2, goal: Vec2): Vec2[] | nul
     openIndex.delete(key(node.tile.x, node.tile.y));
 
     if (node.tile.x === goal.x && node.tile.y === goal.y) {
-      // Reconstruct path (exclusive of goal, inclusive of start).
+      // Reconstruct path (exclusive of both start and goal): the goal's parent
+      // chain begins one step past start, and the loop stops before unshifting
+      // start (whose parent is null).
       const path: Vec2[] = [];
       let cur: Node | null = node.parent;
       while (cur && cur.parent !== null) {
@@ -74,7 +86,7 @@ export function findRoadPath(map: SimMap, start: Vec2, goal: Vec2): Vec2[] | nul
     for (const d of DIRS) {
       const nx = node.tile.x + d.x;
       const ny = node.tile.y + d.y;
-      if (map.get(nx, ny) !== 'road') continue;
+      if (!isTraversable(nx, ny)) continue;
       const nk = key(nx, ny);
       if (closed.has(nk)) continue;
       const g = node.g + 1;
