@@ -172,6 +172,21 @@ describe('granary food hub (AGRI-03, spec §11)', () => {
     expect(g.available('wheat')).toBe(100);
   });
 
+  it('prunes expired/fulfilled reservations so the reservation map does not grow (IN-06)', () => {
+    const g = new GranaryModel('g-in06');
+    g.receive('wheat', 100);
+    const expired = g.reserve('wheat', 30, 'm1', 'w1', 0, 5);
+    const fulfilled = g.reserve('wheat', 20, 'm2', 'w2', 0, 100); // stays active past tick 10
+    expect(expired).not.toBeNull();
+    expect(fulfilled).not.toBeNull();
+    g.expireReservations(10); // expires only `expired`
+    expect(g.fulfill(fulfilled!.id)).toBe(true); // fulfills `fulfilled`
+    // Both are gone from the internal ledger → the map is bounded.
+    const ledger = (g as unknown as { reservations: Map<string, unknown> }).reservations;
+    expect(ledger.size).toBe(0);
+    expect(g.activeReservations()).toHaveLength(0);
+  });
+
   it('fulfilment moves reserved units to outgoing and reduces physical stock', () => {
     const g = new GranaryModel('g4');
     g.receive('wheat', 100);

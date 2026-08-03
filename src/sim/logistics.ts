@@ -342,6 +342,8 @@ export class GranaryModel {
     s.physical -= take;
     s.outgoing += take;
     r.state = 'fulfilled';
+    // Prune the ledger so the reservation map does not grow unboundedly (IN-06).
+    this.reservations.delete(reservationId);
     return true;
   }
 
@@ -374,9 +376,11 @@ export class GranaryModel {
   /** Expire reservations past `now`; expired product returns to availability. */
   expireReservations(now: number): number {
     let expired = 0;
-    for (const r of this.reservations.values()) {
+    for (const [id, r] of this.reservations) {
       if (r.state === 'active' && r.expiresAt <= now) {
         r.state = 'expired';
+        // Prune the ledger so the reservation map does not grow unboundedly (IN-06).
+        this.reservations.delete(id);
         expired += 1;
       }
     }
