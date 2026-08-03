@@ -79,3 +79,35 @@ export function decideEvolution(input: EvolutionInput, cfg: HysteresisConfig = D
 
   return 'none';
 }
+
+/**
+ * === Food variety requirements per evolution level (AGRI-01, spec §13.4) ===
+ *
+ * Maps each housing level to the number of food types the house must have
+ * access to. Consulted by the food system before reporting evolution-blocking
+ * shortages; additive and deterministic.
+ */
+export const FOOD_VARIETY_REQUIREMENT: Record<number, number> = {
+  0: 0, // Tent/shack
+  1: 1, // Hut/cabin
+  2: 2,
+  3: 2,
+  4: 3,
+  5: 4,
+};
+
+/** Number of food types required for a given housing level (spec §13.4). */
+export function foodVarietyRequired(level: number): number {
+  return FOOD_VARIETY_REQUIREMENT[Math.max(0, Math.min(5, level))] ?? 0;
+}
+
+/** Whether missing variety blocks evolution at `level` given the current variety. */
+export function varietyBlocksEvolution(level: number, variety: number): boolean {
+  return foodVarietyRequired(level) > variety;
+}
+
+/** The next level's variety requirement (used for "needs X more type" messages). */
+export function nextLevelFoodVarietyNeeded(level: number, variety: number): number {
+  const need = foodVarietyRequired(Math.min(5, level + 1));
+  return Math.max(0, need - variety);
+}
