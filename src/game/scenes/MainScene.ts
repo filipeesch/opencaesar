@@ -12,6 +12,7 @@ import { BUILDINGS } from '../../sim/buildings';
 import { CONFIG } from '../../sim/config';
 import type { BuildingType, PlacementError, PlacementResult, SaveData, SimState, TileType, Vec2 } from '../../sim/types';
 import { SimRunner } from '../../sim/runner';
+import { TimeSystem } from '../../sim/time';
 import { HOUSE_FOOT_TOP_Y, HOUSE_FRAME_H, houseFrame, isSheetLoaded } from '../art';
 import { drawBuilding } from '../buildingArt';
 import { BUILDING_COLORS, HOUSE_COLORS, TILE_H, TILE_W, WALKER_COLORS } from '../palette';
@@ -37,7 +38,8 @@ export class MainScene extends Phaser.Scene {
   private entityObjs: RenderObj[] = [];
   private ghost: Phaser.GameObjects.Graphics | null = null;
   private lastTiles: number[] = [];
-  private acc = 0;
+  /** Fixed-timestep scheduler (pause + speed), decoupled from frame rate. */
+  private readonly timeSystem = new TimeSystem(1000 / CONFIG.ticksPerSecond);
   /** Walker continuous positions at the previous tick (for smooth motion). */
   private walkerPrev = new Map<number, { x: number; y: number }>();
   private buildType: BuildingType | null = null;
@@ -131,14 +133,8 @@ export class MainScene extends Phaser.Scene {
   }
 
   override update(_time: number, delta: number): void {
-    if (!this.paused) {
-      this.acc += delta;
-      const stepMs = 1000 / CONFIG.ticksPerSecond;
-      while (this.acc >= stepMs) {
-        this.runner.tick();
-        this.acc -= stepMs;
-      }
-    }
+    const n = this.timeSystem.advance(delta);
+    for (let i = 0; i < n; i++) this.runner.tick();
     const state = this.runner.getState();
     this.syncTerrain(state);
     this.syncEntities(state);
@@ -162,14 +158,19 @@ export class MainScene extends Phaser.Scene {
   setPaused(paused: boolean): void {
     if (this.paused === paused) return;
     this.paused = paused;
+    this.timeSystem.setPaused(paused);
     if (paused) {
       this.setBuildMode(null);
       this.game.events.emit('hud-inspect', null);
       this.game.events.emit('game-pause');
     } else {
-      this.acc = 0;
       this.game.events.emit('game-resume');
     }
+  }
+
+  /** Select a simulation speed multiplier (0.5, 1, 2, 4, 8). */
+  setSpeed(speed: number): void {
+    this.timeSystem.setSpeed(speed);
   }
 
   isPaused(): boolean {
@@ -390,7 +391,7 @@ export class MainScene extends Phaser.Scene {
     // between the previous tick's position and this tick's over the current
     // tick's elapsed fraction so movement is smooth at any frame rate.
     const stepMs = 1000 / CONFIG.ticksPerSecond;
-    const t = Phaser.Math.Clamp(this.acc / stepMs, 0, 1);
+    const t = Phaser.Math.Clamp(this.timeSystem.pendingMs() / stepMs, 0, 1);
     const seen = new Set<number>();
     for (const w of state.walkers) {
       seen.add(w.id);

@@ -43,6 +43,10 @@ import type {
 import type { BuildingInstance, WalkerInstance } from './walkers';
 import { createWalker, updateWalker } from './walkers';
 
+type PendingCommand =
+  | { kind: 'place'; type: BuildingType; x: number; y: number }
+  | { kind: 'policy'; taxRate: number; wageRate: number };
+
 export class SimRunner {
   private readonly map: SimMap;
   private readonly rng: Rng;
@@ -69,6 +73,8 @@ export class SimRunner {
   /** Ordered list of state-changing commands, used to reconstruct a deterministic save. */
   private saveCommands: SaveCommand[] = [];
   private lowFoodWarnCooldown = 0;
+  private paused = false;
+  private pendingCommands: PendingCommand[] = [];
 
   constructor(seed: number, map?: SimMap, mapSize?: number) {
     this.seed = seed;
@@ -93,9 +99,36 @@ export class SimRunner {
   // Public API -----------------------------------------------------------------
 
   /** Advance the simulation by exactly one tick. */
-  tick(): void {
-    this.tickCount += 1;
+  /** Toggle whether the sim will defer user commands until the next tick. */
+  setPaused(paused: boolean): void {
+    this.paused = paused;
+  }
 
+  isPaused(): boolean {
+    return this.paused;
+  }
+
+  getPendingCommandCount(): number {
+    return this.pendingCommands.length;
+  }
+
+  private drainPendingCommands(): void {
+    if (this.pendingCommands.length === 0) return;
+    const batch = this.pendingCommands;
+    this.pendingCommands = [];
+    for (const cmd of batch) {
+      if (cmd.kind === 'place') this.placeBuilding(cmd.type, cmd.x, cmd.y);
+      else this.setPolicy(cmd.taxRate, cmd.wageRate);
+    }
+  }
+
+  private enqueue(cmd: PendingCommand): void {
+    this.pendingCommands.push(cmd);
+  }
+
+  tick(): void {
+    this.drainPendingCommands();
+    this.tickCount += 1;
     this.tickSpawns();
     this.tickLabor();
     this.tickFood();
@@ -158,6 +191,10 @@ export class SimRunner {
 
   /** Place a building at footprint anchor (x, y). Rejected commands leave state unchanged. */
   placeBuilding(type: BuildingType, x: number, y: number): PlacementResult {
+    if (this.paused) {
+      this.enqueue({ kind: 'place', type, x, y });
+      return { ok: true };
+    }
     const result = checkPlacement(
       this.map,
       (tx, ty) => this.occupiedTiles.has(this.tileKey(tx, ty)),
@@ -226,6 +263,10 @@ export class SimRunner {
 
   /** Set the tax and wage rates (each clamped to 0..1). */
   setPolicy(taxRate: number, wageRate: number): Policy {
+    if (this.paused) {
+      this.enqueue({ kind: 'policy', taxRate: clamp01(taxRate), wageRate: clamp01(wageRate) });
+      return { ...this.policy };
+    }
     this.policy = { taxRate: clamp01(taxRate), wageRate: clamp01(wageRate) };
     this.commandLog.push({
       tick: this.tickCount,

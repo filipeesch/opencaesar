@@ -2,6 +2,8 @@ import { CONFIG } from './config';
 import type { Rng } from './rng';
 import { randFloat } from './rng';
 import type { TileQuery, TileType, Vec2 } from './types';
+import type { TileState } from './tile';
+import { defaultTileState } from './tile';
 
 const OUT_OF_BOUNDS: TileQuery = 'out-of-bounds';
 
@@ -13,15 +15,22 @@ export class Map {
   readonly width: number;
   readonly height: number;
   private tiles: TileType[][];
+  private states: TileState[][];
 
   constructor(width: number, height: number, fill: TileType = 'earth') {
     this.width = width;
     this.height = height;
     this.tiles = [];
+    this.states = [];
     for (let y = 0; y < height; y++) {
       const row: TileType[] = [];
-      for (let x = 0; x < width; x++) row.push(fill);
+      const srow: TileState[] = [];
+      for (let x = 0; x < width; x++) {
+        row.push(fill);
+        srow.push(defaultTileState());
+      }
       this.tiles.push(row);
+      this.states.push(srow);
     }
   }
 
@@ -113,6 +122,18 @@ export class Map {
   set(x: number, y: number, tile: TileType): void {
     if (!this.inBounds(x, y)) return;
     this.tiles[y][x] = tile;
+  }
+
+  /** Read the expanded per-tile state. Falls back to a default if never set. */
+  tileState(x: number, y: number): TileState {
+    if (this.inBounds(x, y) && this.states[y]) return this.states[y][x];
+    return defaultTileState();
+  }
+
+  /** Mutate the expanded per-tile state in place (no-op when out of bounds). */
+  mutateTileState(x: number, y: number, fn: (s: TileState) => void): void {
+    if (!this.inBounds(x, y) || !this.states[y]) return;
+    fn(this.states[y][x]);
   }
 
   setRect(x1: number, y1: number, x2: number, y2: number, tile: TileType): void {

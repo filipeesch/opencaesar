@@ -139,6 +139,19 @@ export class HUDScene extends Phaser.Scene {
     pauseBtn.textContent = '❚❚';
     pauseBtn.addEventListener('click', () => this.main?.setPaused(true));
 
+    const speeds = [0.5, 1, 2, 4, 8];
+    const speedRow = document.createElement('div');
+    speedRow.className = 'hud-speed-row';
+    speedRow.dataset.testid = 'speed-control';
+    for (const s of speeds) {
+      const b = document.createElement('button');
+      b.className = 'hud-speed-btn';
+      b.dataset.testid = `speed-${s}`;
+      b.textContent = `${s}×`;
+      b.addEventListener('click', () => this.main?.setSpeed(s));
+      speedRow.appendChild(b);
+    }
+
     const overlay = document.createElement('div');
     overlay.className = 'hud-overlay';
     overlay.dataset.testid = 'pause-overlay';
@@ -155,7 +168,7 @@ export class HUDScene extends Phaser.Scene {
     overlay.querySelector('[data-testid="save-button"]')?.addEventListener('click', () => this.saveGame());
     overlay.querySelector('[data-testid="restart-button"]')?.addEventListener('click', () => this.main?.restartToHome());
 
-    root.append(stats, build, policy, log, toast, popup, pauseBtn, overlay);
+    root.append(stats, build, policy, log, toast, popup, speedRow, pauseBtn, overlay);
     document.getElementById('hud')?.appendChild(root);
 
     this.els.pop = root.querySelector('[data-testid="stat-population"]') as HTMLElement;
