@@ -46,13 +46,19 @@ function collectSourceFiles(dir) {
 }
 
 /**
- * Scan src/ and data/ for forbidden military tokens. Returns an array of
- * offender descriptors `relativepath:lineno (token)` for every line whose
- * case-insensitive word-boundary regex matches a token and which does NOT
- * include the --NO-MILITARY-- labeled-doc allowance.
+ * Scan src/, data/ (plus any extra roots for the probe test) for forbidden
+ * military tokens. Returns an array of offender descriptors
+ * `relativepath:lineno (token)` for every line whose case-insensitive
+ * word-boundary regex matches a token and which does NOT include the
+ * --NO-MILITARY-- labeled-doc allowance.
+ *
+ * `extraPaths` lets the vitest gate point the scanner at a temporary probe
+ * directory OUTSIDE src/ (WR-03), so the negative test never races the
+ * balance-parity src file enumeration.
  */
-export function scanMilitarySources() {
-  const sources = [...collectSourceFiles(join(root, 'src')), ...collectSourceFiles(join(root, 'data'))];
+export function scanMilitarySources(extraPaths = []) {
+  const rootDirs = [join(root, 'src'), join(root, 'data'), ...extraPaths];
+  const sources = rootDirs.flatMap((dir) => collectSourceFiles(dir));
   const offenders = [];
   for (const file of sources) {
     const text = readFileSync(file, 'utf8');

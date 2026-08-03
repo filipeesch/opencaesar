@@ -4,4 +4,4 @@
  * single source of truth with `npm run check:military`.
  */
 export const FORBIDDEN_TOKENS: readonly string[];
-export function scanMilitarySources(): string[];
+export function scanMilitarySources(extraPaths?: string[]): string[];

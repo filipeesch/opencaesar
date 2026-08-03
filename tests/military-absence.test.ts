@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { readdirSync, writeFileSync, rmSync } from 'node:fs';
+import { readdirSync, writeFileSync, rmSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { FORBIDDEN_TOKENS, scanMilitarySources } from '../scripts/check-military.mjs';
 
@@ -42,18 +43,22 @@ describe('military-absence gate (D9)', () => {
   });
 
   it('allow --NO-MILITARY-- labeled lines and flag unlabeled token lines', () => {
-    const probe = join(root, 'src', '__military_probe__.ts');
+    // Probe lives in an OS temp dir, NOT src/ (WR-03): balance-parity snapshots
+    // src/**/*.ts during its describe block, so a transient probe under src/
+    // races that enumeration and can be read after deletion (ENOENT flake).
+    const probeDir = mkdtempSync(join(tmpdir(), 'military-probe-'));
+    const probe = join(probeDir, '__military_probe__.ts');
     try {
       expect(FORBIDDEN_TOKENS).toEqual(expect.arrayContaining(['army', 'enemy']));
       writeFileSync(
         probe,
         'const a = 1; // army (--NO-MILITARY--)\nconst b = 2; // enemy\n',
       );
-      const offenders = scanMilitarySources();
+      const offenders = scanMilitarySources([probeDir]);
       expect(offenders.filter((o) => o.includes('army')).length).toBe(0);
       expect(offenders.some((o) => o.includes('enemy'))).toBe(true);
     } finally {
-      rmSync(probe, { force: true });
+      rmSync(probeDir, { recursive: true, force: true });
     }
   });
 
