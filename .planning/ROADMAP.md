@@ -86,10 +86,13 @@ Plans:
 **Depends on**: Phase 1
 **Requirements**: AGRI-01, AGRI-02, AGRI-03
 **Success Criteria** (what must be TRUE):
-  1. Farm types produce on fertile land with road access and workers; paused farms stop.
-  2. Granaries accept/refuse/request/maintain/reserve/export food per command.
-  3. Farm → granary → market → house food pipeline works for multiple food types.
+   1. Farm types produce on fertile land with road access and workers; paused farms stop.
+   2. Granaries accept/refuse/request/maintain/reserve/export food per command.
+   3. Farm → granary → market → house food pipeline works for multiple food types.
 **Plans**: TBD
+
+Plans:
+- [ ] 05-01: Full food supply chain (imported from `game-specs/fodd-supply-chain.md`) — production, physical loads, granary orders/reservations, market distribution, house consumption/variety, import/export, management UI
 
 ### Phase 6: Production & Manufacturing
 **Goal**: Extraction sites and workshops producing physical loads.
