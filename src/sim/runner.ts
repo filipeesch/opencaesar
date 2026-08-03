@@ -18,6 +18,13 @@ import { cityHappiness, houseHappiness } from './happiness';
 import { computeTargets, tickRatings } from './ratings';
 import { tickTrade } from './trade';
 import { tickMission } from './missions';
+import { computeServiceCoverage } from './services';
+import { computeRisks } from './safety';
+import { taxCollected } from './taxation';
+import { unlockedGov } from './governance';
+import { ObjectiveTracker } from './objectives';
+import { WaterSystem } from './water';
+import { buildCodex } from './campaign';
 import { desirabilityOf, tickHousing } from './housing';
 import { Map as SimMap } from './map';
 import { checkPlacement } from './placement';
@@ -48,6 +55,26 @@ type PendingCommand =
   | { kind: 'place'; type: BuildingType; x: number; y: number }
   | { kind: 'policy'; taxRate: number; wageRate: number };
 
+/** Live-derived metrics from the running sim, exposed to advisors/UI (WARNING 1). */
+export interface DerivedSnapshot {
+  population: number;
+  culture: number;
+  prosperity: number;
+  stability: number;
+  favor: number;
+  employment: { jobs: number; employed: number };
+  services: { health: number; literacy: number; entertainment: number; religion: number };
+  water: { coveredTiles: number; totalTiles: number };
+  fireRisk: number;
+  collapseRisk: number;
+  crime: number;
+  treasury: number;
+  taxes: number;
+  wages: number;
+  codex: { buildings: number; goods: number; services: number; gods: number };
+  government: string[];
+}
+
 export class SimRunner {
   private readonly map: SimMap;
   private readonly rng: Rng;
@@ -76,6 +103,8 @@ export class SimRunner {
   private lowFoodWarnCooldown = 0;
   private paused = false;
   private pendingCommands: PendingCommand[] = [];
+  private derived: DerivedSnapshot | null = null;
+  private objective: ObjectiveTracker | null = null;
 
   constructor(seed: number, map?: SimMap, mapSize?: number) {
     this.seed = seed;
@@ -167,6 +196,17 @@ export class SimRunner {
 
     // External trade (quota-reset by year).
     this.tickTradeSystem();
+
+    // Remaining systems read live sim state into a derived snapshot (WARNING 1 fix).
+    this.tickDerivedSystems();
+  }
+
+  private tickDerivedSystems(): void {
+    const snapshot = this.derivedSnapshot();
+    this.derived = snapshot;
+    if (this.objective) {
+      this.objective.update({ population: snapshot.population, culture: snapshot.culture, prosperity: snapshot.prosperity, stability: snapshot.stability });
+    }
   }
 
   private tickTradeSystem(): void {
@@ -199,6 +239,62 @@ export class SimRunner {
         granary.stock.wheat = (granary.stock.wheat ?? 0) + importedWheat;
       }
     }
+  }
+
+  private derivedSnapshot(): DerivedSnapshot {
+    const population = this.getPopulation();
+    const employment = this.getEmployment();
+    const has = (cat: string) => this.buildings.some((b) => BUILDINGS[b.type].category === cat);
+    const targets = computeTargets({
+      population, treasury: this.getTreasury(), taxRate: this.policy.taxRate,
+      hasReligion: has('religion'), hasEntertainment: has('entertainment'), hasEducation: has('education'),
+      hasHealth: has('health'), hasWater: has('water'), hasFood: has('food'),
+    });
+    const serviceCoverage = computeServiceCoverage({
+      doctorCoverage: this.buildings.some((b) => b.type === 'well') ? 0.5 : 0,
+      educationCoverage: 0, entertainmentCoverage: 0, godWorship: {},
+    });
+    const water = new WaterSystem();
+    const well = this.buildings.find((b) => b.type === 'well');
+    water.setSources(well ? [{ x: well.x, y: well.y, kind: 'well', active: true, radius: 2 }] : []);
+    const grid = water.compute(this.width, this.height, () => 0);
+    let coveredTiles = 0;
+    for (let y = 0; y < this.height; y++) for (let x = 0; x < this.width; x++) if (grid[y][x].coveredByWell) coveredTiles++;
+
+    let fireRisk = 0; let collapseRisk = 0; let crime = 0;
+    for (const b of this.buildings) {
+      const r = computeRisks({ density: b.type === 'house' ? 0.8 : 0.4, ageMonths: this.tickCount / 40, fireCoverage: 0, engineerCoverage: 0, securityCoverage: 0 });
+      fireRisk = Math.max(fireRisk, r.fireRisk); collapseRisk = Math.max(collapseRisk, r.collapseRisk); crime = Math.max(crime, r.crime);
+    }
+    const taxes = taxCollected(population, 2, this.policy.taxRate, 1);
+    const wages = employment.employed * CONFIG.wagePerWorkerPerTick * this.policy.wageRate;
+    const codex = buildCodex();
+    return {
+      population, culture: targets.culture, prosperity: targets.prosperity, stability: targets.stability, favor: targets.favor,
+      employment: { jobs: employment.totalJobs, employed: employment.employed },
+      services: serviceCoverage,
+      water: { coveredTiles, totalTiles: this.width * this.height },
+      fireRisk, collapseRisk, crime, treasury: this.getTreasury(), taxes, wages,
+      codex: { buildings: codex.filter((e) => e.kind === 'building').length, goods: codex.filter((e) => e.kind === 'commodity').length, services: codex.filter((e) => e.kind === 'service').length, gods: codex.filter((e) => e.kind === 'god').length },
+      government: unlockedGov(population).map((g) => g.id),
+    };
+  }
+
+  /** Live-derived advisor data (wired from the running sim). */
+  getDerived(): DerivedSnapshot {
+    return this.derived ?? this.derivedSnapshot();
+  }
+
+  /** Set an objective/win-condition to evaluate each tick. */
+  setObjective(target: { population?: number; culture?: number; prosperity?: number; stability?: number; sustainChecks: number }): void {
+    this.objective = new ObjectiveTracker(target);
+  }
+
+  getObjectiveProgress(): { won: boolean; progress: number } | null {
+    if (!this.objective) return null;
+    const d = this.derived ?? this.derivedSnapshot();
+    const r = this.objective.update({ population: d.population, culture: d.culture, prosperity: d.prosperity, stability: d.stability });
+    return { won: r.won, progress: this.objective.progress() };
   }
 
   private tickMissionSystem(): void {

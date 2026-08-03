@@ -47,6 +47,17 @@ export class HUDScene extends Phaser.Scene {
     this.els.tax.textContent = `${Math.round(state.policy.taxRate * 100)}%`;
     this.els.wage.textContent = `${Math.round(state.policy.wageRate * 100)}%`;
 
+    const derived = this.main?.runner.getDerived();
+    if (derived) {
+      this.els.culture.textContent = String(derived.culture);
+      this.els.stability.textContent = String(derived.stability);
+      this.els.favor.textContent = String(derived.favor);
+      const wp = derived.water.totalTiles ? derived.water.coveredTiles / derived.water.totalTiles : 0;
+      this.els.water.textContent = `${Math.round(wp * 100)}%`;
+      this.els.risk.textContent = `${Math.round(Math.max(derived.crime, derived.collapseRisk, derived.fireRisk) * 100)}%`;
+      this.els.gov.textContent = derived.government.join(',') || 'none';
+    }
+
     if (state.messages.length !== this.lastMsgCount) {
       this.lastMsgCount = state.messages.length;
       this.renderLog(state.messages);
@@ -71,6 +82,12 @@ export class HUDScene extends Phaser.Scene {
       <div class="hud-stat"><span>Happiness</span><b data-testid="stat-happiness"></b></div>
       <div class="hud-stat"><span>Treasury</span><b data-testid="stat-treasury"></b></div>
       <div class="hud-stat"><span>Employed</span><b data-testid="stat-workers"></b></div>
+      <div class="hud-stat"><span>Culture</span><b data-testid="stat-culture"></b></div>
+      <div class="hud-stat"><span>Stability</span><b data-testid="stat-stability"></b></div>
+      <div class="hud-stat"><span>Favor</span><b data-testid="stat-favor"></b></div>
+      <div class="hud-stat"><span>Water</span><b data-testid="stat-water"></b></div>
+      <div class="hud-stat"><span>Risk</span><b data-testid="stat-risk"></b></div>
+      <div class="hud-stat"><span>Gov</span><b data-testid="stat-gov"></b></div>
     `;
 
     const build = document.createElement('div');
@@ -176,6 +193,12 @@ export class HUDScene extends Phaser.Scene {
     this.els.happiness = root.querySelector('[data-testid="stat-happiness"]') as HTMLElement;
     this.els.treasury = root.querySelector('[data-testid="stat-treasury"]') as HTMLElement;
     this.els.workers = root.querySelector('[data-testid="stat-workers"]') as HTMLElement;
+    this.els.culture = root.querySelector('[data-testid="stat-culture"]') as HTMLElement;
+    this.els.stability = root.querySelector('[data-testid="stat-stability"]') as HTMLElement;
+    this.els.favor = root.querySelector('[data-testid="stat-favor"]') as HTMLElement;
+    this.els.water = root.querySelector('[data-testid="stat-water"]') as HTMLElement;
+    this.els.risk = root.querySelector('[data-testid="stat-risk"]') as HTMLElement;
+    this.els.gov = root.querySelector('[data-testid="stat-gov"]') as HTMLElement;
     this.els.tax = root.querySelector('[data-testid="policy-tax-value"]') as HTMLElement;
     this.els.wage = root.querySelector('[data-testid="policy-wage-value"]') as HTMLElement;
     this.els.log = root.querySelector('[data-testid="message-log"]') as HTMLElement;

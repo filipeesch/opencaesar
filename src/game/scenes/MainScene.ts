@@ -479,6 +479,10 @@ export class MainScene extends Phaser.Scene {
       },
       state: () => this.runner.getState(),
       setBuildMode: (type: BuildingType | null) => this.setBuildMode(type),
+      setObjective: (t: { population?: number; culture?: number; prosperity?: number; stability?: number; sustainChecks: number }) =>
+        this.runner.setObjective(t),
+      objectiveProgress: () => this.runner.getObjectiveProgress(),
+      derived: () => this.runner.getDerived(),
       buildTypes: BUILDABLE_TYPES,
       camera: () => {
         const c = this.cam;

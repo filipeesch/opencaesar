@@ -8,6 +8,13 @@ declare global {
       place: (type: BuildingType, x: number, y: number) => PlacementResult;
       runTicks: (n: number) => void;
       state: () => SimState;
+      setObjective: (t: { population?: number; culture?: number; prosperity?: number; stability?: number; sustainChecks: number }) => void;
+      objectiveProgress: () => { won: boolean; progress: number } | null;
+      derived: () => {
+        population: number; culture: number; prosperity: number; stability: number; favor: number;
+        water: { coveredTiles: number; totalTiles: number };
+        codex: { buildings: number; goods: number; services: number; gods: number };
+      };
       camera: () => { zoom: number; scrollX: number; scrollY: number };
     };
   }

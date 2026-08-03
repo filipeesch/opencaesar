@@ -131,3 +131,26 @@ describe('save/load round-trip determinism (task 12.3)', () => {
     expect(c.getStateJson()).toBe(b.getStateJson());
   });
 });
+
+describe('derived sim wiring (warning fix)', () => {
+  it('getDerived returns live-derived metrics after ticking', () => {
+    const r = new SimRunner(55);
+    for (let i = 0; i < 20; i++) r.tick();
+    const d = r.getDerived();
+    expect(typeof d.population).toBe('number');
+    expect(typeof d.culture).toBe('number');
+    expect(typeof d.prosperity).toBe('number');
+    expect(d.water.totalTiles).toBeGreaterThan(0);
+    expect(d.codex.buildings).toBeGreaterThan(0);
+    expect(Array.isArray(d.government)).toBe(true);
+  });
+
+  it('objective win-condition evaluates against live derived state', () => {
+    const r = new SimRunner(99);
+    for (let i = 0; i < 10; i++) r.tick();
+    r.setObjective({ sustainChecks: 1 });
+    const prog = r.getObjectiveProgress();
+    expect(prog).not.toBeNull();
+    expect(typeof prog!.progress).toBe('number');
+  });
+});

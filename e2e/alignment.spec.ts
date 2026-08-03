@@ -98,12 +98,18 @@ test('drag that starts over the HUD still pans the camera', async ({ page }) => 
   await openGame(page);
 
   // The HUD column has pointer-events; pressing there and dragging onto the
-  // canvas must still pan the map. Start in the #hud root's pointer-events:
-  // none band below the bottom panel (the panels themselves opt back in).
+  // canvas must still pan the map. Start just below the HUD column's bottom
+  // edge (on the pointer-events-auto canvas) so the drag pans. Using the
+  // measured height keeps this robust as the HUD grows.
+  const hudBottom = await page.evaluate(() => {
+    const hud = document.querySelector('#hud') as HTMLElement | null;
+    return hud ? hud.getBoundingClientRect().bottom : 0;
+  });
+  const startY = Math.min(hudBottom + 6, 760);
   const before = await getCamera(page);
-  await page.mouse.move(1200, 465);
+  await page.mouse.move(1200, startY);
   await page.mouse.down();
-  await page.mouse.move(900, 465, { steps: 8 });
+  await page.mouse.move(900, startY, { steps: 8 });
   await page.mouse.up();
   await page.waitForTimeout(100);
   const after = await getCamera(page);
