@@ -10,8 +10,8 @@ import type { BuildingCategory, BuildingState, BuildingType } from '../../sim/ty
 import { writeSave } from '../save';
 import type { MainScene } from './MainScene';
 
-const BUILD_ORDER: readonly BuildingType[] = ['road', 'house', 'farm', 'granary', 'market', 'well'];
-const CATEGORIES: readonly BuildingCategory[] = ['roads', 'housing', 'food', 'water', 'infrastructure'];
+const BUILD_ORDER: readonly BuildingType[] = ['road', 'house', 'garden', 'well', 'fountain', 'farm', 'orchard', 'granary', 'market', 'engineer_post', 'fire_station', 'clinic', 'school', 'library', 'temple', 'theatre', 'forum'];
+const CATEGORIES: readonly BuildingCategory[] = ['roads', 'housing', 'food', 'water', 'infrastructure', 'engineering', 'safety', 'health', 'education', 'entertainment', 'religion', 'government', 'ornament'];
 type CategoryFilter = BuildingCategory | 'all';
 
 export class HUDScene extends Phaser.Scene {

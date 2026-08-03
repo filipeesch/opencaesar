@@ -12,11 +12,17 @@ export type TileType = 'earth' | 'water' | 'fertile' | 'trees' | 'rock' | 'road'
 export type TileQuery = TileType | 'out-of-bounds';
 
 /** Tradable/consumable good types. */
-export type Good = 'wheat';
+export type Good = 'wheat' | 'pottery' | 'vegetables' | 'fruit' | 'fish' | 'meat' | 'furniture' | 'wine' | 'oil' | 'tools' | 'clay' | 'timber' | 'iron' | 'marble' | 'olives' | 'grapes';
 
-export type BuildingType = 'road' | 'house' | 'farm' | 'granary' | 'market' | 'well';
+export type BuildingType =
+  | 'road' | 'house' | 'farm' | 'granary' | 'market' | 'well'
+  | 'fountain' | 'orchard' | 'engineer_post' | 'fire_station' | 'clinic'
+  | 'school' | 'library' | 'temple' | 'theatre' | 'forum' | 'garden';
 
-export type BuildingCategory = 'roads' | 'housing' | 'food' | 'water' | 'infrastructure';
+export type BuildingCategory =
+  | 'roads' | 'housing' | 'food' | 'water' | 'infrastructure'
+  | 'engineering' | 'safety' | 'health' | 'education' | 'entertainment'
+  | 'religion' | 'government' | 'ornament';
 
 export type WalkerType = 'market' | 'well' | 'labor';
 

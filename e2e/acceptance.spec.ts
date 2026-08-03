@@ -47,3 +47,14 @@ test('policy sliders update live sim policy', async ({ page }) => {
   await page.waitForTimeout(200);
   expect((await getState(page)).policy.taxRate).toBeCloseTo(0.35, 2);
 });
+
+test('build menu exposes the full construction catalog (not just 6 types)', async ({ page }) => {
+  await openGame(page);
+  for (const type of ['road', 'house', 'garden', 'fountain', 'orchard', 'granary', 'fire_station', 'clinic', 'school', 'temple', 'theatre', 'forum']) {
+    await expect(page.getByTestId(`build-${type}`)).toBeVisible();
+  }
+  // category tabs exist for the new groups
+  for (const cat of ['water', 'education', 'religion', 'government', 'ornament']) {
+    await expect(page.getByTestId(`category-${cat}`)).toBeVisible();
+  }
+});

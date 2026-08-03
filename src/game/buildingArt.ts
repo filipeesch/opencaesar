@@ -20,11 +20,10 @@ interface Pt {
 
 /** Wall height (screen px) each building type rises above its footprint. */
 const RISE: Record<Exclude<BuildingType, 'road'>, number> = {
-  house: 10,
-  farm: 9,
-  granary: 20,
-  market: 16,
-  well: 7,
+  house: 10, farm: 9, granary: 20, market: 16, well: 7,
+  fountain: 9, orchard: 9, engineer_post: 12, fire_station: 16,
+  clinic: 12, school: 16, library: 14, temple: 18, theatre: 18,
+  forum: 20, garden: 6,
 };
 
 export interface BuildingArtOptions {

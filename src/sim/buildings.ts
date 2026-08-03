@@ -96,6 +96,66 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     workers: 1,
     spawnEveryTicks: CONFIG.wellSpawnEveryTicks,
   },
+  fountain: {
+    type: 'fountain',
+    name: 'Fountain',
+    category: 'water',
+    footprint: 1,
+    cost: 60,
+    allowedTerrains: ['earth', 'fertile', 'trees', 'rock'],
+    requiresRoad: true,
+    workers: 1,
+    spawnEveryTicks: CONFIG.wellSpawnEveryTicks,
+  },
+  orchard: {
+    type: 'orchard',
+    name: 'Orchard',
+    category: 'food',
+    footprint: 2,
+    cost: 90,
+    allowedTerrains: ['fertile', 'earth', 'trees', 'rock'],
+    requiredTerrain: 'fertile',
+    minRequiredTiles: 2,
+    requiresRoad: true,
+    workers: 1,
+    production: { good: 'wheat', perTick: CONFIG.farmProductionPerTick, localCapacity: CONFIG.farmStorageCapacity },
+  },
+  engineer_post: {
+    type: 'engineer_post', name: 'Engineering Post', category: 'engineering',
+    footprint: 1, cost: 70, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 1,
+  },
+  fire_station: {
+    type: 'fire_station', name: 'Fire Station', category: 'safety',
+    footprint: 2, cost: 120, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 2,
+  },
+  clinic: {
+    type: 'clinic', name: 'Clinic', category: 'health',
+    footprint: 1, cost: 110, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 1,
+  },
+  school: {
+    type: 'school', name: 'School', category: 'education',
+    footprint: 2, cost: 150, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 2,
+  },
+  library: {
+    type: 'library', name: 'Library', category: 'education',
+    footprint: 1, cost: 130, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 1,
+  },
+  temple: {
+    type: 'temple', name: 'Temple', category: 'religion',
+    footprint: 2, cost: 160, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 2,
+  },
+  theatre: {
+    type: 'theatre', name: 'Theatre', category: 'entertainment',
+    footprint: 2, cost: 180, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 2,
+  },
+  forum: {
+    type: 'forum', name: 'Forum', category: 'government',
+    footprint: 2, cost: 220, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 2,
+  },
+  garden: {
+    type: 'garden', name: 'Garden', category: 'ornament',
+    footprint: 1, cost: 30, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: false, workers: 0,
+  },
 };
 
 /** Immutable house-tier table exposed for UI and tests. */

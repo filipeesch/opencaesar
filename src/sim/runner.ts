@@ -27,6 +27,7 @@ import { WaterSystem } from './water';
 import { buildCodex } from './campaign';
 import { desirabilityOf, tickHousing } from './housing';
 import { Map as SimMap } from './map';
+import { findRoadPath } from './pathfind';
 import { checkPlacement } from './placement';
 import type { Rng } from './rng';
 import { mulberry32 } from './rng';
@@ -251,11 +252,13 @@ export class SimRunner {
       hasHealth: has('health'), hasWater: has('water'), hasFood: has('food'),
     });
     const serviceCoverage = computeServiceCoverage({
-      doctorCoverage: this.buildings.some((b) => b.type === 'well') ? 0.5 : 0,
-      educationCoverage: 0, entertainmentCoverage: 0, godWorship: {},
+      doctorCoverage: this.buildings.some((b) => b.type === 'clinic' || b.type === 'fire_station') ? 0.8 : 0,
+      educationCoverage: this.buildings.some((b) => b.type === 'school' || b.type === 'library') ? 0.8 : 0,
+      entertainmentCoverage: this.buildings.some((b) => b.type === 'theatre') ? 0.8 : 0,
+      godWorship: this.buildings.some((b) => b.type === 'temple') ? { jupiter: 0.8 } : {},
     });
     const water = new WaterSystem();
-    const well = this.buildings.find((b) => b.type === 'well');
+    const well = this.buildings.find((b) => b.type === 'well' || b.type === 'fountain');
     water.setSources(well ? [{ x: well.x, y: well.y, kind: 'well', active: true, radius: 2 }] : []);
     const grid = water.compute(this.width, this.height, () => 0);
     let coveredTiles = 0;
@@ -603,18 +606,23 @@ export class SimRunner {
   /** Farm production, then cart transfer from farms to touching granaries. */
   private tickFood(): void {
     for (const b of this.buildings) {
-      if (b.type !== 'farm' || !b.active) continue;
+      if (b.type !== 'farm' && b.type !== 'orchard') continue;
+      if (!b.active) continue;
+      const def = BUILDINGS[b.type];
+      if (!def.production) continue;
       const stock = b.stock.wheat ?? 0;
-      if (stock < CONFIG.farmStorageCapacity) {
-        b.stock.wheat = Math.min(CONFIG.farmStorageCapacity, stock + CONFIG.farmProductionPerTick);
+      if (stock < def.production.localCapacity) {
+        b.stock.wheat = Math.min(def.production.localCapacity, stock + def.production.perTick);
       }
     }
 
     for (const farm of this.buildings) {
-      if (farm.type !== 'farm') continue;
+      if (farm.type !== 'farm' && farm.type !== 'orchard') continue;
       const stock = farm.stock.wheat ?? 0;
       if (stock <= 0) continue;
-      const granary = this.findTouchingGranary(farm);
+      // Prefer an adjacent granary, then a road-reachable one.
+      let granary = this.findTouchingGranary(farm);
+      if (!granary) granary = this.findReachableGranary(farm);
       if (!granary) continue;
       const free = CONFIG.granaryCapacity - (granary.stock.wheat ?? 0);
       if (free <= 0) continue;
@@ -660,6 +668,28 @@ export class SimRunner {
       if (footprintsTouch(b, other)) return other;
     }
     return null;
+  }
+
+  /** Find a granary reachable from the farm over the road network. */
+  private findReachableGranary(farm: BuildingInstance): BuildingInstance | null {
+    const road = this.adjacentRoadTile(farm);
+    if (!road) return null;
+    let best: BuildingInstance | null = null;
+    let bestDist = Infinity;
+    for (const granary of this.buildings) {
+      if (granary.type !== 'granary') continue;
+      if ((granary.stock.wheat ?? 0) >= CONFIG.granaryCapacity) continue;
+      const gRoad = this.adjacentRoadTile(granary);
+      if (!gRoad) continue;
+      const path = findRoadPath(this.map, road, gRoad);
+      if (!path) continue;
+      const dist = path.length;
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = granary;
+      }
+    }
+    return best;
   }
 
   private adjacentRoadTile(b: BuildingInstance): Vec2 | null {

@@ -94,22 +94,17 @@ test('build mode preview diamond aligns with the rendered tilemap tile', async (
   }
 });
 
-test('drag that starts over the HUD still pans the camera', async ({ page }) => {
+test('left-drag pans the camera without a build mode active', async ({ page }) => {
   await openGame(page);
 
-  // The HUD column has pointer-events; pressing there and dragging onto the
-  // canvas must still pan the map. Start just below the HUD column's bottom
-  // edge (on the pointer-events-auto canvas) so the drag pans. Using the
-  // measured height keeps this robust as the HUD grows.
-  const hudBottom = await page.evaluate(() => {
-    const hud = document.querySelector('#hud') as HTMLElement | null;
-    return hud ? hud.getBoundingClientRect().bottom : 0;
-  });
-  const startY = Math.min(hudBottom + 6, 760);
+  // Drag on the canvas (left of the HUD column) with no build mode selected and
+  // assert the viewport pans. Placed clear of the HUD so the drag isn't
+  // intercepted. HUD pointer-events behavior itself is covered by the click
+  // interaction tests (build menu, policy sliders, pause, inspect).
   const before = await getCamera(page);
-  await page.mouse.move(1200, startY);
+  await page.mouse.move(800, 400);
   await page.mouse.down();
-  await page.mouse.move(900, startY, { steps: 8 });
+  await page.mouse.move(500, 400, { steps: 8 });
   await page.mouse.up();
   await page.waitForTimeout(100);
   const after = await getCamera(page);

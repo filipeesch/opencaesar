@@ -18,7 +18,7 @@ import { drawBuilding } from '../buildingArt';
 import { BUILDING_COLORS, HOUSE_COLORS, TILE_H, TILE_W, WALKER_COLORS } from '../palette';
 
 const TILE_INDEX: Record<TileType, number> = { earth: 0, water: 1, fertile: 2, trees: 3, rock: 4, road: 5 };
-const BUILDABLE_TYPES: readonly BuildingType[] = ['road', 'house', 'farm', 'granary', 'market', 'well'];
+const BUILDABLE_TYPES: readonly BuildingType[] = ['road', 'house', 'garden', 'well', 'fountain', 'farm', 'orchard', 'granary', 'market', 'engineer_post', 'fire_station', 'clinic', 'school', 'library', 'temple', 'theatre', 'forum'];
 
 type RenderObj = Phaser.GameObjects.GameObject & {
   setDepth(depth: number): unknown;
