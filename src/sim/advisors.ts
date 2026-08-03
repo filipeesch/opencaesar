@@ -6,6 +6,7 @@
  */
 import { computeServiceCoverage } from './services';
 import { type CityStats, computeTargets } from './ratings';
+import type { TileWater, ReservoirState } from './water';
 
 export interface SimSnapshot {
   population: number;
@@ -76,6 +77,77 @@ export function overlaysFrom(
     }
   }
   return acc;
+}
+
+/** Inputs for the WATR-06 water overlay advisor data (pure projection of the water model). */
+export interface WaterOverlayInput {
+  width: number;
+  height: number;
+  grid: TileWater[][];
+  aqueductTiles: Set<number>;
+  flowing: Set<number>;
+  reservoirStates: ReservoirState[];
+}
+
+// `grand` (3) is the documented forward mapping for the reserved
+// aqueduct-served "grand water" upgrade (IN-02). WaterSystem.compute does not
+// emit it yet, so a tile currently reads at most 2 (clean).
+const WATER_CLASS_VALUE: Record<string, number> = { none: 0, basic: 1, clean: 2, grand: 3 };
+
+function emptyGrid(width: number, height: number): number[][] {
+  return Array.from({ length: height }, () => new Array(width).fill(0));
+}
+
+/**
+ * WATR-06 water overlay advisor data. Returns per-tile number[][] grids for
+ * sources, well/fountain coverage, house water classes, aqueduct present vs
+ * flowing, reservoir filled/level, and desirability. Keys follow the
+ * AqueductSystem convention `y * 100000 + x` for Set lookups. Pure projection —
+ * every painted tile traces back to the injected model state.
+ */
+export function waterOverlayData(input: WaterOverlayInput): Record<string, number[][]> {
+  const { width, height, grid, aqueductTiles, flowing, reservoirStates } = input;
+  const sources = emptyGrid(width, height);
+  const wellCoverage = emptyGrid(width, height);
+  const fountainCoverage = emptyGrid(width, height);
+  const houseWaterClass = emptyGrid(width, height);
+  const aqueductPresent = emptyGrid(width, height);
+  const aqueductFlow = emptyGrid(width, height);
+  const reservoirFilled = emptyGrid(width, height);
+  const reservoirLevel = emptyGrid(width, height);
+  const desirability = emptyGrid(width, height);
+
+  for (const r of reservoirStates) {
+    if (!r.filled) continue;
+    // Clamp the footprint to the map bounds (WR-01): a reservoir can overhang
+    // the map edge, and painting past the grid would either extend a row into a
+    // sparse/hole-ridden array (x) or throw TypeError on an undefined row (y).
+    for (let y = r.y; y < Math.min(r.y + r.size, height); y++) {
+      for (let x = r.x; x < Math.min(r.x + r.size, width); x++) {
+        reservoirFilled[y][x] = 1;
+        reservoirLevel[y][x] = r.level;
+      }
+    }
+  }
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const cell = grid[y][x];
+      const k = y * 100000 + x;
+      if (cell.sourceTile) sources[y][x] = 1;
+      if (cell.coveredByWell) wellCoverage[y][x] = 1;
+      if (cell.coveredByFountain) fountainCoverage[y][x] = 1;
+      houseWaterClass[y][x] = WATER_CLASS_VALUE[cell.kind] ?? 0;
+      if (aqueductTiles.has(k)) aqueductPresent[y][x] = 1;
+      if (aqueductTiles.has(k) && flowing.has(k)) aqueductFlow[y][x] = 1;
+      desirability[y][x] = cell.desirability;
+    }
+  }
+
+  return {
+    sources, wellCoverage, fountainCoverage, houseWaterClass,
+    aqueductPresent, aqueductFlow, reservoirFilled, reservoirLevel, desirability,
+  };
 }
 
 /** Residence/production/storage/market walker inspector datasets (task 11.2). */
