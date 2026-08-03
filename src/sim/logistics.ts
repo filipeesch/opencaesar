@@ -15,6 +15,10 @@ export type WarehouseReorder = 'accept' | 'refuse' | 'request' | 'maintain' | 'e
 export interface WarehousePolicy {
   perCommodity: Partial<Record<string, WarehouseReorder>>;
   slotCapacity: number;
+  /** Per-commodity target stock for 'maintain' orders (§17.3). Optional — absent = 0. */
+  maintainTargets?: Partial<Record<string, number>>;
+  /** Per-commodity reserved amount for 'reserve' orders (§17.3). Optional. */
+  reserveAmounts?: Partial<Record<string, number>>;
 }
 
 export function defaultWarehousePolicy(slotCapacity = 16): WarehousePolicy {
@@ -26,6 +30,32 @@ export function warehouseAccepts(policy: WarehousePolicy, commodity: string, use
   if (usedSlots >= policy.slotCapacity) return false;
   const cmd = policy.perCommodity[commodity] ?? 'accept';
   return cmd !== 'refuse' && cmd !== 'empty';
+}
+
+/** The effective §17.3 order for `commodity`; the unset default is 'accept'. */
+export function warehouseOrder(policy: WarehousePolicy, commodity: string): WarehouseReorder {
+  return policy.perCommodity[commodity] ?? 'accept';
+}
+
+/** A 'reserve' order blocks non-priority claim/export for the commodity. */
+export function warehouseReserves(policy: WarehousePolicy, commodity: string): boolean {
+  return warehouseOrder(policy, commodity) === 'reserve';
+}
+
+/** Whether the warehouse is below its maintained/explicit need for `commodity`
+ *  (§17.3 "destino prioritário"): 'request' always needs stock; 'maintain' needs
+ *  stock only while below its target. Pure and deterministic. */
+export function warehouseNeedsStock(policy: WarehousePolicy, commodity: string, stock: number): boolean {
+  const cmd = warehouseOrder(policy, commodity);
+  if (cmd === 'request') return true;
+  if (cmd === 'maintain') return stock < (policy.maintainTargets?.[commodity] ?? 0);
+  return false;
+}
+
+/** The need score (0/1) a destination routing feeds the warehouse's `need`
+ *  field — 1 exactly when warehouseNeedsStock is true, else 0. */
+export function warehousePriority(policy: WarehousePolicy, commodity: string, stock: number): number {
+  return warehouseNeedsStock(policy, commodity, stock) ? 1 : 0;
 }
 
 /** Commercial Center handles: exactly one may be designated. */
@@ -50,18 +80,68 @@ export class CommercialCenter {
   allowedToExport(): string | null {
     return this.designation;
   }
+
+  /**
+   * §17.4 fallback on full: when the designated center cannot take a delivery of
+   * `commodity`, resolve to the first accepting alternative warehouse with a
+   * warning naming both warehouses — and when no alternative accepts, refuse
+   * with a hold-warning that never discards the load. Pure read over the
+   * injected candidates: no state mutation, no Math.random, no Date.
+   */
+  resolveFull(
+    commodity: string,
+    candidates: Array<{ id: string; accepts: (commodity: string) => boolean }>,
+  ): { id: string | null; warning: string | null } {
+    if (this.designation === null) return { id: null, warning: 'No Commercial Center designated.' };
+    for (const alt of candidates) {
+      if (alt.accepts(commodity)) {
+        return { id: alt.id, warning: `Commercial Center (${this.designation}) full — falling back to ${alt.id}` };
+      }
+    }
+    return {
+      id: null,
+      warning: `Commercial Center (${this.designation}) full and no alternative accepts ${commodity} — delivery held, nothing discarded.`,
+    };
+  }
 }
 
 /** A load in transit is reserved so it cannot be double-picked. */
 export class ReservationPool {
   readonly taxable = new Map<string, number>(); // commodity -> reserved loads
   private reservations = new Map<string, number>();
+  /** commodity -> tick at which its reserved units may return to availability. */
+  private expiry = new Map<string, number>();
 
   reserve(commodity: string, amount = 1): boolean {
     const have = this.available(commodity);
     if (have < 1) return false;
     this.reservations.set(commodity, (this.reservations.get(commodity) ?? 0) + amount);
     return true;
+  }
+
+  /** Reserve with a deterministic tick-based expiry window (decision 5): when
+   *  the reservation succeeds it records `now + expiresIn` as the expiry tick
+   *  and expireReservations releases it from that tick on. The window never
+   *  reads a wall clock — only the injected tick `now` and the constant
+   *  `expiresIn` matter. */
+  reserveWithExpiry(commodity: string, amount: number, now: number, expiresIn = 30): boolean {
+    const ok = this.reserve(commodity, amount);
+    if (ok) this.expiry.set(commodity, now + expiresIn);
+    return ok;
+  }
+
+  /** Release every commodity whose recorded expiry is <= `now`, returning the
+   *  reserved units to availability. Returns how many commodities were expired. */
+  expireReservations(now: number): number {
+    let expired = 0;
+    for (const [commodity, at] of this.expiry) {
+      if (at <= now) {
+        this.release(commodity, this.reserved(commodity));
+        this.expiry.delete(commodity);
+        expired += 1;
+      }
+    }
+    return expired;
   }
 
   available(commodity: string): number {

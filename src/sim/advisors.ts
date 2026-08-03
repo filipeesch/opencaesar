@@ -14,6 +14,7 @@ import {
   EXTRACTION_SITES, WORKSHOPS,
   EXTRACTION_BUILDING_TYPES, WORKSHOP_BUILDING_TYPES, RAW_OLIVE_GRAPE,
 } from './production';
+import type { LogisticsAdvisorView } from './logistics';
 
 export interface SimSnapshot {
   population: number;
@@ -623,4 +624,66 @@ export function productionAdvisorSummary(rows: ProductionAdvisorRow[]): Producti
     summary.outputStock[r.commodity] = (summary.outputStock[r.commodity] ?? 0) + r.output;
   }
   return summary;
+}
+
+/**
+ * Phase 7, WARE-03 (decision 4): the logistics advisor aggregate view derived
+ * LIVE from a SimState + production advisor rows — never fabricated (§33-23).
+ * Every field traces to sim state: stock = warehouse b.stock + workshop held
+ * output; production = sum(producedLastTick) × 30; consumption = × 30 per
+ * staffed workshop whose catalog inputs include the commodity (tickWorkshop
+ * consumes exactly one unit per input); inTransit = workshop row output (loads
+ * pending porter dispatch); bottlenecks = rows with a non-null bottleneck;
+ * stopped = inactive logistics/production buildings. Pure and deterministic.
+ */
+export function logisticsAdvisorFromState(
+  state: SimState,
+  rows: ProductionAdvisorRow[],
+): LogisticsAdvisorView {
+  const stock: Record<string, number> = {};
+  const production: Record<string, number> = {};
+  const consumption: Record<string, number> = {};
+
+  // workshop-held output joins the stock view (loads awaiting porter dispatch)
+  for (const row of rows) {
+    if (row.kind === 'workshop' && row.output > 0) {
+      stock[row.commodity] = (stock[row.commodity] ?? 0) + row.output;
+    }
+    production[row.commodity] = (production[row.commodity] ?? 0) + row.producedLastTick * 30;
+  }
+
+  // every warehouse's physical stock
+  for (const b of state.buildings) {
+    if (b.type !== 'warehouse') continue;
+    for (const [k, v] of Object.entries(b.stock)) {
+      if (typeof v !== 'number' || v <= 0) continue;
+      stock[k] = (stock[k] ?? 0) + v;
+    }
+  }
+
+  // consumption: × 30 per staffed workshop consuming each catalog input
+  for (const b of state.buildings) {
+    const wkind = WORKSHOP_BUILDING_TYPES[b.type];
+    if (!wkind || !b.active) continue;
+    for (const input of WORKSHOPS[wkind].inputs) {
+      consumption[input] = (consumption[input] ?? 0) + 30;
+    }
+  }
+
+  let inTransit = 0;
+  let bottlenecks = 0;
+  for (const row of rows) {
+    if (row.kind === 'workshop') inTransit += row.output;
+    if (row.bottleneck !== null) bottlenecks += 1;
+  }
+
+  let stopped = 0;
+  for (const b of state.buildings) {
+    if (b.active) continue;
+    if (b.type === 'warehouse' || WORKSHOP_BUILDING_TYPES[b.type] || EXTRACTION_BUILDING_TYPES[b.type] || RAW_OLIVE_GRAPE[b.type]) {
+      stopped += 1;
+    }
+  }
+
+  return { stock, production, consumption, inTransit, bottlenecks, stopped };
 }

@@ -28,6 +28,7 @@ import { WaterSystem } from './water';
 import { buildCodex } from './campaign';
 import { desirabilityOf, tickHousing } from './housing';
 import { defaultWarehousePolicy, warehouseAccepts } from './logistics';
+import type { LogisticsAdvisorView } from './logistics';
 import {
   EXTRACTION_SITES, WORKSHOPS, emptyProduction, satisfiesDeposit, tickWorkshop,
   porterDestination, porterDeliversTo,
@@ -64,7 +65,7 @@ import { createWalker, updateWalker } from './walkers';
 import { mayTraverse, walkerProfile } from './walkerProfiles';
 import type { LoadDestination } from './production';
 import { workshopStatus, workshopBottleneck } from './production';
-import { productionAdvisorRows, productionAdvisorSummary } from './advisors';
+import { productionAdvisorRows, productionAdvisorSummary, logisticsAdvisorFromState } from './advisors';
 import type { ProductionAdvisorRow, ProductionAdvisorSummary, ProductionInternalNote } from './advisors';
 
 /** Deferred commands. These share the exact shape of the replayable
@@ -344,6 +345,14 @@ export class SimRunner {
       }
     }
     return { rows, summary };
+  }
+
+  /** Live logistics advisor (WARE-03, decision 4): every aggregate — stock,
+   *  production, consumption, in-transit, bottlenecks, stopped — is derived
+   *  from the running sim, never fabricated. Pure projection over live state
+   *  and the production advisor rows; does not mutate or restructure SimState. */
+  getLogisticsAdvisor(): LogisticsAdvisorView {
+    return logisticsAdvisorFromState(this.getState(), this.getProductionAdvisorRows());
   }
 
   /** Hydrate the per-building internal notes from live BuildingInstances. */
@@ -1015,9 +1024,16 @@ export class SimRunner {
     return dests;
   }
 
-  /** Warehouse destinations that accept `commodity` and have remaining room. */
+  /** Warehouse destinations that accept `commodity`, have remaining room, and
+   *  are reachable from the producer over the road network (decision 2 — a load
+   *  moves by road, never teleported). All existing gates (type, capacity,
+   *  per-commodity slot limit, warehouseAccepts) are preserved; the road path
+   *  is added before pushing a candidate, mirroring findReachableGranary, and
+   *  `distance` ranks by road-distance (path length). */
   private warehouseCandidates(commodity: string, from: BuildingInstance): LoadDestination[] {
     const dests: LoadDestination[] = [];
+    const srcRoad = this.adjacentRoadTile(from);
+    if (!srcRoad) return dests;
     for (const b of this.buildings) {
       if (b.type !== 'warehouse') continue;
       const usedUnits = this.usedUnits(b.stock);
@@ -1026,12 +1042,16 @@ export class SimRunner {
       const usedSlots = Object.keys(b.stock).filter((k) => ((b.stock as Record<string, number | undefined>)[k] ?? 0) > 0).length;
       if (usedSlots >= PRODUCTION_WAREHOUSE_SLOTS) continue;
       if (!warehouseAccepts(defaultWarehousePolicy(), commodity, usedSlots)) continue;
+      const wRoad = this.adjacentRoadTile(b);
+      if (!wRoad) continue;
+      const path = findRoadPath(this.map, srcRoad, wRoad);
+      if (!path) continue;
       dests.push({
         id: String(b.id),
         kind: 'warehouse',
         accepts: () => true,
         capacity: room,
-        distance: manhattan(b.x, b.y, from.x, from.y),
+        distance: path.length,
         need: 0,
       });
     }
