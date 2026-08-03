@@ -13,7 +13,10 @@ import type { Map } from './map';
 import { findRoadPath, roadNeighbors } from './pathfind';
 import type { Rng } from './rng';
 import { randInt } from './rng';
+import { roadSpeedMultiplier } from './roadTypes';
 import type { BuildingType, Good, Vec2, WalkerType } from './types';
+import type { WalkerProfile } from './walkerProfiles';
+import { walkerProfile, mayTraverse } from './walkerProfiles';
 
 export interface WalkerInstance {
   id: number;
@@ -35,6 +38,10 @@ export interface WalkerInstance {
   targetBuildingId: number | null;
   carryingGood: Good | null;
   carriedAmount: number;
+  /** Tile the walker was spawned on; used by return-policy wandering. */
+  origin: Vec2 | null;
+  /** Road tiles walked since leaving `origin` (0 when back at it). */
+  stepsTaken: number;
 }
 
 /** House-only simulation state (undefined on non-house buildings). */
@@ -113,6 +120,8 @@ export function createWalker(type: WalkerType, x: number, y: number, id: number)
     targetBuildingId: null,
     carryingGood: null,
     carriedAmount: 0,
+    origin: { x, y },
+    stepsTaken: 0,
   };
 }
 
@@ -124,76 +133,79 @@ export function updateWalker(sim: SimInternals, w: WalkerInstance): void {
     return;
   }
 
+  const profile = walkerProfile(w.type);
+
   // Coverage first: houses next to the walker receive its service flag.
-  applyCoverage(sim, w);
+  applyCoverage(sim, w, profile);
 
   // Arrival at the objective: apply its effect, possibly despawn.
   if (w.state === 'seeking' && w.targetBuildingId !== null && w.path.length === 0) {
-    const keepGoing = handleArrival(sim, w);
+    const keepGoing = handleArrival(sim, w, profile);
     if (!keepGoing) return;
     w.state = 'wandering';
     w.targetBuildingId = null;
   }
 
-  if (w.state === 'wandering') decide(sim, w);
+  if (w.state === 'wandering') decide(sim, w, profile);
 
-  move(sim, w);
+  move(sim, w, profile);
 }
 
 /** Apply the walker's service to houses adjacent to its current tile. */
-function applyCoverage(sim: SimInternals, w: WalkerInstance): void {
+function applyCoverage(sim: SimInternals, w: WalkerInstance, profile: WalkerProfile): void {
   if (w.type === 'well') {
-    serviceHousesAround(sim, w, 'water');
+    serviceHousesAround(sim, w, 'water', profile);
   } else if (w.type === 'market' && w.carryingGood === 'wheat' && w.carriedAmount > 0) {
-    serviceHousesAround(sim, w, 'food');
+    serviceHousesAround(sim, w, 'food', profile);
   } else if (SERVICE_BY_WALKER[w.type]) {
-    serviceHousesAround(sim, w, SERVICE_BY_WALKER[w.type]);
+    serviceHousesAround(sim, w, SERVICE_BY_WALKER[w.type], profile);
   }
 }
 
-function serviceHousesAround(sim: SimInternals, w: WalkerInstance, service: string): void {
+function serviceHousesAround(sim: SimInternals, w: WalkerInstance, service: string, profile: WalkerProfile): void {
   for (const d of DIRS) {
     const b = sim.buildingAt(w.x + d.x, w.y + d.y);
     if (b && b.house) {
-      if (service === 'food') b.house.foodCooldown = CONFIG.serviceCooldownTicks;
-      else if (service === 'water') b.house.waterCooldown = CONFIG.serviceCooldownTicks;
+      if (service === 'food') b.house.foodCooldown = profile.serviceTTL;
+      else if (service === 'water') b.house.waterCooldown = profile.serviceTTL;
       else {
         b.house.services = b.house.services ?? {};
-        b.house.services[service] = CONFIG.serviceCooldownTicks;
+        b.house.services[service] = profile.serviceTTL;
       }
     }
   }
 }
 
 /** Pick a new objective (market: granary/house; labor: building; well: none). */
-function decide(sim: SimInternals, w: WalkerInstance): void {
-  if (w.type === 'market') decideMarket(sim, w);
-  else if (w.type === 'labor') decideLabor(sim, w);
+function decide(sim: SimInternals, w: WalkerInstance, profile: WalkerProfile): void {
+  if (w.type === 'market') decideMarket(sim, w, profile);
+  else if (w.type === 'labor') decideLabor(sim, w, profile);
 }
 
-function decideMarket(sim: SimInternals, w: WalkerInstance): void {
+function decideMarket(sim: SimInternals, w: WalkerInstance, profile: WalkerProfile): void {
   if (w.carryingGood === 'wheat' && w.carriedAmount > 0) {
     const house = nearestHouseNeeding(sim, w, 'food');
-    if (house) startSeeking(sim, w, house);
+    if (house) startSeeking(sim, w, house, profile);
     return;
   }
   const granary = nearestGranaryWithWheat(sim, w);
-  if (granary) startSeeking(sim, w, granary);
+  if (granary) startSeeking(sim, w, granary, profile);
 }
 
-function decideLabor(sim: SimInternals, w: WalkerInstance): void {
+function decideLabor(sim: SimInternals, w: WalkerInstance, profile: WalkerProfile): void {
   const b = nearestBuildingNeedingLabor(sim, w);
-  if (b) startSeeking(sim, w, b);
+  if (b) startSeeking(sim, w, b, profile);
 }
 
 /** Turn the walker toward a building. Returns false when unreachable. */
-function startSeeking(sim: SimInternals, w: WalkerInstance, target: BuildingInstance): boolean {
+function startSeeking(sim: SimInternals, w: WalkerInstance, target: BuildingInstance, profile: WalkerProfile): boolean {
   const to = sim.adjacentRoadTile(target);
   if (!to) return false;
-  const path = findRoadPath(sim.map, { x: w.x, y: w.y }, to);
+  const path = findRoadPath(sim.map, { x: w.x, y: w.y }, to, traversableFor(sim, profile));
   if (path === null) return false;
-  // Drop the start tile itself — the walker is already standing on it.
-  if (path.length > 0 && path[0].x === w.x && path[0].y === w.y) path.shift();
+  // findRoadPath returns only the intermediate tiles strictly between the
+  // walker's current tile and the goal (both excluded), so the walker reaches
+  // the goal tile by adjacency — there is never a start tile to drop here.
   w.state = 'seeking';
   w.targetBuildingId = target.id;
   w.path = path;
@@ -204,14 +216,14 @@ function startSeeking(sim: SimInternals, w: WalkerInstance, target: BuildingInst
  * The walker stands on the goal tile next to its target building.
  * Returns false when the walker despawned and must not continue.
  */
-function handleArrival(sim: SimInternals, w: WalkerInstance): boolean {
+function handleArrival(sim: SimInternals, w: WalkerInstance, profile: WalkerProfile): boolean {
   const target = sim.buildingById(w.targetBuildingId ?? -1);
   if (!target) return true;
 
   if (w.type === 'market') {
     if (w.carryingGood === 'wheat' && w.carriedAmount > 0) {
       // Deliver one unit of food to the target house.
-      if (target.house) target.house.foodCooldown = CONFIG.serviceCooldownTicks;
+      if (target.house) target.house.foodCooldown = profile.serviceTTL;
       w.carriedAmount -= 1;
       if (w.carriedAmount <= 0) {
         w.carryingGood = null;
@@ -233,7 +245,7 @@ function handleArrival(sim: SimInternals, w: WalkerInstance): boolean {
     }
   } else if (w.type === 'labor') {
     target.laborConnected = true;
-    target.laborCooldown = CONFIG.serviceCooldownTicks;
+    target.laborCooldown = profile.serviceTTL;
     sim.despawn(w);
     return false;
   }
@@ -241,31 +253,71 @@ function handleArrival(sim: SimInternals, w: WalkerInstance): boolean {
 }
 
 /**
+ * Per-walker traversability predicate: a tile is passable when it is road
+ * terrain AND the walker's profile may traverse its road type (roadblock
+ * policies honored for service_roadblock tiles).
+ */
+function traversableFor(sim: SimInternals, profile: WalkerProfile): (x: number, y: number) => boolean {
+  return (x: number, y: number): boolean =>
+    sim.map.get(x, y) === 'road' && mayTraverse(profile, sim.map.roadTypeAt(x, y) ?? 'dirt');
+}
+
+/**
  * Advance the walker a fraction of a tile toward its next tile. Movement is
- * sub-tile (CONFIG.walkerSpeedPerTick per tick): the walker crosses a tile
+ * sub-tile (profile.movementSpeed per tick): the walker crosses a tile
  * boundary only once `progress` reaches 1, so the renderer can interpolate
  * smoothly between (x, y) and `next` instead of teleporting tile to tile.
  */
-function move(sim: SimInternals, w: WalkerInstance): void {
+function move(sim: SimInternals, w: WalkerInstance, profile: WalkerProfile): void {
+  const returning = profile.returnPolicy && profile.category === 'wandering';
+
   // Choose a destination tile when the walker has none pending.
   if (w.next === null) {
     if (w.state === 'seeking' && w.path.length > 0) {
       w.next = w.path[0];
     } else {
-      // Wandering: pick a road neighbor via the seeded RNG. Stuck on a dead
-      // end (no road neighbor) means standing still until the lifetime ends.
-      const neighbors = roadNeighbors(sim.map, w.x, w.y);
+      // Wandering: pick a road neighbor via the seeded RNG, restricted to tiles
+      // the walker's profile permits. Stuck on a dead end (no road neighbor)
+      // means standing still until the lifetime ends.
+      let neighbors = roadNeighbors(sim.map, w.x, w.y).filter((nb) => traversableFor(sim, profile)(nb.x, nb.y));
       if (neighbors.length === 0) return;
+      // Return-policy wandering: when the walker has walked maxRoadSteps from
+      // its origin, choose the next step from neighbors that reduce Manhattan
+      // distance home (tie-broken by the seeded RNG).
+      if (returning && w.origin && w.stepsTaken >= profile.maxRoadSteps) {
+        const origin = w.origin;
+        const homeward = neighbors.filter(
+          (nb) => manhattan(nb.x, nb.y, origin.x, origin.y) < manhattan(w.x, w.y, origin.x, origin.y),
+        );
+        if (homeward.length > 0) neighbors = homeward;
+      }
       w.next = neighbors[randInt(sim.rng, 0, neighbors.length - 1)];
     }
   }
 
-  w.progress += CONFIG.walkerSpeedPerTick;
+  // Speed is per-tick progress scaled by the profile's base movement speed and
+  // the current tile's road-type multiplier (bare 'road' reads as dirt = 1x).
+  // A service_roadblock's 0 multiplier means "blocked"; a walker permitted to
+  // pass one (roadblock policy 'pass') crosses it at base speed instead.
+  const rt = sim.map.roadTypeAt(w.x, w.y) ?? 'dirt';
+  // A service_roadblock's 0 multiplier bars *entry* for non-'pass' walkers, not
+  // *exit*. A walker already standing on one (spawned there, or a block paved
+  // under it at runtime) must still be able to leave at base speed — a 0
+  // multiplier would otherwise freeze it with progress stuck at 0 forever
+  // (WR-02). Non-'pass' walkers never *select* a block as their next tile
+  // (traversableFor/findRoadPath bar it), so base speed on a block only ever
+  // means leaving it.
+  const speed = rt === 'service_roadblock' ? 1 : roadSpeedMultiplier(rt);
+  w.progress += profile.movementSpeed * speed;
   if (w.progress >= 1 && w.next) {
     w.progress -= 1;
     w.x = w.next.x;
     w.y = w.next.y;
     w.next = null;
+    if (returning && w.origin) {
+      if (w.x === w.origin.x && w.y === w.origin.y) w.stepsTaken = 0;
+      else w.stepsTaken += 1;
+    }
     if (w.state === 'seeking' && w.path.length > 0) w.path.shift();
   }
 }

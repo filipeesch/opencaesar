@@ -54,6 +54,7 @@ import type {
 } from './types';
 import type { BuildingInstance, WalkerInstance } from './walkers';
 import { createWalker, updateWalker } from './walkers';
+import { mayTraverse, walkerProfile } from './walkerProfiles';
 
 /** Deferred commands. These share the exact shape of the replayable
  *  `SaveCommand` type, so a paused queue can be serialized verbatim into a save
@@ -640,14 +641,21 @@ export class SimRunner {
       if (b.spawnCooldown > 0) continue;
       b.spawnCooldown = interval;
 
-      const start = this.adjacentRoadTile(b);
-      if (!start) continue;
-
       const walkerType: WalkerType =
         b.type === 'house' ? 'labor' :
         b.type === 'market' ? 'market' :
         (b.type === 'well' || b.type === 'fountain') ? 'well' :
         b.type as WalkerType;
+      // Spawn only onto a road the walker may actually traverse: a 'stop' walker
+      // (labor, well, most service walkers) must never spawn onto a
+      // service_roadblock it cannot cross — that would trap it at 0 speed
+      // (WR-02). 'pass' walkers (market) may still spawn onto a block.
+      const spawnProfile = walkerProfile(walkerType);
+      const start = this.adjacentRoadTile(b, (x, y) =>
+        this.map.get(x, y) === 'road' && mayTraverse(spawnProfile, this.map.roadTypeAt(x, y) ?? 'dirt'),
+      );
+      if (!start) continue;
+
       const w = createWalker(walkerType, start.x, start.y, this.nextWalkerId++);
       this.walkers.push(w);
       if (b.type === 'house' && b.house) b.house.laborCooldown = CONFIG.serviceCooldownTicks;
@@ -767,13 +775,17 @@ export class SimRunner {
     return best;
   }
 
-  private adjacentRoadTile(b: BuildingInstance): Vec2 | null {
+  /** Nearest road tile adjacent to a building footprint that satisfies the
+   *  optional suitability predicate (default: any road tile), or null. */
+  private adjacentRoadTile(b: BuildingInstance, isSuitable?: (x: number, y: number) => boolean): Vec2 | null {
     const n = b.footprint;
+    const suitable = (x: number, y: number): boolean =>
+      isSuitable ? isSuitable(x, y) : this.map.get(x, y) === 'road';
     for (let i = 0; i < n; i++) {
-      if (this.map.get(b.x + i, b.y - 1) === 'road') return { x: b.x + i, y: b.y - 1 };
-      if (this.map.get(b.x + i, b.y + n) === 'road') return { x: b.x + i, y: b.y + n };
-      if (this.map.get(b.x - 1, b.y + i) === 'road') return { x: b.x - 1, y: b.y + i };
-      if (this.map.get(b.x + n, b.y + i) === 'road') return { x: b.x + n, y: b.y + i };
+      if (suitable(b.x + i, b.y - 1)) return { x: b.x + i, y: b.y - 1 };
+      if (suitable(b.x + i, b.y + n)) return { x: b.x + i, y: b.y + n };
+      if (suitable(b.x - 1, b.y + i)) return { x: b.x - 1, y: b.y + i };
+      if (suitable(b.x + n, b.y + i)) return { x: b.x + n, y: b.y + i };
     }
     return null;
   }
