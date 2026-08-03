@@ -60,3 +60,14 @@ describe('event lifecycle in runner', () => {
     expect(events.length).toBeGreaterThan(0);
   });
 });
+
+describe('mission win-condition integration', () => {
+  it('startMission + tick updates an in-progress mission', () => {
+    const r = new SimRunner(7);
+    r.startMission('tutorial');
+    for (let i = 0; i < 50; i++) r.tick();
+    const m = r.getMission();
+    expect(m).toBeTruthy();
+    expect(m!.started).toBe(true);
+  });
+});

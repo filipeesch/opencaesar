@@ -15,6 +15,8 @@ import { BUILDINGS } from './buildings';
 import { CONFIG, HOUSE_TIERS } from './config';
 import { assignedWorkers, computeRatings, tickEconomy, totalJobs, workerPool } from './economy';
 import { cityHappiness, houseHappiness } from './happiness';
+import { computeTargets, tickRatings } from './ratings';
+import { tickMission } from './missions';
 import { desirabilityOf, tickHousing } from './housing';
 import { Map as SimMap } from './map';
 import { checkPlacement } from './placement';
@@ -125,6 +127,33 @@ export class SimRunner {
         this.activeEvent = { id: ev, remaining: eventDuration(ev), total: eventDuration(ev) };
       }
     }
+
+    // Missions / campaign win conditions.
+    this.tickMissionSystem();
+  }
+
+  private tickMissionSystem(): void {
+    if (!this.mission || this.mission.complete || this.mission.failed) return;
+    const cityStats = {
+      population: this.getPopulation(),
+      treasury: this.getTreasury(),
+      taxRate: this.policy.taxRate,
+      hasReligion: false,
+      hasEntertainment: false,
+      hasEducation: false,
+      hasHealth: false,
+      hasWater: this.buildings.some((b) => BUILDINGS[b.type].category === 'water'),
+      hasFood: this.buildings.some((b) => BUILDINGS[b.type].category === 'food'),
+    };
+    const target = computeTargets(cityStats);
+    this.missionRatings = tickRatings(this.missionRatings, target);
+    tickMission(this.mission, {
+      population: cityStats.population,
+      culture: this.missionRatings.culture,
+      prosperity: this.missionRatings.prosperity,
+      stability: this.missionRatings.stability,
+      year: Math.floor(this.tickCount / 360),
+    });
   }
 
   /** Place a building at footprint anchor (x, y). Rejected commands leave state unchanged. */
@@ -289,6 +318,7 @@ export class SimRunner {
   }
 
   private mission: MissionState | null = null;
+  private missionRatings = { culture: 10, prosperity: 10, stability: 10, favor: 10 };
   private tradeRoutes: Record<string, TradeRoute> = {};
   private activeEvent: { id: string; remaining: number; total: number } | null = null;
   private houseHappinessInput(b: BuildingInstance) {
