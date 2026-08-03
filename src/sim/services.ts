@@ -54,3 +54,38 @@ export function holdFestival(f: FestivalInput): { ok: boolean; newWorship: numbe
   const newWorship = Math.min(1, f.worship + 0.1);
   return { ok: true, newWorship, newFavor: computeFavor({ _: newWorship }) };
 }
+
+/** Festival tiers (task 9.4). */
+export interface FestivalTier {
+  id: 'small' | 'medium' | 'large' | 'provincial';
+  cost: number;
+  prepMonths: number;
+  worshipBoost: number;
+  favorBoost: number;
+}
+
+export const FESTIVAL_TIERS: FestivalTier[] = [
+  { id: 'small', cost: 100, prepMonths: 1, worshipBoost: 0.05, favorBoost: 5 },
+  { id: 'medium', cost: 250, prepMonths: 2, worshipBoost: 0.1, favorBoost: 10 },
+  { id: 'large', cost: 500, prepMonths: 3, worshipBoost: 0.15, favorBoost: 15 },
+  { id: 'provincial', cost: 1000, prepMonths: 3, worshipBoost: 0.2, favorBoost: 20 },
+];
+
+export interface FestivalPlan {
+  tierId: FestivalTier['id'];
+  prepRemaining: number;
+  ready: boolean;
+}
+
+/** Begin preparation for a festival tier; becomes ready after prep months. */
+export function startFestival(tierId: FestivalTier['id']): FestivalPlan | null {
+  const tier = FESTIVAL_TIERS.find((t) => t.id === tierId);
+  return tier ? { tierId, prepRemaining: tier.prepMonths, ready: false } : null;
+}
+
+/** Advance festival preparation by one month. */
+export function tickFestival(plan: FestivalPlan): void {
+  if (plan.ready) return;
+  plan.prepRemaining -= 1;
+  if (plan.prepRemaining <= 0) plan.ready = true;
+}

@@ -26,3 +26,20 @@ describe('civic services (Phases 12-13)', () => {
     expect(ok.newWorship).toBeGreaterThan(0.5);
   });
 });
+
+import { FESTIVAL_TIERS, startFestival, tickFestival } from '../../src/sim/services';
+
+describe('festivals (task 9.4)', () => {
+  it('has four tiers with escalating cost and boost', () => {
+    expect(FESTIVAL_TIERS.map((t) => t.id)).toEqual(['small', 'medium', 'large', 'provincial']);
+    expect(FESTIVAL_TIERS[3].cost).toBeGreaterThan(FESTIVAL_TIERS[0].cost);
+  });
+
+  it('becomes ready after its prep period', () => {
+    const p = startFestival('medium');
+    expect(p?.ready).toBe(false);
+    tickFestival(p!);
+    tickFestival(p!);
+    expect(p?.ready).toBe(true);
+  });
+});

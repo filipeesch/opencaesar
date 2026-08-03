@@ -71,3 +71,16 @@ describe('balance catalog equivalence (DATA-02)', () => {
     expect(CONFIG.walkerSpeedPerTick).toBe(0.5);
   });
 });
+
+import { decomposeRatings } from '../src/sim/ratings';
+
+describe('rating decomposition (task 10.3)', () => {
+  it('treats construction separately from the running economy for Prosperity', () => {
+    const stats = { population: 1000, treasury: 5000, taxRate: 0.1,
+      hasReligion: true, hasEntertainment: true, hasEducation: true, hasHealth: true, hasWater: true, hasFood: true };
+    const d = decomposeRatings(stats, 150);
+    expect(d.prosperity.construction).toBeGreaterThanOrEqual(0);
+    expect(d.prosperity.economy).toBeGreaterThan(0);
+    expect(d.culture.religion).toBe(10);
+  });
+});

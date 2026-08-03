@@ -59,3 +59,45 @@ function move(from: number, to: number): number {
 export function clampRating(v: number): number {
   return Math.max(0, Math.min(100, Math.round(v)));
 }
+
+/** 4-rating decomposition (task 10.3). */
+export interface RatingDecomposition {
+  culture: { religion: number; entertainment: number; education: number; base: number };
+  prosperity: { economy: number; construction: number; trade: number; base: number };
+  stability: { peace: number; employment: number; base: number };
+  favor: { worship: number; taxes: number; base: number };
+}
+
+/**
+ * Decompose the four ratings into parts. Construction is treated separately
+ * from the running economy for Prosperity (per spec).
+ */
+export function decomposeRatings(
+  s: CityStats,
+  constructionSpend: number,
+): RatingDecomposition {
+  return {
+    culture: {
+      base: 10,
+      religion: s.hasReligion ? 10 : 0,
+      entertainment: s.hasEntertainment ? 10 : 0,
+      education: s.hasEducation ? 5 : 0,
+    },
+    prosperity: {
+      base: 10,
+      economy: Math.min(20, Math.floor(s.population / 50)),
+      construction: Math.min(15, Math.floor(constructionSpend / 100)),
+      trade: s.treasury > 1000 ? 10 : 0,
+    },
+    stability: {
+      base: 10,
+      peace: s.hasFood && s.hasWater ? 10 : 0,
+      employment: s.hasHealth ? 5 : 0,
+    },
+    favor: {
+      base: 10,
+      worship: s.hasReligion ? 10 : 0,
+      taxes: Math.max(0, 20 - Math.floor(s.taxRate * 100)),
+    },
+  };
+}
