@@ -94,3 +94,50 @@ export function deleteSave(storage: StorageLike = defaultStorage()): SaveResult 
 export function listSaves(storage: StorageLike = defaultStorage()): SaveRecord | null {
   return readSave(storage);
 }
+
+/**
+ * Slot-based persistence (task 12.2): autosave with rotation and
+ * quicksave/quickload slots, layered over the base localStorage envelope.
+ */
+export const QUICKSAVE_KEY = 'rcb.quicksave';
+export const AUTOSAVE_PREFIX = 'rcb.autosave.';
+
+export function writeQuickSave(save: SaveData, storage: StorageLike = defaultStorage()): SaveResult {
+  try { storage.setItem(QUICKSAVE_KEY, JSON.stringify(makeRecord(save))); return { ok: true }; }
+  catch { return { ok: false, error: 'write' }; }
+}
+
+export function readQuickSave(storage: StorageLike = defaultStorage()): SaveRecord | null {
+  const raw = storage.getItem(QUICKSAVE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as SaveRecord;
+    return parsed?.data?.version ? parsed : null;
+  } catch { return null; }
+}
+
+/** Write an autosave into the rotation slot, dropping the oldest. */
+export function writeAutosave(save: SaveData, slots: number, storage: StorageLike = defaultStorage()): SaveResult {
+  try {
+    // Shift the rotation: oldest slot N-1 dropped, others move up.
+    for (let i = slots - 1; i >= 1; i--) {
+      const older = storage.getItem(`${AUTOSAVE_PREFIX}${i - 1}`);
+      if (older) storage.setItem(`${AUTOSAVE_PREFIX}${i}`, older);
+    }
+    storage.setItem(`${AUTOSAVE_PREFIX}0`, JSON.stringify(makeRecord(save)));
+    return { ok: true };
+  } catch { return { ok: false, error: 'write' }; }
+}
+
+export function listAutosaves(slots: number, storage: StorageLike = defaultStorage()): (SaveRecord | null)[] {
+  const out: (SaveRecord | null)[] = [];
+  for (let i = 0; i < slots; i++) {
+    const raw = storage.getItem(`${AUTOSAVE_PREFIX}${i}`);
+    if (!raw) { out.push(null); continue; }
+    try {
+      const rec = JSON.parse(raw) as SaveRecord;
+      out.push(rec?.data?.version ? rec : null);
+    } catch { out.push(null); }
+  }
+  return out;
+}
