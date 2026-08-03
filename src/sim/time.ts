@@ -59,6 +59,9 @@ export class TimeSystem {
   }
 
   setSpeed(speed: number): void {
+    if (!Number.isFinite(speed) || speed <= 0) {
+      throw new RangeError(`speed must be a positive finite number, got ${speed}`);
+    }
     this.speed = speed;
   }
 

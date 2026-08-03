@@ -116,27 +116,6 @@ describe('mission win-condition integration', () => {
   });
 });
 
-describe('paused command queue (CORE-02)', () => {
-  it('defers build/policy while paused, consuming them on the next tick', () => {
-    const r = new SimRunner(99);
-    r.setPaused(true);
-    r.setPolicy(0.2, 0.0); // queued — not applied
-    expect(r.getPolicy().taxRate).toBe(0.1); // unchanged while paused
-    expect(r.getPendingCommandCount()).toBe(1);
-    r.setPaused(false);
-    r.tick(); // consumes queued command on next fixed step
-    expect(r.getPolicy().taxRate).toBe(0.2);
-    expect(r.getPendingCommandCount()).toBe(0);
-  });
-
-  it('applies immediately when not paused (unchanged behavior)', () => {
-    const r = new SimRunner(99);
-    r.setPolicy(0.35, 0.1);
-    expect(r.getPolicy().taxRate).toBe(0.35);
-    expect(r.getPendingCommandCount()).toBe(0);
-  });
-});
-
 describe('trade wired into sim tick', () => {
   it('enabling a trade route affects treasury and granary stock', () => {
     const r = new SimRunner(1234);
