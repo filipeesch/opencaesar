@@ -98,7 +98,7 @@ describe('trade wired into sim tick', () => {
     const r = new SimRunner(1234);
     r.enableTrade('massilia', true);
     // place a granary with wheat
-    const res = r.placeBuilding('granary', 5, 5);
+    r.placeBuilding('granary', 5, 5);
     // seed stock by ticking
     for (let i = 0; i < 5; i++) r.tick();
     const treasury = r.getTreasury();
