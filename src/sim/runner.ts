@@ -505,7 +505,7 @@ export class SimRunner {
    *  reset to earth on demolish). */
   getTileState(x: number, y: number): TileState {
     const s = this.map.tileState(x, y);
-    return { ...s, road: this.map.get(x, y) === 'road' };
+    return { ...s, road: this.map.get(x, y) === 'road', roadType: this.map.roadTypeAt(x, y) };
   }
 
   /** Inputs used to derive a house's happiness for the snapshot. */

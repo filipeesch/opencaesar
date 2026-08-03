@@ -14,6 +14,7 @@
     "test:unit": "vitest run tests/unit tests/integration tests/determinism tests/golden tests/property",
     "test:e2e": "playwright test",
     "test:golden:update": "GOLDEN_UPDATE=1 vitest run tests/golden",
+    "check:military": "node scripts/check-military.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {

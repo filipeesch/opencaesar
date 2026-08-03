@@ -11,10 +11,39 @@ import { TRADE_CITIES } from './trade';
 import { EVENTS } from './events';
 import { MISSIONS } from './missions';
 import { STRINGS } from './localization';
+import { BALANCE } from './balance';
 
 export interface CatalogIssue {
   catalog: string;
   message: string;
+}
+
+/**
+ * Validate the BALANCE catalog (DATA-01). Every value must be a finite
+ * non-negative number; undefined, NaN, Infinity, and negative values are
+ * reported as issues under the 'balance' catalog.
+ */
+export function validateBalance(balance: Record<string, unknown>): CatalogIssue[] {
+  const issues: CatalogIssue[] = [];
+  for (const [key, value] of Object.entries(balance)) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+      issues.push({ catalog: 'balance', message: `${key}: must be a finite non-negative number` });
+    }
+  }
+  return issues;
+}
+
+/**
+ * Throw a single hard-fail error listing every reported catalog issue (DATA-01).
+ * Used at sim load time so the sim refuses to run on corrupt catalog data.
+ */
+export function throwCatalogIssues(issues: CatalogIssue[]): void {
+  if (issues.length > 0) {
+    throw new Error(
+      'Data catalog validation failed: ' +
+        issues.map((i) => `[${i.catalog}] ${i.message}`).join('; '),
+    );
+  }
 }
 
 export function validateCatalogs(): CatalogIssue[] {
@@ -77,6 +106,8 @@ export function validateCatalogs(): CatalogIssue[] {
   if (Object.keys(STRINGS.pt).length === 0) {
     issues.push({ catalog: 'localization', message: 'empty pt string table' });
   }
+
+  issues.push(...validateBalance(BALANCE));
 
   return issues;
 }
