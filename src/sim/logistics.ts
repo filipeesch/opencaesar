@@ -84,8 +84,9 @@ export class CommercialCenter {
   /**
    * §17.4 fallback on full: when the designated center cannot take a delivery of
    * `commodity`, resolve to the first accepting alternative warehouse with a
-   * warning naming both warehouses — and when no alternative accepts, refuse
-   * with a hold-warning that never discards the load. Pure read over the
+   * warning naming both warehouses — the designated (full) center itself is
+   * always excluded from the fallback search — and when no alternative accepts,
+   * refuse with a hold-warning that never discards the load. Pure read over the
    * injected candidates: no state mutation, no Math.random, no Date.
    */
   resolveFull(
@@ -94,6 +95,7 @@ export class CommercialCenter {
   ): { id: string | null; warning: string | null } {
     if (this.designation === null) return { id: null, warning: 'No Commercial Center designated.' };
     for (const alt of candidates) {
+      if (alt.id === this.designation) continue;
       if (alt.accepts(commodity)) {
         return { id: alt.id, warning: `Commercial Center (${this.designation}) full — falling back to ${alt.id}` };
       }

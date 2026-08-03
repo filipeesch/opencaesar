@@ -63,6 +63,26 @@ describe('fallback on full (WARE-02 §17.4)', () => {
     expect(result.warning).toBe('No Commercial Center designated.');
   });
 
+  it('excludes the full designated center from the fallback search even when it is first (WR-04)', () => {
+    const cc = new CommercialCenter();
+    cc.designate('wh1');
+    // designated center first in the candidate list and accepting — it must be skipped
+    const result = cc.resolveFull('pottery', [accepts('wh1'), accepts('wh2')]);
+    expect(result.id).toBe('wh2');
+    expect(result.warning).toContain('wh1');
+    expect(result.warning).toContain('wh2');
+  });
+
+  it('when only the full designated center exists, fallback finds none and holds (no discard) (WR-04)', () => {
+    const cc = new CommercialCenter();
+    cc.designate('wh1');
+    const result = cc.resolveFull('pottery', [accepts('wh1')]);
+    expect(result.id).toBeNull();
+    expect(result.warning).toContain('wh1');
+    expect(result.warning).toMatch(/held/i);
+    expect(result.warning).toMatch(/nothing discarded/i);
+  });
+
   it('is a stable pure read — it does not mutate the designation', () => {
     const cc = new CommercialCenter();
     cc.designate('wh1');
