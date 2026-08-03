@@ -19,7 +19,7 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
 - [x] **Phase 3: Road Graph & Walker Categories** - road network graph with dirty-flag recompute; road types; wandering/destination/recruiter walkers
 - [x] **Phase 4: Water System** - wells, reservoirs, aqueducts, fountains, public baths, water overlay
 - [x] **Phase 5: Agriculture & Food** - food types, farm varieties, fishing wharf, granary commands
-- [ ] **Phase 6: Production & Manufacturing** - extraction sites and workshops with physical loads
+- [x] **Phase 6: Production & Manufacturing** - extraction sites and workshops with physical loads
 - [ ] **Phase 7: Warehouses & Logistics** - warehouses, per-commodity orders, commercial center, logistics advisor data
 - [ ] **Phase 8: Markets & Home Distribution** - buyer/seller walkers, reservation, per-market config
 - [ ] **Phase 9: External Trade** - regional map, routes/orders, land caravans + merchant ships, quotas, prices
@@ -117,7 +117,12 @@ Plans:
   1. Extraction sites require deposits and deliver valid destinations.
   2. Workshops accept inputs, produce outputs to stock, and dispatch porters to chosen destinations.
   3. Bottleneck/blocked states reported without destroying goods.
-**Plans**: TBD
+**Plans**: 3 (3 complete)
+
+Plans:
+- [x] 06-01: Deposit gating + destination policy + blocked no-loss (PROD-01/02)
+- [x] 06-02: Runtime production types, tick integration, advisor data (PROD-01/02)
+- [x] 06-03: Production-chain determinism + acceptance (PROD-01/02)
 
 ### Phase 7: Warehouses & Logistics
 **Goal**: Warehouses, per-commodity orders, single commercial center, logistics advisor data.
