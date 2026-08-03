@@ -21,7 +21,7 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
 - [x] **Phase 5: Agriculture & Food** - food types, farm varieties, fishing wharf, granary commands
 - [x] **Phase 6: Production & Manufacturing** - extraction sites and workshops with physical loads
 - [x] **Phase 7: Warehouses & Logistics** - warehouses, per-commodity orders, commercial center, logistics advisor data
-- [ ] **Phase 8: Markets & Home Distribution** - buyer/seller walkers, reservation, per-market config
+- [x] **Phase 8: Markets & Home Distribution** - buyer/seller walkers, reservation, per-market config
 - [ ] **Phase 9: External Trade** - regional map, routes/orders, land caravans + merchant ships, quotas, prices
 - [ ] **Phase 10: Finance** - full treasury model, royal subsidy, loans, wage/tax balance
 - [ ] **Phase 11: Civil Safety** - fire, collapse/danger, security/crime, civilization overlay
@@ -147,7 +147,12 @@ Plans:
   1. No load is double-picked (reservation holds during transit).
   2. Distribution prioritizes essential food then evolution-blocking goods.
   3. Per-market product accept/refuse, priority, target stock, and buyer radius are configurable.
-**Plans**: TBD
+**Plans**: 3 (3 complete)
+
+Plans:
+- [x] 08-01: Market config matrix, no-double-pick contention, distribution priority tests (MARK-01/02/03)
+- [x] 08-02: Per-market config registry + runtime honoring + buyer→seller chain (MARK-01/02)
+- [x] 08-03: Market load composition + distribution-priority integration + chain determinism (MARK-03)
 
 ### Phase 9: External Trade
 **Goal**: Regional map, routes/orders, land caravans + merchant ships, quotas, prices.
