@@ -93,6 +93,23 @@ describe('SimRunner accessors', () => {
     r.demolish(2, 2);
     expect(r.getTileState(2, 2).road).toBe(false); // reset to earth on demolish
   });
+
+  it('demolishing a road clears the roadType side-channel too (WR-01)', () => {
+    const map = SimMap.fromLayout(12, 12, () => 'earth');
+    const r = new SimRunner(1337, map);
+    r.placeBuilding('road', 2, 2);
+    // Pave the placed road through the side-channel (the UI paving path probes
+    // road types independently of terrain, so this is how a type lands on road).
+    map.setRoadType(2, 2, 'paved');
+    expect(r.getTileState(2, 2)).toMatchObject({ road: true, roadType: 'paved' });
+
+    r.demolish(2, 2);
+    // Demolition must clear BOTH the terrain and the side-channel, so the
+    // public state never contradicts itself (road:false, roadType:'paved').
+    const s = r.getTileState(2, 2);
+    expect(s.road).toBe(false);
+    expect(s.roadType).toBeNull();
+  });
 });
 
 describe('event lifecycle in runner', () => {

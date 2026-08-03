@@ -419,7 +419,17 @@ export class SimRunner {
       }
     }
     if (type === 'road') {
-      this.map.setRect(building.x, building.y, building.x + footprint - 1, building.y + footprint - 1, 'earth');
+      const x0 = building.x;
+      const y0 = building.y;
+      const x1 = building.x + footprint - 1;
+      const y1 = building.y + footprint - 1;
+      this.map.setRect(x0, y0, x1, y1, 'earth');
+      // A demolished road must clear its road-type side-channel too (WR-01):
+      // otherwise getTileState reports road:false with a phantom
+      // roadType (e.g. 'paved') on what is now bare terrain.
+      for (let dy = y0; dy <= y1; dy++) {
+        for (let dx = x0; dx <= x1; dx++) this.map.setRoadType(dx, dy, null);
+      }
     }
     this.commandLog.push({ tick: this.tickCount, command: `demolish ${x},${y}`, result: 'ok' });
     this.saveCommands.push({ kind: 'demolish', x, y });
