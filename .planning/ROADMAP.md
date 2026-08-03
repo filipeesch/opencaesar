@@ -30,9 +30,9 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
 - [x] **Phase 14: Governance & Requests** - forum/senate/governor; administrative requests
 - [x] **Phase 15: Ratings, Objectives, Events** - four ratings, win conditions, event responses
 - [x] **Phase 16: Full Housing Evolution** - 21 levels, hysteresis, house merging
-- [x] **Phase 17: Campaign, Tutorial & Codex** - 10 missions, contextual tutorial, codex
+- [ ] **Phase 17: Campaign, Tutorial & Codex** - 10 missions, contextual tutorial, codex
 - [ ] **Phase 18: Management UI** - HUD, 13 advisors, overlays, inspectors
-- [x] **Phase 19: Persistence & Options** - versioned save/load, options/accessibility
+- [ ] **Phase 19: Persistence & Options** - versioned save/load, options/accessibility
 
 ## Phase Details
 
