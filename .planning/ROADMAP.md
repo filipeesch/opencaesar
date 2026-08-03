@@ -20,8 +20,8 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
 - [x] **Phase 4: Water System** - wells, reservoirs, aqueducts, fountains, public baths, water overlay
 - [x] **Phase 5: Agriculture & Food** - food types, farm varieties, fishing wharf, granary commands
 - [x] **Phase 6: Production & Manufacturing** - extraction sites and workshops with physical loads
-- [ ] **Phase 7: Warehouses & Logistics** - warehouses, per-commodity orders, commercial center, logistics advisor data
-- [ ] **Phase 8: Markets & Home Distribution** - buyer/seller walkers, reservation, per-market config
+- [x] **Phase 7: Warehouses & Logistics** - warehouses, per-commodity orders, commercial center, logistics advisor data
+- [x] **Phase 8: Markets & Home Distribution** - buyer/seller walkers, reservation, per-market config
 - [ ] **Phase 9: External Trade** - regional map, routes/orders, land caravans + merchant ships, quotas, prices
 - [ ] **Phase 10: Finance** - full treasury model, royal subsidy, loans, wage/tax balance
 - [ ] **Phase 11: Civil Safety** - fire, collapse/danger, security/crime, civilization overlay
