@@ -16,7 +16,7 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
 
 - [x] **Phase 1: Time & Deterministic Core** - TimeSystem (pause + speeds), paused-command queue, expanded per-tile state, golden determinism
 - [x] **Phase 2: Data Catalogs & Military-Absence Gate** - validate catalogs on load; balance externalization; CI military-token validator
-- [ ] **Phase 3: Road Graph & Walker Categories** - road network graph with dirty-flag recompute; road types; wandering/destination/recruiter walkers
+- [x] **Phase 3: Road Graph & Walker Categories** - road network graph with dirty-flag recompute; road types; wandering/destination/recruiter walkers
 - [ ] **Phase 4: Water System** - wells, reservoirs, aqueducts, fountains, public baths, water overlay
 - [ ] **Phase 5: Agriculture & Food** - food types, farm varieties, fishing wharf, granary commands
 - [ ] **Phase 6: Production & Manufacturing** - extraction sites and workshops with physical loads
