@@ -14,25 +14,25 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
 
 ## Phases
 
-- [x] **Phase 1: Time & Deterministic Core** - TimeSystem (pause + speeds), paused-command queue, expanded per-tile state, golden determinism
-- [x] **Phase 2: Data Catalogs & Military-Absence Gate** - validate catalogs on load; balance externalization; CI military-token validator
-- [x] **Phase 3: Road Graph & Walker Categories** - road network graph with dirty-flag recompute; road types; wandering/destination/recruiter walkers
-- [x] **Phase 4: Water System** - wells, reservoirs, aqueducts, fountains, public baths, water overlay
-- [x] **Phase 5: Agriculture & Food** - food types, farm varieties, fishing wharf, granary commands
-- [x] **Phase 6: Production & Manufacturing** - extraction sites and workshops with physical loads
-- [x] **Phase 7: Warehouses & Logistics** - warehouses, per-commodity orders, commercial center, logistics advisor data
-- [x] **Phase 8: Markets & Home Distribution** - buyer/seller walkers, reservation, per-market config
-- [x] **Phase 9: External Trade** - regional map, routes/orders, land caravans + merchant ships, quotas, prices
-- [x] **Phase 10: Finance** - full treasury model, royal subsidy, loans, wage/tax balance
-- [x] **Phase 11: Civil Safety** - fire, collapse/danger, security/crime, civilization overlay
-- [x] **Phase 12: Health, Education, Entertainment** - doctors/infirmaries, schools/libraries, shows
-- [x] **Phase 13: Religion** - temples, grand temples, festivals, favor
-- [x] **Phase 14: Governance & Requests** - forum/senate/governor; administrative requests
-- [x] **Phase 15: Ratings, Objectives, Events** - four ratings, win conditions, event responses
-- [x] **Phase 16: Full Housing Evolution** - 21 levels, hysteresis, house merging
-- [x] **Phase 17: Campaign, Tutorial & Codex** - 10 missions, contextual tutorial, codex
-- [x] **Phase 18: Management UI** - HUD, 13 advisors, overlays, inspectors
-- [x] **Phase 19: Persistence & Options** - versioned save/load, options/accessibility
+- [ ] **Phase 1: Time & Deterministic Core** - TimeSystem (pause + speeds), paused-command queue, expanded per-tile state, golden determinism
+- [ ] **Phase 2: Data Catalogs & Military-Absence Gate** - validate catalogs on load; balance externalization; CI military-token validator
+- [ ] **Phase 3: Road Graph & Walker Categories** - road network graph with dirty-flag recompute; road types; wandering/destination/recruiter walkers
+- [ ] **Phase 4: Water System** - wells, reservoirs, aqueducts, fountains, public baths, water overlay
+- [ ] **Phase 5: Agriculture & Food** - food types, farm varieties, fishing wharf, granary commands
+- [ ] **Phase 6: Production & Manufacturing** - extraction sites and workshops with physical loads
+- [ ] **Phase 7: Warehouses & Logistics** - warehouses, per-commodity orders, commercial center, logistics advisor data
+- [ ] **Phase 8: Markets & Home Distribution** - buyer/seller walkers, reservation, per-market config
+- [ ] **Phase 9: External Trade** - regional map, routes/orders, land caravans + merchant ships, quotas, prices
+- [ ] **Phase 10: Finance** - full treasury model, royal subsidy, loans, wage/tax balance
+- [ ] **Phase 11: Civil Safety** - fire, collapse/danger, security/crime, civilization overlay
+- [ ] **Phase 12: Health, Education, Entertainment** - doctors/infirmaries, schools/libraries, shows
+- [ ] **Phase 13: Religion** - temples, grand temples, festivals, favor
+- [ ] **Phase 14: Governance & Requests** - forum/senate/governor; administrative requests
+- [ ] **Phase 15: Ratings, Objectives, Events** - four ratings, win conditions, event responses
+- [ ] **Phase 16: Full Housing Evolution** - 21 levels, hysteresis, house merging
+- [ ] **Phase 17: Campaign, Tutorial & Codex** - 10 missions, contextual tutorial, codex
+- [ ] **Phase 18: Management UI** - HUD, 13 advisors, overlays, inspectors
+- [ ] **Phase 19: Persistence & Options** - versioned save/load, options/accessibility
 
 ## Phase Details
 
