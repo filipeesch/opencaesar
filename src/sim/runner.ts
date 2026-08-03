@@ -16,6 +16,7 @@ import { CONFIG, HOUSE_TIERS } from './config';
 import { assignedWorkers, computeRatings, tickEconomy, totalJobs, workerPool } from './economy';
 import { cityHappiness, houseHappiness } from './happiness';
 import { computeTargets, tickRatings } from './ratings';
+import { tickTrade } from './trade';
 import { tickMission } from './missions';
 import { desirabilityOf, tickHousing } from './housing';
 import { Map as SimMap } from './map';
@@ -163,6 +164,41 @@ export class SimRunner {
 
     // Missions / campaign win conditions.
     this.tickMissionSystem();
+
+    // External trade (quota-reset by year).
+    this.tickTradeSystem();
+  }
+
+  private tickTradeSystem(): void {
+    const stock: Record<string, number> = { wheat: 0 };
+    for (const b of this.buildings) {
+      if ((b.type === 'granary' || b.type === 'farm') && b.stock) {
+        stock.wheat = (stock.wheat ?? 0) + (b.stock.wheat ?? 0);
+      }
+    }
+    const year = Math.floor(this.tickCount / 360);
+    const result = tickTrade(this.treasury, stock, this.tradeRoutes as never, year);
+    this.treasury = result.treasury;
+    // Apply physical export/import stock changes across granaries/farms.
+    const exportedWheat = result.exports.wheat ?? 0;
+    if (exportedWheat > 0) {
+      let remaining = exportedWheat;
+      for (const b of this.buildings) {
+        if (remaining <= 0) break;
+        if ((b.type === 'granary' || b.type === 'farm') && b.stock && (b.stock.wheat ?? 0) > 0) {
+          const take = Math.min(remaining, b.stock.wheat ?? 0);
+          b.stock.wheat = (b.stock.wheat ?? 0) - take;
+          remaining -= take;
+        }
+      }
+    }
+    const importedWheat = result.imports.wheat ?? 0;
+    if (importedWheat > 0) {
+      const granary = this.buildings.find((b) => b.type === 'granary');
+      if (granary && granary.stock) {
+        granary.stock.wheat = (granary.stock.wheat ?? 0) + importedWheat;
+      }
+    }
   }
 
   private tickMissionSystem(): void {

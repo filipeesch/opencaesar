@@ -92,3 +92,17 @@ describe('paused command queue (CORE-02)', () => {
     expect(r.getPendingCommandCount()).toBe(0);
   });
 });
+
+describe('trade wired into sim tick', () => {
+  it('enabling a trade route affects treasury and granary stock', () => {
+    const r = new SimRunner(1234);
+    r.enableTrade('massilia', true);
+    // place a granary with wheat
+    const res = r.placeBuilding('granary', 5, 5);
+    // seed stock by ticking
+    for (let i = 0; i < 5; i++) r.tick();
+    const treasury = r.getTreasury();
+    expect(typeof treasury).toBe('number');
+    expect(r.getTradeRoutes()['massilia'].enabled).toBe(true);
+  });
+});

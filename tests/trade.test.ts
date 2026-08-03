@@ -41,3 +41,23 @@ describe('trade', () => {
     expect(stock['wheat']).toBe(5);
   });
 });
+
+describe('trade quotas', () => {
+  it('caps annual exports and suspends the route at the cap', () => {
+    const routes = createTradeRoutes();
+    setTradeRoute(routes, 'massilia', true);
+    const route = routes['massilia'];
+    route.annualQuota = 2;
+    const stock: Record<string, number> = { wheat: 10 };
+    const r1 = tickTrade(1000, { ...stock }, routes, 1);
+    expect(r1.exports.wheat ?? 0).toBe(2);
+    expect(routes['massilia'].usedQuota).toBe(2);
+    // same year: quota exhausted → no further export
+    const r2 = tickTrade(1000, { wheat: 10 }, routes, 1);
+    expect(r2.exports.wheat ?? 0).toBe(0);
+    // new year resets the quota
+    const r3 = tickTrade(1000, { wheat: 10 }, routes, 2);
+    expect(r3.exports.wheat ?? 0).toBe(2);
+    expect(routes['massilia'].usedQuota).toBe(2);
+  });
+});

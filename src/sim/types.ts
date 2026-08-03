@@ -125,6 +125,12 @@ export interface TradeRoute {
   enabled: boolean;
   imports: Partial<Record<string, number>>;
   exports: Partial<Record<string, number>>;
+  /** Annual export quota in loads; 0 = unlimited. */
+  annualQuota?: number;
+  /** Quota used so far this year. */
+  usedQuota?: number;
+  /** Last year the quota was reset. */
+  lastYear?: number;
 }
 
 export interface EventRecord {
