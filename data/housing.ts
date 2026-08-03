@@ -1,0 +1,54 @@
+/**
+ * Housing levels — data-driven housing evolution requirements and rewards.
+ * A house levels up when it has access to the required services/goods; it
+ * levels down when it loses them.
+ */
+
+export interface HousingLevelDef {
+  level: number;
+  name: string;
+  /** Maximum residents housed at this level. */
+  capacity: number;
+  /** Tax revenue per resident per month. */
+  taxPerCapita: number;
+  /** Services required to reach this level (service keys). */
+  requires: string[];
+  /** Goods required to reach this level (commodity ids). */
+  requiresGoods: string[];
+  /** Desirability contribution of a house at this level. */
+  desirability: number;
+}
+
+export const HOUSING_LEVELS: readonly HousingLevelDef[] = [
+  { level: 0, name: 'Vacant Lot', capacity: 0, taxPerCapita: 0, requires: [], requiresGoods: [], desirability: 0 },
+  { level: 1, name: 'Crude Hut', capacity: 20, taxPerCapita: 1, requires: ['well'], requiresGoods: [], desirability: 1 },
+  { level: 2, name: 'Hut', capacity: 40, taxPerCapita: 2, requires: ['well'], requiresGoods: ['wheat'], desirability: 2 },
+  { level: 3, name: 'Rough Hovel', capacity: 60, taxPerCapita: 3, requires: ['well', 'market'], requiresGoods: ['wheat'], desirability: 3 },
+  { level: 4, name: 'Hovel', capacity: 80, taxPerCapita: 4, requires: ['well', 'market'], requiresGoods: ['wheat', 'pottery'], desirability: 4 },
+  { level: 5, name: 'Decrepit Insulae', capacity: 100, taxPerCapita: 5, requires: ['well', 'market', 'fountain'], requiresGoods: ['wheat', 'pottery'], desirability: 5 },
+  { level: 6, name: 'Poor Insulae', capacity: 120, taxPerCapita: 6, requires: ['well', 'market', 'fountain'], requiresGoods: ['wheat', 'pottery', 'vegetables'], desirability: 6 },
+  { level: 7, name: 'Average Insulae', capacity: 150, taxPerCapita: 7, requires: ['market', 'fountain', 'school'], requiresGoods: ['wheat', 'pottery', 'vegetables', 'fish'], desirability: 7 },
+  { level: 8, name: 'Fair Insulae', capacity: 180, taxPerCapita: 8, requires: ['market', 'fountain', 'school', 'clinic'], requiresGoods: ['wheat', 'pottery', 'vegetables', 'fish', 'furniture'], desirability: 8 },
+  { level: 9, name: 'Good Insulae', capacity: 200, taxPerCapita: 9, requires: ['market', 'fountain', 'school', 'clinic', 'library'], requiresGoods: ['wheat', 'pottery', 'vegetables', 'fish', 'furniture', 'wine'], desirability: 9 },
+  { level: 10, name: 'Common Apartments', capacity: 220, taxPerCapita: 10, requires: ['market', 'fountain', 'school', 'clinic', 'library', 'theatre'], requiresGoods: ['wheat', 'pottery', 'vegetables', 'fish', 'furniture', 'wine', 'oil'], desirability: 10 },
+  { level: 11, name: 'Pleasant Apartments', capacity: 240, taxPerCapita: 11, requires: ['market', 'fountain', 'hospital', 'school', 'library', 'theatre', 'temple'], requiresGoods: ['wheat', 'pottery', 'vegetables', 'fruit', 'fish', 'furniture', 'wine', 'oil'], desirability: 11 },
+  { level: 12, name: 'Snazzy Apartments', capacity: 260, taxPerCapita: 12, requires: ['market', 'fountain', 'hospital', 'school', 'library', 'theatre', 'temple', 'amphitheatre'], requiresGoods: ['wheat', 'pottery', 'vegetables', 'fruit', 'fish', 'meat', 'furniture', 'wine', 'oil'], desirability: 12 },
+  { level: 13, name: 'Decrepit Small Villa', capacity: 280, taxPerCapita: 13, requires: ['market', 'fountain', 'hospital', 'school', 'library', 'theatre', 'temple', 'amphitheatre', 'forum'], requiresGoods: ['wheat', 'pottery', 'vegetables', 'fruit', 'fish', 'meat', 'furniture', 'wine', 'oil'], desirability: 13 },
+  { level: 14, name: 'Poor Small Villa', capacity: 300, taxPerCapita: 14, requires: ['market', 'fountain', 'hospital', 'school', 'library', 'theatre', 'temple', 'amphitheatre', 'forum', 'garden'], requiresGoods: ['wheat', 'pottery', 'vegetables', 'fruit', 'fish', 'meat', 'furniture', 'wine', 'oil'], desirability: 14 },
+  { level: 15, name: 'Average Small Villa', capacity: 320, taxPerCapita: 15, requires: ['market', 'fountain', 'hospital', 'school', 'library', 'theatre', 'temple', 'amphitheatre', 'forum', 'garden'], requiresGoods: ['wheat', 'pottery', 'vegetables', 'fruit', 'fish', 'meat', 'furniture', 'wine', 'oil', 'tools'], desirability: 15 },
+  { level: 16, name: 'Good Small Villa', capacity: 340, taxPerCapita: 16, requires: ['market', 'fountain', 'hospital', 'school', 'library', 'theatre', 'temple', 'amphitheatre', 'forum', 'garden', 'senate'], requiresGoods: ['wheat', 'pottery', 'vegetables', 'fruit', 'fish', 'meat', 'furniture', 'wine', 'oil', 'tools'], desirability: 16 },
+  { level: 17, name: 'Poor Big Villa', capacity: 360, taxPerCapita: 17, requires: ['market', 'fountain', 'hospital', 'school', 'library', 'theatre', 'temple', 'amphitheatre', 'forum', 'garden', 'senate'], requiresGoods: ['wheat', 'pottery', 'vegetables', 'fruit', 'fish', 'meat', 'furniture', 'wine', 'oil', 'tools'], desirability: 17 },
+  { level: 18, name: 'Average Big Villa', capacity: 380, taxPerCapita: 18, requires: ['market', 'fountain', 'hospital', 'school', 'library', 'theatre', 'temple', 'amphitheatre', 'forum', 'garden', 'senate'], requiresGoods: ['wheat', 'pottery', 'vegetables', 'fruit', 'fish', 'meat', 'furniture', 'wine', 'oil', 'tools'], desirability: 18 },
+  { level: 19, name: 'Good Big Villa', capacity: 400, taxPerCapita: 19, requires: ['market', 'fountain', 'hospital', 'school', 'library', 'theatre', 'temple', 'amphitheatre', 'forum', 'garden', 'senate'], requiresGoods: ['wheat', 'pottery', 'vegetables', 'fruit', 'fish', 'meat', 'furniture', 'wine', 'oil', 'tools'], desirability: 19 },
+  { level: 20, name: 'Luxury Villa', capacity: 420, taxPerCapita: 20, requires: ['market', 'fountain', 'hospital', 'school', 'library', 'theatre', 'temple', 'amphitheatre', 'forum', 'garden', 'senate', 'grand_temple'], requiresGoods: ['wheat', 'pottery', 'vegetables', 'fruit', 'fish', 'meat', 'furniture', 'wine', 'oil', 'tools'], desirability: 20 },
+];
+
+export function housingLevelName(level: number): string {
+  const lvl = HOUSING_LEVELS.find((l) => l.level === level);
+  return lvl ? lvl.name : 'Unknown';
+}
+
+export function housingCapacity(level: number): number {
+  const lvl = HOUSING_LEVELS.find((l) => l.level === level);
+  return lvl ? lvl.capacity : 0;
+}
