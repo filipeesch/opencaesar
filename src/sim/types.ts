@@ -100,10 +100,14 @@ export interface BuildingState {
     foodCooldown: number;
     waterCooldown: number;
     laborCooldown: number;
+    /** Service access delivered by walkers (health/literacy/religion/entertainment). */
+    services?: Partial<Record<string, number>>;
     /** Current desirability of the house tile (same value the evolution logic uses). */
     desirability: number;
     /** Resident happiness 0..100, derived from coverage, desirability, and wages. */
     happiness: number;
+    /** Per-food physical units delivered by sellers (live house food state, §13). */
+    foodInventory?: Record<string, number>;
   };
 }
 

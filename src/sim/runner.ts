@@ -828,22 +828,24 @@ export class SimRunner {
   }
 
   private toBuildingState(b: BuildingInstance): BuildingState {
-    const house = b.house
-      ? (() => {
-          const input = this.houseHappinessInput(b);
-          return {
-            tier: b.house!.tier,
-            tierName: HOUSE_TIERS[b.house!.tier].name,
-            populationCapacity: HOUSE_TIERS[b.house!.tier].population,
-            foodCooldown: b.house!.foodCooldown,
-            waterCooldown: b.house!.waterCooldown,
-            laborCooldown: b.house!.laborCooldown,
-            services: b.house!.services ? { ...b.house!.services } : undefined,
-            desirability: input.desirability,
-            happiness: houseHappiness(input),
-          };
-        })()
-      : undefined;
+      const house = b.house
+        ? (() => {
+            const input = this.houseHappinessInput(b);
+            const h: NonNullable<BuildingState['house']> = {
+              tier: b.house!.tier,
+              tierName: HOUSE_TIERS[b.house!.tier].name,
+              populationCapacity: HOUSE_TIERS[b.house!.tier].population,
+              foodCooldown: b.house!.foodCooldown,
+              waterCooldown: b.house!.waterCooldown,
+              laborCooldown: b.house!.laborCooldown,
+              services: b.house!.services ? { ...b.house!.services } : undefined,
+              desirability: input.desirability,
+              happiness: houseHappiness(input),
+            };
+            if (b.house!.foodInventory) h.foodInventory = { ...b.house!.foodInventory };
+            return h;
+          })()
+        : undefined;
     return {
       id: b.id,
       type: b.type,
