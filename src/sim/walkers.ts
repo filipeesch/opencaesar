@@ -19,9 +19,9 @@ import type { WalkerProfile } from './walkerProfiles';
 import { walkerProfile, mayTraverse } from './walkerProfiles';
 import {
   MARKET_FOOD_CAPS, SELLER_CAPACITY, marketAgents, nextFoodToFetch, pickGranary,
-  sellerLoadComposition, recordMarketVisit,
+  sellerLoadComposition, recordMarketVisit, marketNeedsRestock,
 } from './logistics';
-import type { GranaryCandidate, MarketCoverage, MarketFoodState } from './logistics';
+import type { GranaryCandidate, MarketCoverage, MarketFoodState, MarketConfig } from './logistics';
 import type { ProductionState } from './production';
 
 export interface WalkerInstance {
@@ -124,6 +124,12 @@ export interface SimInternals {
   despawn: (w: WalkerInstance) => void;
   /** Current sim tick (optional; used to timestamp market-visit coverage). */
   tick?: number;
+  /** Live walker list (optional; used to count units already in transit toward a
+   *  market so an explicitly-configured target stock accounts for them). */
+  walkers?: readonly WalkerInstance[];
+  /** Per-market config lookup (MARK-02, decision 4): returns the explicitly-set
+   *  config for a market, or undefined when unconfigured (legacy path). */
+  marketConfig?: (id: number) => MarketConfig | undefined;
 }
 
 const DIRS: readonly Vec2[] = [
@@ -300,10 +306,14 @@ function decideBuyer(sim: SimInternals, w: WalkerInstance, profile: WalkerProfil
   if (!market) return;
   const eff = market.workersRequired > 0 ? market.workersAssigned / market.workersRequired : 0;
   if (marketAgents(eff).buyers <= 0) return; // market staffs no buyer at this efficiency (§12.3)
-  const state = marketFoodState(market);
+  // An explicitly-configured per-market config (MARK-02, decision 4) changes the
+  // buyer's radius, refused-product gate, and restock target; unconfigured
+  // markets keep the legacy hardcoded path below.
+  const cfg = sim.marketConfig?.(market.id);
+  const state = marketFoodState(sim, market, cfg);
   const food = nextFoodToFetch(state);
   if (!food) return;
-  const granary = pickBuyerGranary(sim, w, food, profile);
+  const granary = pickBuyerGranary(sim, w, market, food, profile, cfg?.buyerRadius);
   if (!granary) return;
   const stock = readFood(granary, food);
   const take = Math.min(BUYER_FETCH_AMOUNT, stock);
@@ -367,27 +377,58 @@ function nearestMarket(sim: SimInternals, w: WalkerInstance): BuildingInstance |
   return best;
 }
 
-/** Market demand signal for buyer food choice: restock whatever is below its
- *  per-food cap, basic food first when completely absent (§12.6–12.7). */
-function marketFoodState(market: BuildingInstance): MarketFoodState {
+/** Market demand signal for buyer food choice. Unconfigured markets (cfg
+ *  undefined) use the legacy path: restock whatever is below its per-food cap,
+ *  basic food first when completely absent (§12.6–12.7). An explicitly-configured
+ *  market (MARK-02, decision 4) instead skips refused products, counts units
+ *  already in transit, and derives each food's demand from cfg.targetStock via
+ *  marketNeedsRestock — a food at/above its target (or refused) never triggers
+ *  a fetch. */
+function marketFoodState(sim: SimInternals, market: BuildingInstance, cfg?: MarketConfig): MarketFoodState {
   const current: Record<string, number> = {};
+  const inTransit: Record<string, number> = {};
   const expectedConsumption: Record<string, number> = {};
   for (const f of FOOD_KEYS) {
+    if (cfg && cfg.productRules[f] === 'refuse') continue; // refused product → never fetched
     const stock = readFood(market, f);
     current[f] = stock;
-    const cap = MARKET_FOOD_CAPS[f] ?? 0;
-    expectedConsumption[f] = stock >= cap ? 0 : 1;
+    if (!cfg) {
+      const cap = MARKET_FOOD_CAPS[f] ?? 0;
+      expectedConsumption[f] = stock >= cap ? 0 : 1;
+    } else {
+      inTransit[f] = foodInTransit(sim, market.id, f);
+      expectedConsumption[f] = marketNeedsRestock(cfg, stock, inTransit[f]) ? 1 : 0;
+    }
   }
-  return { current, inTransit: {}, expectedConsumption, basicFood: 'wheat', evolutionBlocking: null };
+  return { current, inTransit, expectedConsumption, basicFood: 'wheat', evolutionBlocking: null };
 }
 
-/** Best road-reachable granary with available stock of `food` (scoreGranary/pickGranary). */
-function pickBuyerGranary(sim: SimInternals, w: WalkerInstance, food: string, profile: WalkerProfile): BuildingInstance | null {
+/** Units of `food` already committed (in transit) toward `marketId` by live
+ *  buyers — counts against the configured target stock. 0 when the walker list
+ *  is not exposed (legacy stub behavior). */
+function foodInTransit(sim: SimInternals, marketId: number, food: string): number {
+  const ws = sim.walkers;
+  if (!ws) return 0;
+  let total = 0;
+  for (const w of ws) {
+    if (w.type === 'buyer' && w.marketId === marketId && w.carryingGood === (food as Good)) {
+      total += w.carriedAmount;
+    }
+  }
+  return total;
+}
+
+/** Best road-reachable granary with available stock of `food` (scoreGranary/
+ *  pickGranary). When `radius` is given (an explicitly-configured buyerRadius),
+ *  candidates are additionally filtered to granaries within that Manhattan
+ *  distance from the market — otherwise the legacy nearest-reachable search. */
+function pickBuyerGranary(sim: SimInternals, w: WalkerInstance, market: BuildingInstance, food: string, profile: WalkerProfile, radius?: number): BuildingInstance | null {
   const candidates: GranaryCandidate[] = [];
   for (const b of sim.buildings) {
     if (b.type !== 'granary') continue;
     const avail = readFood(b, food);
     if (avail <= 0) continue;
+    if (radius !== undefined && manhattan(market.x, market.y, b.x, b.y) > radius) continue;
     const to = sim.adjacentRoadTile(b);
     if (!to) continue;
     const path = findRoadPath(sim.map, { x: w.x, y: w.y }, to, traversableFor(sim, profile));

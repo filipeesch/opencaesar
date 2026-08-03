@@ -27,8 +27,8 @@ import { ObjectiveTracker } from './objectives';
 import { WaterSystem } from './water';
 import { buildCodex } from './campaign';
 import { desirabilityOf, tickHousing } from './housing';
-import { defaultWarehousePolicy, warehouseAccepts } from './logistics';
-import type { LogisticsAdvisorView } from './logistics';
+import { defaultWarehousePolicy, warehouseAccepts, defaultMarketConfig } from './logistics';
+import type { LogisticsAdvisorView, MarketConfig } from './logistics';
 import {
   EXTRACTION_SITES, WORKSHOPS, emptyProduction, satisfiesDeposit, tickWorkshop,
   porterDestination, porterDeliversTo,
@@ -60,7 +60,7 @@ import type {
   WalkerState,
   WalkerType,
 } from './types';
-import type { BuildingInstance, WalkerInstance } from './walkers';
+import type { BuildingInstance, WalkerInstance, SimInternals } from './walkers';
 import { createWalker, updateWalker } from './walkers';
 import { mayTraverse, walkerProfile } from './walkerProfiles';
 import type { LoadDestination } from './production';
@@ -135,6 +135,10 @@ export class SimRunner {
   private messages: SimMessage[] = [];
   private eventLog: EventRecord[] = [];
   private commandLog: CommandLogEntry[] = [];
+  /** Per-market configuration registry (MARK-02, decision 4): additive and inert
+   *  until setMarketConfig stores an entry. Walkers read it via the
+   *  SimInternals.marketConfig hook only when a market is explicitly configured. */
+  private marketConfigs = new Map<number, MarketConfig>();
   /** Ordered list of state-changing commands, used to reconstruct a deterministic save. */
   private saveCommands: SaveCommand[] = [];
   private lowFoodWarnCooldown = 0;
@@ -681,6 +685,31 @@ export class SimRunner {
     return JSON.stringify(this.getState());
   }
 
+  /** Configure a market's behavior per-building (MARK-02, decision 4). Additive
+   *  and inert: storing a config changes no runner behavior until the walkers
+   *  read it through the SimInternals.marketConfig hook. */
+  setMarketConfig(buildingId: number, cfg: MarketConfig): void {
+    this.marketConfigs.set(buildingId, cfg);
+  }
+
+  /** The configured per-market config, or the default when unset. */
+  marketConfig(buildingId: number): MarketConfig {
+    return this.marketConfigs.get(buildingId) ?? defaultMarketConfig();
+  }
+
+  /** Whether a market has an explicitly-stored per-market config. */
+  hasMarketConfig(buildingId: number): boolean {
+    return this.marketConfigs.has(buildingId);
+  }
+
+  /** The live walker-internals seam the runner itself uses for updateWalker —
+   *  read-only exposure so integration tests can drive buyer/seller walkers
+   *  against real runner state and assert via getState(). Additive; no
+   *  existing behavior changes. */
+  getWalkerInternals(): SimInternals {
+    return this.simInternals();
+  }
+
   /** Every accepted and rejected command since construction, in order. */
   getCommandLog(): CommandLogEntry[] {
     return [...this.commandLog];
@@ -1163,6 +1192,8 @@ export class SimRunner {
       adjacentRoadTile: (b: BuildingInstance) => this.adjacentRoadTile(b),
       despawn: (w: WalkerInstance) => this.despawnWalker(w),
       tick: this.tickCount,
+      walkers: this.walkers,
+      marketConfig: (id: number) => this.marketConfigs.get(id),
     };
   }
 

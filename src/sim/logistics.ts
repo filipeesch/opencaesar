@@ -217,6 +217,14 @@ export function marketAccepts(cfg: MarketConfig, product: string, residentClass:
   return true;
 }
 
+/** Whether a market needs restock per its target stock (§18.5 'estoque-alvo'):
+ *  below target when `stock + inTransit < cfg.targetStock` — units already in
+ *  transit count against the target so a buyer does not over-order. Pure and
+ *  deterministic (no RNG, no clock). */
+export function marketNeedsRestock(cfg: MarketConfig, stock: number, inTransit: number): boolean {
+  return stock + inTransit < cfg.targetStock;
+}
+
 /** Market buyer model (task 3.4): wander to the nearest supplier within range. */
 export interface MarketSupplier {
   id: string;
@@ -225,7 +233,23 @@ export interface MarketSupplier {
   hasProduct: (product: string) => boolean;
 }
 
-export function findSupplier(suppliers: MarketSupplier[], marketX: number, marketY: number, product: string, radius: number): MarketSupplier | null {
+export function findSupplier(
+  suppliers: MarketSupplier[],
+  marketX: number,
+  marketY: number,
+  product: string,
+  radius: number,
+  preferredSupplier?: string | null,
+): MarketSupplier | null {
+  // An explicitly configured preferred supplier wins when it holds the product
+  // within radius; otherwise the nearest-within-radius holder is chosen.
+  if (preferredSupplier) {
+    const pref = suppliers.find((s) => s.id === preferredSupplier);
+    if (pref && pref.hasProduct(product)) {
+      const d = Math.abs(pref.x - marketX) + Math.abs(pref.y - marketY);
+      if (d <= radius) return pref;
+    }
+  }
   let best: MarketSupplier | null = null;
   let bestDist = Infinity;
   for (const s of suppliers) {
@@ -731,6 +755,37 @@ export function sellerLoadComposition(
     }
   }
   return load;
+}
+
+/**
+ * Config-driven seller load ordering (MARK-03, decision 5; §18.4/§12.11): derive
+ * the load order from the market config — [opts.basicFood, opts.evolutionBlocking,
+ * ...opts.priorities] then the remaining stocked products — skip refused products
+ * (marketAccepts false) and foods with zero stock or zero cap, then delegate the
+ * fill to sellerLoadComposition within per-food caps and the 100-unit capacity.
+ * Pure and deterministic; additive (does not change sellerLoadComposition).
+ */
+export function marketLoadComposition(
+  cfg: MarketConfig,
+  marketStock: Record<string, number>,
+  perFoodCap: Record<string, number>,
+  capacity = SELLER_CAPACITY,
+  opts: { basicFood?: string; evolutionBlocking?: string | null; priorities?: string[] } = {},
+): Record<string, number> {
+  // Drop refused products from the stock argument so neither the priority list
+  // nor sellerLoadComposition's tail-fill can ever load them.
+  const acceptable: Record<string, number> = {};
+  for (const f of Object.keys(marketStock)) {
+    if (marketAccepts(cfg, f, 'plebeian')) acceptable[f] = marketStock[f];
+  }
+  const head = [
+    ...(opts.basicFood ? [opts.basicFood] : []),
+    ...(opts.evolutionBlocking ? [opts.evolutionBlocking] : []),
+    ...(opts.priorities ?? []),
+  ];
+  const stocked = Object.keys(acceptable).filter((f) => (acceptable[f] ?? 0) > 0);
+  const ordered = [...head, ...stocked.filter((f) => !head.includes(f))];
+  return sellerLoadComposition(acceptable, perFoodCap, capacity, ordered);
 }
 
 /** Per-market service policies (spec §12.15). */
