@@ -375,4 +375,32 @@ describe('production advisor (PROD-02)', () => {
     expect(mine.output).toBe(0);
     expect(mine.kind).toBe('extraction');
   });
+
+  it('IN-02: advisor rows surface the porter destination kind (workshop/warehouse), not just the id', () => {
+    const r = new SimRunner(42, productionChainMap());
+    buildProductionCity(r);
+    for (let i = 0; i < 400; i++) r.tick();
+
+    // every row carries the field and only legal values
+    for (const row of r.getProductionAdvisor().rows) {
+      expect('destinationKind' in row).toBe(true);
+      expect(row.destinationKind === null || row.destinationKind === 'workshop' || row.destinationKind === 'warehouse').toBe(true);
+    }
+
+    // force a single proven delivery on the next tick and read the live row
+    const buildings = [...internals(r).values()];
+    const workshop = buildings.find((b) => b.type === 'pottery_workshop')!;
+    const warehouse = buildings.find((b) => b.type === 'warehouse')!;
+    workshop.production!.output.pottery = 5;
+    workshop.production!.inputs.clay = 3;
+    warehouse.stock = { pottery: 39 }; // replace: room for exactly one more unit
+    r.tick();
+
+    const row = r.getProductionAdvisor().rows.find((x) => x.buildingType === 'pottery_workshop')!;
+    // the last porter move went to the warehouse (the pottery workshop's output
+    // is a finished good no other workshop consumes in the base catalog)
+    expect(row.destinationKind).toBe('warehouse');
+    expect(row.destination).toBe(String(warehouse.id));
+    expect(warehouse.stock.pottery).toBe(40);
+  });
 });

@@ -373,6 +373,7 @@ export class SimRunner {
           status,
           bottleneck,
           destination: b.lastDestinationId ?? null,
+          destinationKind: b.lastDestinationKind ?? null,
           producedLastTick: b.lastProduced ?? 0,
         });
       } else if (exKind || farm) {
@@ -385,6 +386,7 @@ export class SimRunner {
           status: blocked ? 'blocked' : 'working',
           bottleneck: null,
           destination: null,
+          destinationKind: null,
           producedLastTick: b.lastProduced ?? 0,
         });
       }

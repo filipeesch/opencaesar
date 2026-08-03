@@ -522,6 +522,7 @@ export interface ProductionAdvisorRow {
   status: string;
   bottleneck: string | null;
   destination: string | null;
+  destinationKind: string | null;
   producedLastTick: number;
 }
 
@@ -532,6 +533,7 @@ export interface ProductionInternalNote {
   status: string;
   bottleneck: string | null;
   destination: string | null;
+  destinationKind: string | null;
   producedLastTick: number;
 }
 
@@ -570,6 +572,7 @@ export function productionAdvisorRows(
         status: note.status,
         bottleneck: note.bottleneck,
         destination: note.destination,
+        destinationKind: note.destinationKind,
         producedLastTick: note.producedLastTick,
       });
       continue;
@@ -579,7 +582,7 @@ export function productionAdvisorRows(
     if (wsKey) {
       rows.push({
         id: b.id, kind: 'workshop', buildingType: b.type, commodity: WORKSHOPS[wsKey].produces,
-        inputs: {}, output: 0, status: 'idle', bottleneck: null, destination: null, producedLastTick: 0,
+        inputs: {}, output: 0, status: 'idle', bottleneck: null, destination: null, destinationKind: null, producedLastTick: 0,
       });
       continue;
     }
@@ -587,7 +590,7 @@ export function productionAdvisorRows(
     rows.push({
       id: b.id, kind: 'extraction', buildingType: b.type, commodity,
       inputs: {}, output: b.stock[commodity as Good] ?? 0,
-      status: b.active ? 'working' : 'blocked', bottleneck: null, destination: null, producedLastTick: 0,
+      status: b.active ? 'working' : 'blocked', bottleneck: null, destination: null, destinationKind: null, producedLastTick: 0,
     });
   }
   return rows;
