@@ -847,20 +847,41 @@ export class SimRunner {
       }
       if (kind) {
         const site = EXTRACTION_SITES[kind];
-        const terrain = String(this.map.get(b.x, b.y));
-        const resourceType = this.map.tileState(b.x, b.y).resourceType;
-        if (satisfiesDeposit(site, terrain, resourceType)) {
-          const stock = (b.stock[site.produces as Good] ?? 0);
-          b.stock[site.produces as Good] = Math.min(EXTRACTION_OUTPUT_CAPACITY, stock + site.outputPerTick);
-          b.lastProduced = site.outputPerTick;
+        // WR-01: the deposit gate is evaluated over the WHOLE footprint, not
+        // just the anchor tile — an extraction site extracts only when every
+        // footprint tile satisfies its deposit (2x2 for clay/iron/timber, 3x3
+        // for marble). This matches the stricter "full footprint over the
+        // deposit" convention (same as buildings whose `requiredTerrain` must
+        // cover the entire footprint): a site whose footprint only partially
+        // sits on the deposit is blocked and produces nothing.
+        const n = b.footprint;
+        let onDeposit = true;
+        for (let dy = 0; dy < n && onDeposit; dy++) {
+          for (let dx = 0; dx < n; dx++) {
+            const terrain = String(this.map.get(b.x + dx, b.y + dy));
+            const resourceType = this.map.tileState(b.x + dx, b.y + dy).resourceType;
+            if (!satisfiesDeposit(site, terrain, resourceType)) {
+              onDeposit = false;
+              break;
+            }
+          }
+        }
+        if (onDeposit) {
+          // IN-01: report the actually-applied delta, not the nominal rate, so
+          // a capacity-clamped tick (stock already at EXTRACTION_OUTPUT_CAPACITY)
+          // reads producedLastTick = 0 instead of overstating production.
+          const before = b.stock[site.produces as Good] ?? 0;
+          b.stock[site.produces as Good] = Math.min(EXTRACTION_OUTPUT_CAPACITY, before + site.outputPerTick);
+          b.lastProduced = (b.stock[site.produces as Good] as number) - before;
         } else {
           b.production.blocked = true;
           b.lastProduced = 0;
         }
       } else {
-        const stock = (b.stock[farm!.produces] ?? 0);
-        b.stock[farm!.produces] = Math.min(EXTRACTION_OUTPUT_CAPACITY, stock + farm!.perTick);
-        b.lastProduced = farm!.perTick;
+        // IN-01: same actual-delta reporting for raw olive/grape farms.
+        const before = b.stock[farm!.produces] ?? 0;
+        b.stock[farm!.produces] = Math.min(EXTRACTION_OUTPUT_CAPACITY, before + farm!.perTick);
+        b.lastProduced = (b.stock[farm!.produces] as number) - before;
       }
     }
 

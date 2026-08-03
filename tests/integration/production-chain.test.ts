@@ -7,6 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { SimRunner } from '../../src/sim/runner';
 import { BUILDINGS } from '../../src/sim/buildings';
+import { Map as SimMap } from '../../src/sim/map';
 import { productionChainMap, buildProductionCity, place } from '../helpers';
 import type { BuildingType } from '../../src/sim/types';
 import type { BuildingInstance } from '../../src/sim/walkers';
@@ -79,6 +80,54 @@ describe('production chain (PROD-01/02, runner)', () => {
     // the clay pit is genuinely on its deposit (satisfies the gate)
     const site = EXTRACTION_SITES.clay_pit;
     expect(satisfiesDeposit(site, 'earth', 'clay_deposit')).toBe(true);
+  });
+
+  it('WR-01: the deposit gate checks the whole footprint, not just the anchor tile', () => {
+    // Two staffed pits side by side on an all-earth map: one whose full 2x2
+    // footprint sits on a clay deposit, one whose only anchor tile is on clay
+    // (the other three footprint tiles are bare earth). Under the full-footprint
+    // gate the partially-on-deposit site must stay blocked with zero output.
+    const map = SimMap.fromLayout(20, 20, () => 'earth');
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) {
+      map.mutateTileState(15 + dx, 13 + dy, (s) => {
+        s.resourceType = 'clay_deposit';
+      });
+    }
+    // Partial: only the anchor tile (8,13) is clay; (9,13),(8,14),(9,14) are bare.
+    map.mutateTileState(8, 13, (s) => {
+      s.resourceType = 'clay_deposit';
+    });
+
+    const r = new SimRunner(5, map);
+    for (let x = 0; x <= 17; x++) {
+      place(r, 'road', x, 15);
+      place(r, 'road', x, 17);
+    }
+    place(r, 'road', 3, 16);
+    place(r, 'road', 13, 16);
+    place(r, 'clay_pit', 8, 13);  // partial footprint (anchor on clay only)
+    place(r, 'clay_pit', 15, 13); // full footprint on clay
+    for (const x of [0, 2, 4, 6, 8, 10, 12]) place(r, 'house', x, 16);
+    for (let x = 0; x <= 16; x += 2) place(r, 'house', x, 18);
+    for (let i = 0; i < 400; i++) r.tick();
+
+    const pits = [...internals(r).values()].filter((b) => b.type === 'clay_pit');
+    const partial = pits.find((b) => b.x === 8)!;
+    const full = pits.find((b) => b.x === 15)!;
+
+    expect(full.active).toBe(true);
+    expect(full.production!.blocked).toBe(false);
+    expect(full.stock.clay ?? 0).toBeGreaterThan(0);
+
+    // both staffed (16 houses), but the partially-on-deposit site extracts nothing
+    expect(partial.active).toBe(true);
+    expect(partial.production!.blocked).toBe(true);
+    expect(partial.stock.clay ?? 0).toBe(0);
+
+    // and the advisor agrees: blocked with zero output
+    const row = r.getProductionAdvisor().rows.find((x) => x.buildingType === 'clay_pit' && x.id === partial.id)!;
+    expect(row.status).toBe('blocked');
+    expect(row.output).toBe(0);
   });
 
   it('deposit enforcement: an off-deposit iron mine produces no iron and reads blocked while staffed', () => {
