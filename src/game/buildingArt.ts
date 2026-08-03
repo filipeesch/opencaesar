@@ -24,6 +24,10 @@ const RISE: Record<Exclude<BuildingType, 'road'>, number> = {
   fountain: 9, orchard: 9, engineer_post: 12, fire_station: 16,
   clinic: 12, school: 16, library: 14, temple: 18, theatre: 18,
   forum: 20, garden: 6,
+  clay_pit: 12, timber_yard: 12, iron_mine: 14, quarry: 16,
+  olive_farm: 12, grape_farm: 12,
+  pottery_workshop: 14, furniture_workshop: 14, oil_press: 14, winery: 14, tool_workshop: 14,
+  warehouse: 18,
 };
 
 export interface BuildingArtOptions {

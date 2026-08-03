@@ -10,6 +10,10 @@ import type { TileWater, ReservoirState } from './water';
 import { BUILDINGS } from './buildings';
 import { HOUSE_TIERS } from './config';
 import { dailyFoodConsumption, foodVariety, houseFoodDays, houseFoodFromUnits } from './housing';
+import {
+  EXTRACTION_SITES, WORKSHOPS,
+  EXTRACTION_BUILDING_TYPES, WORKSHOP_BUILDING_TYPES, RAW_OLIVE_GRAPE,
+} from './production';
 
 export interface SimSnapshot {
   population: number;
@@ -185,7 +189,7 @@ export function walkerInspection(id: number, x: number, y: number, status: strin
  * overlays and grouped alerts — every value derived from live sim state
  * (never fabricated, spec §33-23). Deterministic pure functions.
  */
-import type { SimState } from './types';
+import type { Good, SimState } from './types';
 
 const FOOD_KEYS = ['wheat', 'vegetables', 'fruit', 'meat', 'fish'] as const;
 /** Base consumption 0.03 units/person/day (spec §13.2) — 30-day projection. */
@@ -494,4 +498,126 @@ export function groupedAlerts(issues: Array<{ key: string; label: string; buildi
   return [...byKey.values()]
     .map((g) => ({ label: g.label, count: g.buildings.length, buildings: g.buildings }))
     .sort((a, b) => b.count - a.count);
+}
+
+/**
+ * === Production advisor data (PROD-02, spec §33-23) ===
+ *
+ * Per-building production rows derived from live sim state — never fabricated.
+ * Extraction/workshop/farm raw producers report stock, status, bottleneck, and
+ * porter destination. Production state is internal to the runner, so the pure
+ * `productionAdvisorRows` reads what SimState serializes (stock, labor) and
+ * falls back to 'idle' for workshop internals; the runner passes a per-building
+ * `notes` map (recorded during tickProduction) to surface the real statuses.
+ */
+
+/** Per-building production advisor row (PROD-02). */
+export interface ProductionAdvisorRow {
+  id: number;
+  kind: 'extraction' | 'workshop';
+  buildingType: string;
+  commodity: string;
+  inputs: Record<string, number>;
+  output: number;
+  status: string;
+  bottleneck: string | null;
+  destination: string | null;
+  producedLastTick: number;
+}
+
+/** Runner-recorded internals for one production building (advisors never invent). */
+export interface ProductionInternalNote {
+  inputs: Record<string, number>;
+  output: number;
+  status: string;
+  bottleneck: string | null;
+  destination: string | null;
+  producedLastTick: number;
+}
+
+/**
+ * Production advisor rows for every extraction/workshop/raw-farm building in
+ * the state. When `notes` carries a runner-recorded entry for a building id,
+ * those authoritative values are used; otherwise the row derives from what
+ * SimState serializes (stock, labor activity) and never invents production
+ * internals (workshops without a note read 'idle' with zero stocks).
+ */
+export function productionAdvisorRows(
+  state: SimState,
+  notes?: Map<number, ProductionInternalNote> | Record<number, ProductionInternalNote>,
+): ProductionAdvisorRow[] {
+  const noteFor = (id: number): ProductionInternalNote | undefined => {
+    if (!notes) return undefined;
+    if (notes instanceof Map) return notes.get(id);
+    return notes[id];
+  };
+  const rows: ProductionAdvisorRow[] = [];
+  for (const b of state.buildings) {
+    const exKey = EXTRACTION_BUILDING_TYPES[b.type];
+    const farm = RAW_OLIVE_GRAPE[b.type];
+    const wsKey = WORKSHOP_BUILDING_TYPES[b.type];
+    if (!exKey && !farm && !wsKey) continue;
+
+    const note = noteFor(b.id);
+    if (note) {
+      rows.push({
+        id: b.id,
+        kind: wsKey ? 'workshop' : 'extraction',
+        buildingType: b.type,
+        commodity: wsKey ? WORKSHOPS[wsKey].produces : exKey ? EXTRACTION_SITES[exKey].produces : farm!.produces,
+        inputs: { ...note.inputs },
+        output: note.output,
+        status: note.status,
+        bottleneck: note.bottleneck,
+        destination: note.destination,
+        producedLastTick: note.producedLastTick,
+      });
+      continue;
+    }
+
+    // SimState-only fallback (no internal note): report what is serialized.
+    if (wsKey) {
+      rows.push({
+        id: b.id, kind: 'workshop', buildingType: b.type, commodity: WORKSHOPS[wsKey].produces,
+        inputs: {}, output: 0, status: 'idle', bottleneck: null, destination: null, producedLastTick: 0,
+      });
+      continue;
+    }
+    const commodity = exKey ? EXTRACTION_SITES[exKey].produces : farm!.produces;
+    rows.push({
+      id: b.id, kind: 'extraction', buildingType: b.type, commodity,
+      inputs: {}, output: b.stock[commodity as Good] ?? 0,
+      status: b.active ? 'working' : 'blocked', bottleneck: null, destination: null, producedLastTick: 0,
+    });
+  }
+  return rows;
+}
+
+/** Aggregate production summary over advisor rows (PROD-02). */
+export interface ProductionAdvisorSummary {
+  workshops: number;
+  activeWorkshops: number;
+  blocked: number;
+  outputFull: number;
+  missingInput: number;
+  noDestination: number;
+  outputStock: Record<string, number>;
+}
+
+export function productionAdvisorSummary(rows: ProductionAdvisorRow[]): ProductionAdvisorSummary {
+  const summary: ProductionAdvisorSummary = { workshops: 0, activeWorkshops: 0, blocked: 0, outputFull: 0, missingInput: 0, noDestination: 0, outputStock: {} };
+  for (const r of rows) {
+    if (r.kind === 'workshop') {
+      summary.workshops += 1;
+      if (r.status === 'working') summary.activeWorkshops += 1;
+      if (r.status === 'blocked') summary.blocked += 1;
+      if (r.status === 'output_full') summary.outputFull += 1;
+      if (r.status === 'missing_input') summary.missingInput += 1;
+      if (r.bottleneck === 'no_destination') summary.noDestination += 1;
+    } else if (r.status === 'blocked') {
+      summary.blocked += 1;
+    }
+    summary.outputStock[r.commodity] = (summary.outputStock[r.commodity] ?? 0) + r.output;
+  }
+  return summary;
 }

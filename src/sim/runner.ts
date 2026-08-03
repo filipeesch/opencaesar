@@ -27,6 +27,12 @@ import { ObjectiveTracker } from './objectives';
 import { WaterSystem } from './water';
 import { buildCodex } from './campaign';
 import { desirabilityOf, tickHousing } from './housing';
+import { defaultWarehousePolicy, warehouseAccepts } from './logistics';
+import {
+  EXTRACTION_SITES, WORKSHOPS, emptyProduction, satisfiesDeposit, tickWorkshop,
+  porterDestination, porterDeliversTo,
+  EXTRACTION_BUILDING_TYPES, WORKSHOP_BUILDING_TYPES, RAW_OLIVE_GRAPE, EXTRACTION_OUTPUT_CAPACITY,
+} from './production';
 import { Map as SimMap } from './map';
 import type { TileState } from './tile';
 import { findRoadPath } from './pathfind';
@@ -37,6 +43,7 @@ import type {
   BuildingState,
   BuildingType,
   CommandLogEntry,
+  Good,
   MessageType,
   PlacementResult,
   Policy,
@@ -55,6 +62,10 @@ import type {
 import type { BuildingInstance, WalkerInstance } from './walkers';
 import { createWalker, updateWalker } from './walkers';
 import { mayTraverse, walkerProfile } from './walkerProfiles';
+import type { LoadDestination } from './production';
+import { workshopStatus, workshopBottleneck } from './production';
+import { productionAdvisorRows, productionAdvisorSummary } from './advisors';
+import type { ProductionAdvisorRow, ProductionAdvisorSummary, ProductionInternalNote } from './advisors';
 
 /** Deferred commands. These share the exact shape of the replayable
  *  `SaveCommand` type, so a paused queue can be serialized verbatim into a save
@@ -67,6 +78,18 @@ type PendingCommand = SaveCommand;
  *  construction, so BALANCE and all data catalogs must stay immutable at
  *  runtime — do not add mutable catalog re-tuning without re-examining this. */
 let catalogsValidated = false;
+
+/** Production-chain constants (Phase 6). Warehouse good capacity matches the
+ *  data catalog (data/buildings.ts: warehouse storageCapacity 40); per-commodity
+ *  slot limit matches the default warehouse policy. Workshop input stock is
+ *  capped so feedstock porters stop feeding an output-full workshop. */
+const WAREHOUSE_CAPACITY = 40;
+const PRODUCTION_WAREHOUSE_SLOTS = 16;
+const WORKSHOP_INPUT_CAPACITY = 10;
+
+function manhattan(x1: number, y1: number, x2: number, y2: number): number {
+  return Math.abs(x1 - x2) + Math.abs(y1 - y2);
+}
 
 /** Live-derived metrics from the running sim, exposed to advisors/UI (WARNING 1). */
 export interface DerivedSnapshot {
@@ -176,6 +199,7 @@ export class SimRunner {
     this.tickSpawns();
     this.tickLabor();
     this.tickFood();
+    this.tickProduction();
     this.tickEconomyInternal();
     tickHousing(this.map, this.buildings, this.policy, this.lastWagesUnpaid > 0, (type, text) =>
       this.emitMessage(type, text),
@@ -299,6 +323,73 @@ export class SimRunner {
   /** Live-derived advisor data (wired from the running sim). */
   getDerived(): DerivedSnapshot {
     return this.derived ?? this.derivedSnapshot();
+  }
+
+  /** Production advisor rows derived from live sim state (PROD-02). Reads the
+   *  internal per-building production state recorded by tickProduction. */
+  getProductionAdvisorRows(): ProductionAdvisorRow[] {
+    return productionAdvisorRows(this.getState(), this.productionNotes());
+  }
+
+  /** Production advisor dataset: per-building rows plus an aggregate summary
+   *  that counts output stock on the books (workshop output + warehouse stock). */
+  getProductionAdvisor(): { rows: ProductionAdvisorRow[]; summary: ProductionAdvisorSummary } {
+    const rows = this.getProductionAdvisorRows();
+    const summary = productionAdvisorSummary(rows);
+    for (const b of this.buildings) {
+      if (b.type !== 'warehouse') continue;
+      for (const [k, v] of Object.entries(b.stock)) {
+        if (typeof v !== 'number' || v <= 0) continue;
+        summary.outputStock[k] = (summary.outputStock[k] ?? 0) + v;
+      }
+    }
+    return { rows, summary };
+  }
+
+  /** Hydrate the per-building internal notes from live BuildingInstances. */
+  private productionNotes(): Map<number, ProductionInternalNote> {
+    const notes = new Map<number, ProductionInternalNote>();
+    for (const b of this.buildings) {
+      const wkind = WORKSHOP_BUILDING_TYPES[b.type];
+      const exKind = EXTRACTION_BUILDING_TYPES[b.type];
+      const farm = RAW_OLIVE_GRAPE[b.type];
+      if (wkind) {
+        if (!b.production) continue;
+        const def = WORKSHOPS[wkind];
+        const status = workshopStatus(def, b.production);
+        const output = b.production.output[def.produces] ?? 0;
+        // A workshop with nothing to deliver is not destination-blocked; with
+        // output pending it has a destination only when a porter dispatched it.
+        const hasDestination = output <= 0 || b.lastDestinationId != null;
+        let bottleneck: string | null = null;
+        if (status === 'working') {
+          if (workshopBottleneck(def, b.production, hasDestination) === 'no_destination') bottleneck = 'no_destination';
+        } else {
+          bottleneck = status;
+        }
+        notes.set(b.id, {
+          inputs: { ...b.production.inputs },
+          output,
+          status,
+          bottleneck,
+          destination: b.lastDestinationId ?? null,
+          producedLastTick: b.lastProduced ?? 0,
+        });
+      } else if (exKind || farm) {
+        if (!b.production) continue;
+        const commodity = exKind ? EXTRACTION_SITES[exKind].produces : farm!.produces;
+        const blocked = !b.active || b.production.blocked;
+        notes.set(b.id, {
+          inputs: {},
+          output: (b.stock as Record<string, number | undefined>)[commodity] ?? 0,
+          status: blocked ? 'blocked' : 'working',
+          bottleneck: null,
+          destination: null,
+          producedLastTick: b.lastProduced ?? 0,
+        });
+      }
+    }
+    return notes;
   }
 
   /** Set an objective/win-condition to evaluate each tick. */
@@ -732,6 +823,204 @@ export class SimRunner {
     const { treasury, result } = tickEconomy(this.buildings, this.policy, this.treasury);
     this.treasury = treasury;
     this.lastWagesUnpaid = result.wagesUnpaid;
+  }
+
+  /**
+   * Extraction + workshop stepping and porter dispatch (Phase 6, PROD-01/02).
+   * Deposit-gated extraction, farm raw production, workshop input consumption /
+   * output production, then feedstock porters (raw stock → workshop inputs or
+   * warehouse) and output porters (workshop output → warehouse). Deterministic:
+   * iterates buildings in placement order and uses no Math.random or clock.
+   */
+  private tickProduction(): void {
+    // (a)+(b) extraction sites (deposit-gated) and raw olive/grape farms.
+    for (const b of this.buildings) {
+      const kind = EXTRACTION_BUILDING_TYPES[b.type];
+      const farm = RAW_OLIVE_GRAPE[b.type];
+      if (!kind && !farm) continue;
+      b.production ??= { inputs: {}, output: {}, active: b.active, blocked: false };
+      b.production.blocked = false;
+      if (!b.active) {
+        b.production.blocked = true;
+        b.lastProduced = 0;
+        continue;
+      }
+      if (kind) {
+        const site = EXTRACTION_SITES[kind];
+        const terrain = String(this.map.get(b.x, b.y));
+        const resourceType = this.map.tileState(b.x, b.y).resourceType;
+        if (satisfiesDeposit(site, terrain, resourceType)) {
+          const stock = (b.stock[site.produces as Good] ?? 0);
+          b.stock[site.produces as Good] = Math.min(EXTRACTION_OUTPUT_CAPACITY, stock + site.outputPerTick);
+          b.lastProduced = site.outputPerTick;
+        } else {
+          b.production.blocked = true;
+          b.lastProduced = 0;
+        }
+      } else {
+        const stock = (b.stock[farm!.produces] ?? 0);
+        b.stock[farm!.produces] = Math.min(EXTRACTION_OUTPUT_CAPACITY, stock + farm!.perTick);
+        b.lastProduced = farm!.perTick;
+      }
+    }
+
+    // (c) workshops — labor gate via active, consume inputs, produce output.
+    for (const b of this.buildings) {
+      const wkind = WORKSHOP_BUILDING_TYPES[b.type];
+      if (!wkind) continue;
+      const def = WORKSHOPS[wkind];
+      b.production ??= emptyProduction(def);
+      b.production.active = b.active;
+      b.lastProduced = tickWorkshop(def, b.production).produced;
+    }
+
+    // (d) feedstock porters — raw producer stock → needy workshop inputs or warehouse.
+    for (const b of this.buildings) {
+      const commodity = this.producedCommodity(b);
+      if (!commodity) continue;
+      if (((b.stock as Record<string, number | undefined>)[commodity] ?? 0) <= 0) continue;
+      const wDests = this.feedstockWorkshops(commodity, b);
+      const whDests = this.warehouseCandidates(commodity, b);
+      const chosen = porterDestination(commodity, wDests, whDests);
+      if (!chosen) continue;
+      if (chosen.kind === 'workshop') {
+        const ws = this.buildingById.get(Number(chosen.id));
+        if (!ws?.production) continue;
+        const moved = this.moveStock(commodity, b.stock as Record<string, number>, {
+          stock: ws.production.inputs, capacity: WORKSHOP_INPUT_CAPACITY,
+        });
+        b.lastDestinationId = moved > 0 ? chosen.id : null;
+        b.lastDestinationKind = moved > 0 ? 'workshop' : null;
+      } else {
+        const wh = this.buildingById.get(Number(chosen.id));
+        if (!wh) continue;
+        const moved = this.moveStock(commodity, b.stock as Record<string, number>, {
+          stock: wh.stock as Record<string, number>, capacity: WAREHOUSE_CAPACITY,
+        });
+        b.lastDestinationId = moved > 0 ? chosen.id : null;
+        b.lastDestinationKind = moved > 0 ? 'warehouse' : null;
+      }
+    }
+
+    // (e) output porters — workshop output → nearest valid warehouse.
+    for (const b of this.buildings) {
+      const wkind = WORKSHOP_BUILDING_TYPES[b.type];
+      if (!wkind) continue;
+      const def = WORKSHOPS[wkind];
+      const state = b.production;
+      if (!state) continue;
+      const out = state.output[def.produces] ?? 0;
+      if (out <= 0) {
+        b.lastDestinationId = null;
+        b.lastDestinationKind = null;
+        continue;
+      }
+      const whDests = this.warehouseCandidates(def.produces, b);
+      const chosen = porterDestination(def.produces, [], whDests);
+      if (!chosen) {
+        state.blocked = true;
+        b.lastDestinationId = null;
+        b.lastDestinationKind = null;
+        continue;
+      }
+      const wh = this.buildingById.get(Number(chosen.id));
+      if (!wh) {
+        state.blocked = true;
+        b.lastDestinationId = null;
+        b.lastDestinationKind = null;
+        continue;
+      }
+      const moved = porterDeliversTo(def, state, { stock: wh.stock as Record<string, number>, capacity: WAREHOUSE_CAPACITY });
+      state.blocked = moved === 0;
+      b.lastDestinationId = moved > 0 ? chosen.id : null;
+      b.lastDestinationKind = moved > 0 ? 'warehouse' : null;
+    }
+  }
+
+  /** Producer's primary commodity from this building, if it is a raw/extraction producer. */
+  private producedCommodity(b: BuildingInstance): string | null {
+    const kind = EXTRACTION_BUILDING_TYPES[b.type];
+    if (kind) return EXTRACTION_SITES[kind].produces;
+    const farm = RAW_OLIVE_GRAPE[b.type];
+    if (farm) return farm.produces;
+    return null;
+  }
+
+  /** Workshop feedstock destinations that are missing `commodity` and have input room. */
+  private feedstockWorkshops(commodity: string, from: BuildingInstance): LoadDestination[] {
+    const dests: LoadDestination[] = [];
+    for (const b of this.buildings) {
+      const wkind = WORKSHOP_BUILDING_TYPES[b.type];
+      if (!wkind || !b.production) continue;
+      const def = WORKSHOPS[wkind];
+      if (!b.production.active) continue;
+      // missing_input for this commodity and input room (per-input slot cap)
+      if ((b.production.inputs[commodity] ?? 0) > 0) continue;
+      let used = 0;
+      for (const v of Object.values(b.production.inputs)) used += v;
+      if (used >= WORKSHOP_INPUT_CAPACITY) continue;
+      dests.push({
+        id: String(b.id),
+        kind: 'workshop',
+        accepts: (c: string) => def.inputs.includes(c),
+        capacity: WORKSHOP_INPUT_CAPACITY - used,
+        distance: manhattan(b.x, b.y, from.x, from.y),
+        need: Math.max(1, WORKSHOP_INPUT_CAPACITY - used),
+      });
+    }
+    return dests;
+  }
+
+  /** Warehouse destinations that accept `commodity` and have remaining room. */
+  private warehouseCandidates(commodity: string, from: BuildingInstance): LoadDestination[] {
+    const dests: LoadDestination[] = [];
+    for (const b of this.buildings) {
+      if (b.type !== 'warehouse') continue;
+      const usedUnits = this.usedUnits(b.stock);
+      const room = WAREHOUSE_CAPACITY - usedUnits;
+      if (room <= 0) continue;
+      const usedSlots = Object.keys(b.stock).filter((k) => ((b.stock as Record<string, number | undefined>)[k] ?? 0) > 0).length;
+      if (usedSlots >= PRODUCTION_WAREHOUSE_SLOTS) continue;
+      if (!warehouseAccepts(defaultWarehousePolicy(), commodity, usedSlots)) continue;
+      dests.push({
+        id: String(b.id),
+        kind: 'warehouse',
+        accepts: () => true,
+        capacity: room,
+        distance: manhattan(b.x, b.y, from.x, from.y),
+        need: 0,
+      });
+    }
+    return dests;
+  }
+
+  /** Total units currently stored in a building stock. */
+  private usedUnits(stock: Partial<Record<Good, number>>): number {
+    let t = 0;
+    for (const v of Object.values(stock ?? {})) t += typeof v === 'number' ? v : 0;
+    return t;
+  }
+
+  /** Move one whole unit of `commodity` from `source` stock into `dest` stock
+   *  (load = 1 unit). Conserves units exactly (source falls by 1, dest rises by
+   *  1); never moves below zero and never moves a fractional unit, so a
+   *  workshop that consumes whole inputs can never see a negative input.
+   *  Returns the moved amount (0 when the source lacks a full unit or dest is
+   *  full). */
+  private moveStock(
+    commodity: string,
+    source: Record<string, number>,
+    dest: { stock: Record<string, number>; capacity: number },
+  ): number {
+    const have = source[commodity] ?? 0;
+    if (have < 1) return 0;
+    let used = 0;
+    for (const v of Object.values(dest.stock)) used += v;
+    const room = Math.max(0, dest.capacity - used);
+    if (room < 1) return 0;
+    source[commodity] = have - 1;
+    dest.stock[commodity] = (dest.stock[commodity] ?? 0) + 1;
+    return 1;
   }
 
   // Helpers --------------------------------------------------------------------

@@ -22,6 +22,7 @@ import {
   sellerLoadComposition, recordMarketVisit,
 } from './logistics';
 import type { GranaryCandidate, MarketCoverage, MarketFoodState } from './logistics';
+import type { ProductionState } from './production';
 
 export interface WalkerInstance {
   id: number;
@@ -95,6 +96,16 @@ export interface BuildingInstance {
   spawnCooldown: number;
   stock: Partial<Record<Good, number>>;
   house?: HouseInstance;
+  /** Internal production/workshop state (extraction sites, workshops). Not
+   *  serialized to BuildingState — kept internal so goldens/SimState are
+   *  unaffected. */
+  production?: ProductionState;
+  /** Units produced by this building on the last tick (advisor). */
+  lastProduced?: number;
+  /** Building id a porter moved the last load to, or null (advisor). */
+  lastDestinationId?: string | null;
+  /** Kind of the last porter destination ('workshop' | 'warehouse'), or null. */
+  lastDestinationKind?: 'workshop' | 'warehouse' | null;
 }
 
 /**

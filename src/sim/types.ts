@@ -17,12 +17,17 @@ export type Good = 'wheat' | 'pottery' | 'vegetables' | 'fruit' | 'fish' | 'meat
 export type BuildingType =
   | 'road' | 'house' | 'farm' | 'granary' | 'market' | 'well'
   | 'fountain' | 'orchard' | 'engineer_post' | 'fire_station' | 'clinic'
-  | 'school' | 'library' | 'temple' | 'theatre' | 'forum' | 'garden';
+  | 'school' | 'library' | 'temple' | 'theatre' | 'forum' | 'garden'
+  | 'clay_pit' | 'timber_yard' | 'iron_mine' | 'quarry'
+  | 'olive_farm' | 'grape_farm'
+  | 'pottery_workshop' | 'furniture_workshop' | 'oil_press' | 'winery' | 'tool_workshop'
+  | 'warehouse';
 
 export type BuildingCategory =
   | 'roads' | 'housing' | 'food' | 'water' | 'infrastructure'
   | 'engineering' | 'safety' | 'health' | 'education' | 'entertainment'
-  | 'religion' | 'government' | 'ornament';
+  | 'religion' | 'government' | 'ornament'
+  | 'raw' | 'workshop' | 'storage';
 
 export type WalkerType =
   | 'market' | 'well' | 'labor'

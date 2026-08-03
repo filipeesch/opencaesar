@@ -161,6 +161,58 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     type: 'garden', name: 'Garden', category: 'ornament',
     footprint: 1, cost: 30, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: false, workers: 0,
   },
+  // Raw producers (PROD-01) — deposits may be listed first so placement reads
+  // natural on the required terrain; no spawnEveryTicks → no walkers spawned.
+  clay_pit: {
+    type: 'clay_pit', name: 'Clay Pit', category: 'raw',
+    footprint: 2, cost: 120, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 8,
+  },
+  timber_yard: {
+    type: 'timber_yard', name: 'Timber Yard', category: 'raw',
+    footprint: 2, cost: 130, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 8,
+  },
+  iron_mine: {
+    type: 'iron_mine', name: 'Iron Mine', category: 'raw',
+    footprint: 2, cost: 220, allowedTerrains: ['rock', 'earth', 'fertile', 'trees'], requiresRoad: true, workers: 12,
+  },
+  quarry: {
+    type: 'quarry', name: 'Marble Quarry', category: 'raw',
+    footprint: 3, cost: 400, allowedTerrains: ['rock', 'earth', 'fertile', 'trees'], requiresRoad: true, workers: 16,
+  },
+  olive_farm: {
+    type: 'olive_farm', name: 'Olive Farm', category: 'raw',
+    footprint: 2, cost: 150, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 8,
+  },
+  grape_farm: {
+    type: 'grape_farm', name: 'Grape Farm', category: 'raw',
+    footprint: 2, cost: 150, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 8,
+  },
+  // Workshops (PROD-02)
+  pottery_workshop: {
+    type: 'pottery_workshop', name: 'Pottery Workshop', category: 'workshop',
+    footprint: 2, cost: 200, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 8,
+  },
+  furniture_workshop: {
+    type: 'furniture_workshop', name: 'Furniture Workshop', category: 'workshop',
+    footprint: 2, cost: 210, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 8,
+  },
+  oil_press: {
+    type: 'oil_press', name: 'Oil Press', category: 'workshop',
+    footprint: 2, cost: 190, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 8,
+  },
+  winery: {
+    type: 'winery', name: 'Winery', category: 'workshop',
+    footprint: 2, cost: 190, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 8,
+  },
+  tool_workshop: {
+    type: 'tool_workshop', name: 'Tool Workshop', category: 'workshop',
+    footprint: 2, cost: 230, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 8,
+  },
+  // Storage (PROD-02 destination)
+  warehouse: {
+    type: 'warehouse', name: 'Warehouse', category: 'storage',
+    footprint: 2, cost: 150, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 3,
+  },
 };
 
 /** Immutable house-tier table exposed for UI and tests. */

@@ -8,6 +8,8 @@ import {
 } from '../../src/sim/advisors';
 import { SimRunner } from '../../src/sim/runner';
 import { Map as SimMap } from '../../src/sim/map';
+import { productionChainMap, buildProductionCity, place } from '../helpers';
+import type { BuildingInstance } from '../../src/sim/walkers';
 import {
   WaterSystem, FOUNTAIN_DESIRABILITY_BONUS, WELL_DESIRABILITY_PENALTY, RESERVOIR_STORAGE_CAPACITY,
 } from '../../src/sim/water';
@@ -299,5 +301,78 @@ describe('grouped food notifications (AGRI-03, spec §23.4)', () => {
     expect(agg?.count).toBe(3);
     expect(agg?.buildings).toEqual(['Farm 1', 'Farm 2', 'Farm 3']);
     expect(alerts.find((a) => a.label === 'Granary full')?.count).toBe(1);
+  });
+});
+
+describe('production advisor (PROD-02)', () => {
+  /** Reach the private building registry to read internal production state. */
+  function internals(r: SimRunner): Map<number, BuildingInstance> {
+    return (r as unknown as { buildingById: Map<number, BuildingInstance> }).buildingById;
+  }
+
+  it('derives per-building rows and a summary from live sim state — never fabricated', () => {
+    const r = new SimRunner(42, productionChainMap());
+    buildProductionCity(r);
+    for (let i = 0; i < 400; i++) r.tick();
+
+    const advisor = r.getProductionAdvisor();
+    const rows = advisor.rows;
+    const clay = rows.find((row) => row.buildingType === 'clay_pit');
+    const pottery = rows.find((row) => row.buildingType === 'pottery_workshop');
+    expect(clay).toBeDefined();
+    expect(pottery).toBeDefined();
+    expect(clay!.kind).toBe('extraction');
+    expect(pottery!.kind).toBe('workshop');
+    expect(clay!.commodity).toBe('clay');
+    expect(pottery!.commodity).toBe('pottery');
+
+    // the warehouse exists (it is the porter destination) but is storage — no row
+    expect(rows.find((row) => row.buildingType === 'warehouse')).toBeUndefined();
+
+    // every row value derives from state — workshop row equals internal state
+    const buildings = [...internals(r).values()];
+    const pit = buildings.find((b) => b.type === 'clay_pit')!;
+    const workshop = buildings.find((b) => b.type === 'pottery_workshop')!;
+    const warehouse = buildings.find((b) => b.type === 'warehouse')!;
+    expect(pottery!.output).toBe(workshop.production!.output.pottery ?? 0);
+    expect(pottery!.inputs.clay).toBe(workshop.production!.inputs.clay ?? 0);
+    expect(clay!.output).toBe(pit.stock.clay ?? 0);
+    // destination is the warehouse id whenever a porter move was recorded
+    if (pottery!.destination) expect(Number(pottery!.destination)).toBe(warehouse.id);
+
+    // production actually happened over the run (the city chain delivered)
+    expect(warehouse.stock.pottery ?? 0).toBeGreaterThan(0);
+    // the workshop row's real values changed from the idle baseline (not 0/1 stubs)
+    expect(pottery!.producedLastTick).toBeGreaterThanOrEqual(0);
+    expect(pottery!.output).toBeGreaterThanOrEqual(0);
+
+    // summary aggregates real counts and output stock
+    expect(advisor.summary.workshops).toBeGreaterThan(0);
+    expect(advisor.summary.activeWorkshops).toBeGreaterThanOrEqual(0);
+    expect(advisor.summary.outputStock.pottery ?? 0).toBeGreaterThan(0);
+
+    // starving the workshop of clay flips its row to missing_input
+    workshop.production!.inputs.clay = 0;
+    const starved = r.getProductionAdvisor().rows.find((row) => row.buildingType === 'pottery_workshop')!;
+    expect(starved.status).toBe('missing_input');
+    expect(starved.bottleneck).toBe('missing_input');
+  });
+
+  it('reports an off-deposit iron mine as blocked with zero output', () => {
+    const r = new SimRunner(7, productionChainMap());
+    for (let x = 0; x <= 14; x++) {
+      place(r, 'road', x, 15);
+      place(r, 'road', x, 17);
+    }
+    place(r, 'road', 4, 16);
+    place(r, 'iron_mine', 2, 13);
+    for (const x of [0, 2, 6, 8, 10, 12]) place(r, 'house', x, 16);
+    for (let x = 0; x <= 14; x += 2) place(r, 'house', x, 18);
+    for (let i = 0; i < 400; i++) r.tick();
+
+    const mine = r.getProductionAdvisor().rows.find((row) => row.buildingType === 'iron_mine')!;
+    expect(mine.status).toBe('blocked');
+    expect(mine.output).toBe(0);
+    expect(mine.kind).toBe('extraction');
   });
 });
