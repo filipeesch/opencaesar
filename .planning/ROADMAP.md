@@ -14,7 +14,7 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
 
 ## Phases
 
-- [ ] **Phase 1: Time & Deterministic Core** - TimeSystem (pause + speeds), paused-command queue, expanded per-tile state, golden determinism
+- [x] **Phase 1: Time & Deterministic Core** - TimeSystem (pause + speeds), paused-command queue, expanded per-tile state, golden determinism
 - [ ] **Phase 2: Data Catalogs & Military-Absence Gate** - validate catalogs on load; balance externalization; CI military-token validator
 - [ ] **Phase 3: Road Graph & Walker Categories** - road network graph with dirty-flag recompute; road types; wandering/destination/recruiter walkers
 - [ ] **Phase 4: Water System** - wells, reservoirs, aqueducts, fountains, public baths, water overlay
@@ -44,12 +44,12 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
   1. Stepping the sim at different frame rates for the same days yields identical state.
   2. Pausing halts simulated time; build/demolish/policy issued while paused is consumed on the next step.
   3. Tiles expose elevation, fertility, resource, waterDepth, aqueduct, risk, pollution, traffic, coverage, ownership, blocked.
-**Plans**: TBD
+**Plans**: 3 (3 complete)
 
 Plans:
-- [ ] 01-01: Introduce TimeSystem paced by simulation step with pause + 0.5×/1×/2×/4×/8×
-- [ ] 01-02: Add expanded tile state and persistence
-- [ ] 01-03: Add deterministic golden tests over the new core
+- [x] 01-01: TimeSystem fixed-step frame-rate independence + per-speed/boundary tests (CORE-01)
+- [x] 01-02: Build/demolish/policy paused-command pipeline + save/load replay (CORE-02)
+- [x] 01-03: Read-only per-tile state accessor + paused-command golden (CORE-03)
 
 ### Phase 2: Data Catalogs & Military-Absence Gate
 **Goal**: Externalize balance into validated data catalogs and add the no-military CI gate.
