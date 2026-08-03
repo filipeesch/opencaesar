@@ -20,7 +20,7 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
 - [x] **Phase 4: Water System** - wells, reservoirs, aqueducts, fountains, public baths, water overlay
 - [x] **Phase 5: Agriculture & Food** - food types, farm varieties, fishing wharf, granary commands
 - [x] **Phase 6: Production & Manufacturing** - extraction sites and workshops with physical loads
-- [ ] **Phase 7: Warehouses & Logistics** - warehouses, per-commodity orders, commercial center, logistics advisor data
+- [x] **Phase 7: Warehouses & Logistics** - warehouses, per-commodity orders, commercial center, logistics advisor data
 - [ ] **Phase 8: Markets & Home Distribution** - buyer/seller walkers, reservation, per-market config
 - [ ] **Phase 9: External Trade** - regional map, routes/orders, land caravans + merchant ships, quotas, prices
 - [ ] **Phase 10: Finance** - full treasury model, royal subsidy, loans, wage/tax balance
@@ -132,7 +132,12 @@ Plans:
   1. Warehouses store one load per slot and honor per-commodity orders.
   2. Only one commercial center may be designated; fallback + warnings on full.
   3. Advisors report stock, production/consumption, in-transit, bottlenecks, stopped buildings.
-**Plans**: TBD
+**Plans**: 3 (3 complete)
+
+Plans:
+- [x] 07-01: Warehouse order matrix + tick-based reservation pool (WARE-01)
+- [x] 07-02: Road-reachable warehouse transfer + commercial-center fallback (WARE-01/02)
+- [x] 07-03: Live logistics advisor + warehouse-chain determinism (WARE-03)
 
 ### Phase 8: Markets & Home Distribution
 **Goal**: Market buyer/seller walkers with reservation-based selection and per-market config.
