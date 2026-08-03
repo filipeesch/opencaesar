@@ -40,3 +40,34 @@ describe('data catalog', () => {
     expect(Object.keys(MISSIONS).length).toBeGreaterThan(0);
   });
 });
+
+import { validateCatalogs } from '../data/validate';
+import { localize, translateAll } from '../data/localization';
+
+describe('data catalog validation + localization', () => {
+  it('all catalogs pass load-time validation', () => {
+    expect(validateCatalogs()).toEqual([]);
+  });
+
+  it('localization resolves known keys and falls back gracefully', () => {
+    expect(localize('pt', 'treasury')).toBe('Tesouro');
+    expect(localize('en', 'treasury')).toBe('Treasury');
+    expect(localize('en', 'missing_key')).toBe('missing_key');
+    expect(Object.keys(translateAll('pt')).length).toBeGreaterThan(0);
+  });
+});
+
+import { BALANCE } from '../data/balance';
+import { CONFIG } from '../src/sim/config';
+
+describe('balance catalog equivalence (DATA-02)', () => {
+  it('config re-exports the data balance values identically', () => {
+    expect({ ...CONFIG } as Record<string, unknown>).toEqual({ ...BALANCE } as Record<string, unknown>);
+  });
+
+  it('balance catalog carries the known sentinel values', () => {
+    expect(CONFIG.startingTreasury).toBe(1000);
+    expect(CONFIG.ticksPerSecond).toBe(4);
+    expect(CONFIG.walkerSpeedPerTick).toBe(0.5);
+  });
+});
