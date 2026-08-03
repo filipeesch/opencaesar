@@ -96,3 +96,68 @@ export function nextPickPriority(
   if (evolutionBlocking && (current[evolutionBlocking] ?? 0) <= 0) return evolutionBlocking;
   return null;
 }
+
+/** Per-market configuration (task 3.6). */
+export interface MarketConfig {
+  productRules: Partial<Record<string, 'accept' | 'refuse'>>;
+  targetStock: number;
+  buyerRadius: number;
+  /** Block wine for plebeian households. */
+  blockWineForPlebeians: boolean;
+  preferredSupplier: string | null;
+}
+
+export function defaultMarketConfig(): MarketConfig {
+  return { productRules: {}, targetStock: 20, buyerRadius: 2, blockWineForPlebeians: true, preferredSupplier: null };
+}
+
+/** Whether a market accepts a product for a given resident class. */
+export function marketAccepts(cfg: MarketConfig, product: string, residentClass: string): boolean {
+  if (cfg.productRules[product] === 'refuse') return false;
+  if (cfg.blockWineForPlebeians && product === 'wine' && residentClass === 'plebeian') return false;
+  return true;
+}
+
+/** Market buyer model (task 3.4): wander to the nearest supplier within range. */
+export interface MarketSupplier {
+  id: string;
+  x: number;
+  y: number;
+  hasProduct: (product: string) => boolean;
+}
+
+export function findSupplier(suppliers: MarketSupplier[], marketX: number, marketY: number, product: string, radius: number): MarketSupplier | null {
+  let best: MarketSupplier | null = null;
+  let bestDist = Infinity;
+  for (const s of suppliers) {
+    if (!s.hasProduct(product)) continue;
+    const d = Math.abs(s.x - marketX) + Math.abs(s.y - marketY);
+    if (d <= radius && d < bestDist) {
+      bestDist = d;
+      best = s;
+    }
+  }
+  return best;
+}
+
+/** Production/logistics advisor data (task 5.6). */
+export interface LogisticsAdvisorView {
+  stock: Record<string, number>;
+  production: Record<string, number>;
+  consumption: Record<string, number>;
+  inTransit: number;
+  bottlenecks: number;
+  stopped: number;
+}
+
+export function logisticsAdvisor(
+  stock: Record<string, number>,
+  production: Record<string, number>,
+  consumption: Record<string, number>,
+  portsActive: number,
+  totalPorters: number,
+  bottlenecks: number,
+  stopped: number,
+): LogisticsAdvisorView {
+  return { stock, production, consumption, inTransit: totalPorters - portsActive, bottlenecks, stopped };
+}
