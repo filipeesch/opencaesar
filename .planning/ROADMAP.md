@@ -15,7 +15,7 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
 ## Phases
 
 - [x] **Phase 1: Time & Deterministic Core** - TimeSystem (pause + speeds), paused-command queue, expanded per-tile state, golden determinism
-- [ ] **Phase 2: Data Catalogs & Military-Absence Gate** - validate catalogs on load; balance externalization; CI military-token validator
+- [x] **Phase 2: Data Catalogs & Military-Absence Gate** - validate catalogs on load; balance externalization; CI military-token validator
 - [ ] **Phase 3: Road Graph & Walker Categories** - road network graph with dirty-flag recompute; road types; wandering/destination/recruiter walkers
 - [ ] **Phase 4: Water System** - wells, reservoirs, aqueducts, fountains, public baths, water overlay
 - [ ] **Phase 5: Agriculture & Food** - food types, farm varieties, fishing wharf, granary commands
@@ -59,7 +59,12 @@ Plans:
   1. Loading reports an error and refuses to run on corrupt catalog data.
   2. Externalized constants reproduce prior behavior (golden equivalence).
   3. CI fails if any forbidden military token appears in src/ or data/.
-**Plans**: TBD
+**Plans**: 3 (3 complete)
+
+Plans:
+- [x] 02-01: Load-time catalog validation incl. balance + hard-fail guard (DATA-01)
+- [x] 02-02: Balance externalization parity tests (DATA-02)
+- [x] 02-03: Independent military-absence CI gate (DATA-03)
 
 ### Phase 3: Road Graph & Walker Categories
 **Goal**: Road network as graph with localized recomputation; road types; three walker classes.
