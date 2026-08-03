@@ -135,7 +135,11 @@ export function tickWorkshop(w: Workshop, s: ProductionState): { produced: numbe
     s.blocked = status === 'blocked' || status === 'missing_input' || status === 'output_full';
     return { produced: 0 };
   }
-  for (const i of w.inputs) s.inputs[i] = (s.inputs[i] ?? 0) - 1;
+  // WR-03: clamp the decrement at 0 so inputs can never go negative, even if a
+  // future writer hydrates a fractional input (save/feedstock paths). Consuming
+  // Math.min(1, input) for a fractional input keeps the no-negative-input
+  // invariant independent of the writer that populated the stock.
+  for (const i of w.inputs) s.inputs[i] = Math.max(0, (s.inputs[i] ?? 0) - 1);
   const produced = Math.min(w.outputPerTick, w.stockCapacity - (s.output[w.produces] ?? 0));
   s.output[w.produces] = (s.output[w.produces] ?? 0) + produced;
   return { produced };

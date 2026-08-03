@@ -95,4 +95,42 @@ describe('blocked states preserve goods (PROD-02, no-loss)', () => {
     expect(s2.output.pottery).toBe(2);
     expect(s2.inputs.clay).toBe(10);
   });
+
+  it('WR-03: a fractional/partial input can never drive workshop inputs negative', () => {
+    // workshopStatus treats any input > 0 as present, so a fractional input
+    // (e.g. hydrated from a future fractional feedstock path) still enters the
+    // working branch; the consumption clamp must keep it >= 0 rather than
+    // subtracting a whole unit below zero.
+    const w = WORKSHOPS.pottery;
+    const s = emptyProduction(w);
+    s.inputs.clay = 0.5;
+    s.output.pottery = 0;
+    s.active = true;
+    expect(workshopStatus(w, s)).toBe('working');
+
+    tickWorkshop(w, s);
+    expect(s.inputs.clay).toBeGreaterThanOrEqual(0);
+    expect(s.output.pottery).toBeGreaterThan(0);
+  });
+
+  it('WR-03: partial-input degradation never produces a negative input across ticks', () => {
+    const w = WORKSHOPS.pottery;
+    const s = emptyProduction(w);
+    // a sub-whole input that degrades below 1 across working ticks
+    s.inputs.clay = 1.6;
+    s.output.pottery = 0;
+    s.active = true;
+    for (let i = 0; i < 5; i++) tickWorkshop(w, s);
+    for (const v of Object.values(s.inputs)) {
+      expect(v).toBeGreaterThanOrEqual(0);
+    }
+    // once real whole inputs run out the workshop reports missing_input and
+    // stops producing — never a negative stock
+    const s2 = emptyProduction(w);
+    s2.inputs.clay = 0;
+    s2.active = true;
+    expect(workshopStatus(w, s2)).toBe('missing_input');
+    expect(tickWorkshop(w, s2).produced).toBe(0);
+    expect(s2.inputs.clay).toBe(0);
+  });
 });
