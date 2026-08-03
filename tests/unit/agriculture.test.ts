@@ -124,6 +124,26 @@ describe('fishing wharf with boat voyage (AGRI-02, spec §10)', () => {
     expect(boat.catch).toBeLessThanOrEqual(BOAT_CAPACITY);
   });
 
+  it('catch growth is bounded by BOTH the remaining cycle ticks and the 100-unit capacity (IN-05)', () => {
+    // A fishing-phase boat accumulates at most one unit per remaining tick, and
+    // never past BOAT_CAPACITY — pinning the intended 30/100 invariant.
+    const boat = createFishingBoat();
+    boat.state = 'fishing';
+    boat.remaining = 5;
+    boat.catch = 0;
+    while (boat.remaining > 0) boatStep(boat, { hasZone: true, wharfFree: true });
+    expect(boat.catch).toBeLessThanOrEqual(5); // bounded by remaining
+    expect(boat.catch).toBeLessThanOrEqual(BOAT_CAPACITY); // and by capacity
+    expect(boat.catch).toBeGreaterThan(0);
+    // Even a very long cycle never exceeds capacity.
+    boat.state = 'fishing';
+    boat.remaining = 5000;
+    boat.catch = 0;
+    for (let i = 0; i < 5000; i++) boatStep(boat, { hasZone: true, wharfFree: true });
+    expect(boat.catch).toBeLessThanOrEqual(BOAT_CAPACITY);
+    expect(boat.catch).toBe(BOAT_CAPACITY); // saturates at capacity, never above
+  });
+
   it('stays seeking-zone (not destroying product) when no fishing zone exists', () => {
     const boat = createFishingBoat();
     boatStep(boat, { hasZone: false, wharfFree: true });
@@ -156,12 +176,12 @@ describe('fishing wharf with boat voyage (AGRI-02, spec §10)', () => {
     boat.state = 'unloading';
     boat.catch = 30;
     const wharf = { units: 195, capacity: 200 }; // only 5 units of room
-    const r = boatStep(boat, { hasZone: true, wharfFree: true, wharfStock: wharf });
+    boatStep(boat, { hasZone: true, wharfFree: true, wharfStock: wharf });
     expect(wharf.units).toBe(200);
     expect(boat.catch).toBe(25); // remainder kept on the boat — not destroyed
     expect(boat.state).toBe('unloading'); // stays unloading until fully handed off
     const wharf2 = { units: 0, capacity: 200 };
-    const r2 = boatStep(boat, { hasZone: true, wharfFree: true, wharfStock: wharf2 });
+    boatStep(boat, { hasZone: true, wharfFree: true, wharfStock: wharf2 });
     expect(wharf2.units).toBe(25);
     expect(boat.catch).toBe(0);
     expect(boat.state).toBe('idle');
