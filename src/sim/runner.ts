@@ -925,7 +925,11 @@ export class SimRunner {
       }
     }
 
-    // (e) output porters — workshop output → nearest valid warehouse.
+    // (e) output porters — workshop output → needy workshop input or nearest warehouse.
+    // IN-03: candidates are built via feedstockWorkshops (accepts-aware, so a
+    // workshop that requests this good as an input wins per §16.4) with the
+    // warehouse fallback — previously the workshop branch was never reachable
+    // for finished goods because the porter passed an empty workshop list.
     for (const b of this.buildings) {
       const wkind = WORKSHOP_BUILDING_TYPES[b.type];
       if (!wkind) continue;
@@ -938,25 +942,42 @@ export class SimRunner {
         b.lastDestinationKind = null;
         continue;
       }
+      const wDests = this.feedstockWorkshops(def.produces, b);
       const whDests = this.warehouseCandidates(def.produces, b);
-      const chosen = porterDestination(def.produces, [], whDests);
+      const chosen = porterDestination(def.produces, wDests, whDests);
       if (!chosen) {
         state.blocked = true;
         b.lastDestinationId = null;
         b.lastDestinationKind = null;
         continue;
       }
-      const wh = this.buildingById.get(Number(chosen.id));
-      if (!wh) {
-        state.blocked = true;
-        b.lastDestinationId = null;
-        b.lastDestinationKind = null;
-        continue;
+      if (chosen.kind === 'workshop') {
+        const ws = this.buildingById.get(Number(chosen.id));
+        if (!ws?.production) {
+          state.blocked = true;
+          b.lastDestinationId = null;
+          b.lastDestinationKind = null;
+          continue;
+        }
+        const moved = porterDeliversTo(def, state, {
+          stock: ws.production.inputs, capacity: WORKSHOP_INPUT_CAPACITY,
+        });
+        state.blocked = moved === 0;
+        b.lastDestinationId = moved > 0 ? chosen.id : null;
+        b.lastDestinationKind = moved > 0 ? 'workshop' : null;
+      } else {
+        const wh = this.buildingById.get(Number(chosen.id));
+        if (!wh) {
+          state.blocked = true;
+          b.lastDestinationId = null;
+          b.lastDestinationKind = null;
+          continue;
+        }
+        const moved = porterDeliversTo(def, state, { stock: wh.stock as Record<string, number>, capacity: WAREHOUSE_CAPACITY });
+        state.blocked = moved === 0;
+        b.lastDestinationId = moved > 0 ? chosen.id : null;
+        b.lastDestinationKind = moved > 0 ? 'warehouse' : null;
       }
-      const moved = porterDeliversTo(def, state, { stock: wh.stock as Record<string, number>, capacity: WAREHOUSE_CAPACITY });
-      state.blocked = moved === 0;
-      b.lastDestinationId = moved > 0 ? chosen.id : null;
-      b.lastDestinationKind = moved > 0 ? 'warehouse' : null;
     }
   }
 
