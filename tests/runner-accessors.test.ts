@@ -106,3 +106,28 @@ describe('trade wired into sim tick', () => {
     expect(r.getTradeRoutes()['massilia'].enabled).toBe(true);
   });
 });
+
+describe('save/load round-trip determinism (task 12.3)', () => {
+  it('reloading a save mid-run reproduces the exact continued state', () => {
+    const seed = 777;
+    const step = (r: SimRunner, n: number) => {
+      for (let i = 0; i < n; i++) r.tick();
+    };
+    // Original straight run.
+    const a = new SimRunner(seed);
+    step(a, 200);
+    const save = a.getSaveData();
+
+    // Continued straight run from tick 200.
+    const b = new SimRunner(seed);
+    step(b, 200);
+    step(b, 100);
+
+    // Reloaded run from the save at tick 200, then continue 100.
+    const c = SimRunner.fromSaveData(save);
+    step(c, 100);
+
+    expect(c.getState().tick).toBe(b.getState().tick);
+    expect(c.getStateJson()).toBe(b.getStateJson());
+  });
+});
