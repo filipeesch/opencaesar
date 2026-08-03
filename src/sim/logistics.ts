@@ -508,17 +508,21 @@ export interface MarketFoodState {
  *  4. food below its minimum stock
  *  5. food with the highest monthly demand
  *  6. highest configured priority
+ * Foods with no demand (zero expected consumption, zero current stock, nothing
+ * in transit) are never picked — a buyer does not fetch food nobody expects
+ * (IN-04).
  */
 export function nextFoodToFetch(state: MarketFoodState, priority?: Record<string, number>): string | null {
   const foods = Object.keys(state.current);
   if (foods.length === 0) return null;
   const [basic] = foods.filter((f) => f === state.basicFood);
-  if (basic !== undefined && (state.current[basic] ?? 0) <= 0 && (state.inTransit[basic] ?? 0) <= 0) return basic;
+  if (basic !== undefined && (state.current[basic] ?? 0) <= 0 && (state.inTransit[basic] ?? 0) <= 0 && (state.expectedConsumption[basic] ?? 0) > 0) return basic;
   // fewest days of coverage = highest current/consumption drawdown
   let best: string | null = null;
   let bestCoverage = Infinity;
   for (const f of foods) {
     const cons = (state.expectedConsumption[f] ?? 0);
+    if (cons <= 0 && (state.current[f] ?? 0) <= 0 && (state.inTransit[f] ?? 0) <= 0) continue; // no demand, nothing held (IN-04)
     const coverage = cons > 0 ? (state.current[f] ?? 0) / cons : (state.current[f] ?? 0) > 0 ? Infinity : 0;
     if (coverage < bestCoverage) {
       bestCoverage = coverage;
@@ -531,7 +535,7 @@ export function nextFoodToFetch(state: MarketFoodState, priority?: Record<string
   if (best === null) return null;
   const prio = priority?.[best] ?? 0;
   const fallback = foods
-    .filter((f) => (state.current[f] ?? 0) <= 0)
+    .filter((f) => (state.current[f] ?? 0) <= 0 && ((state.expectedConsumption[f] ?? 0) > 0 || (state.inTransit[f] ?? 0) > 0))
     .sort((a, b) => (priority?.[b] ?? 0) - (priority?.[a] ?? 0))[0];
   return prio > 0 ? best : (fallback ?? best);
 }

@@ -315,6 +315,20 @@ describe('market demand & distribution (AGRI-03, spec §12)', () => {
     expect(nextFoodToFetch(state)).toBe('vegetables');
   });
 
+  it('never fetches a food nobody consumes when nothing is held or in transit (IN-04)', () => {
+    const state: MarketFoodState = {
+      current: { wheat: 0, vegetables: 0 },
+      inTransit: {},
+      expectedConsumption: { wheat: 0, vegetables: 0 },
+      basicFood: 'wheat',
+      evolutionBlocking: null,
+    };
+    expect(nextFoodToFetch(state)).toBeNull(); // zero-demand → no fetch
+    // With demand for one food, that food is picked even though the basic is empty.
+    state.expectedConsumption.vegetables = 90;
+    expect(nextFoodToFetch(state)).toBe('vegetables');
+  });
+
   it('scores granaries with explainable reasons (distance, congestion, priority, quantity, block risk)', () => {
     const near: GranaryCandidate = { id: 'near', roadDistance: 4, congestion: 0.3, priority: 1, available: 800, blockRisk: 0 };
     const far: GranaryCandidate = { id: 'far', roadDistance: 20, congestion: 0.1, priority: 3, available: 900, blockRisk: 0 };
