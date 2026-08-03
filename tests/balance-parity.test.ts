@@ -44,10 +44,17 @@ describe('balance catalog - behavior parity (DATA-02)', () => {
   it('every BALANCE key is consumed as CONFIG.<key> outside the re-export', () => {
     for (const key of Object.keys(BALANCE)) {
       const consumed = srcFiles.some(
-        (file) => file !== configPath && readFileSync(file, 'utf8').includes(`CONFIG.${key}`),
+        (file) => file !== configPath && new RegExp(`CONFIG\\.${key}\\b`).test(readFileSync(file, 'utf8')),
       );
       expect(consumed, `BALANCE key '${key}' has no CONFIG.${key} consumer in src/`).toBe(true);
     }
+  });
+
+  it('consumer mapping uses word boundaries so an extended key is not a false consumer', () => {
+    const key = Object.keys(BALANCE)[0];
+    const re = new RegExp(`CONFIG\\.${key}\\b`);
+    expect(re.test(`CONFIG.${key}`)).toBe(true);
+    expect(re.test(`CONFIG.${key}2`)).toBe(false);
   });
 
   it('no src/ file outside the re-export re-declares or re-assigns a balance key', () => {
