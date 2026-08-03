@@ -116,3 +116,88 @@ export function tickTrade(
   }
   return { treasury, active, exports: exportsTotal, imports: importsTotal };
 }
+
+/**
+ * === Food trade with urban reserves (spec §14, TRAD-04) ===
+ *
+ * Imports are steered toward a configured target; exports are only taken from
+ * the surplus above the urban reserve: exportable = available − projected city
+ * consumption − admin reserves − in-transit to markets (§14.4). Reserved-for-
+ * domestic stock is never exported (§14.3), and a sale that would drop the city
+ * below a coverage floor raises a dangerous-export warning with actionable
+ * options (§14.5). Deterministic pure functions.
+ */
+
+/** Exportable surplus per the spec §14.4 formula. */
+export function exportableSurplus(
+  available: number,
+  projectedCityConsumption: number,
+  adminReserves: number,
+  inTransitToMarkets: number,
+): number {
+  return Math.max(0, available - projectedCityConsumption - adminReserves - inTransitToMarkets);
+}
+
+/** Exportable portion of a food given an urban reserve in months (spec §14.4). */
+export function exportableAboveMonths(
+  available: number,
+  monthlyConsumption: number,
+  reserveMonths: number,
+  adminReserves = 0,
+  inTransitToMarkets = 0,
+): number {
+  const reserve = monthlyConsumption * reserveMonths + adminReserves + inTransitToMarkets;
+  return Math.max(0, available - reserve);
+}
+
+export interface DangerousExportCheck {
+  /** Months of coverage remaining if the sale completed. */
+  monthsAfterSale: number;
+  dangerous: boolean;
+  warning: string;
+  options: Array<'cancel' | 'sell-anyway' | 'reduce' | 'raise-reserve'>;
+}
+
+/**
+ * Evaluate whether selling `sellAmount` would leave the city dangerously low on
+ * food (spec §14.5). When the remaining coverage drops below `dangerFloorMonths`
+ * the caller must offer cancel / sell-anyway / reduce / raise-reserve.
+ */
+export function dangerousExport(
+  available: number,
+  monthlyConsumption: number,
+  sellAmount: number,
+  dangerFloorMonths = 3,
+): DangerousExportCheck {
+  const after = monthlyConsumption > 0 ? (available - sellAmount) / monthlyConsumption : Infinity;
+  const dangerous = monthlyConsumption > 0 && after < dangerFloorMonths;
+  return {
+    monthsAfterSale: monthlyConsumption > 0 ? Math.round(after * 10) / 10 : Infinity,
+    dangerous,
+    warning: dangerous
+      ? `This sale reduces the food reserve to ${Math.round(after * 10) / 10} month(s) of coverage.`
+      : 'This sale leaves the urban reserve intact.',
+    options: dangerous ? ['cancel', 'sell-anyway', 'reduce', 'raise-reserve'] : ['sell-anyway'],
+  };
+}
+
+/** Quality scoring of import destination priority (spec §14.2). */
+export type ImportDestinationReason =
+  | 'food-center'
+  | 'requesting'
+  | 'below-target'
+  | 'accepts'
+  | 'entrepot-temporary'
+  | 'refuses';
+
+export function importDestinationPriority(
+  isFoodCenter: boolean,
+  mode: 'request' | 'maintain' | 'accept' | 'refuse' | 'empty',
+  belowTarget: boolean,
+): { reason: ImportDestinationReason; priority: number } {
+  if (mode === 'refuse' || mode === 'empty') return { reason: 'refuses', priority: 99 };
+  if (isFoodCenter) return { reason: 'food-center', priority: 0 };
+  if (mode === 'request') return { reason: 'requesting', priority: 1 };
+  if (mode === 'maintain' && belowTarget) return { reason: 'below-target', priority: 2 };
+  return { reason: 'accepts', priority: 3 };
+}

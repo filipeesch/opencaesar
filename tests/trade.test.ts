@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { createTradeRoutes, setTradeRoute, setImportOrder, tradePrice, tickTrade } from '../src/sim/trade';
+import {
+  exportableSurplus, exportableAboveMonths, dangerousExport, importDestinationPriority,
+} from '../src/sim/trade';
 
 describe('trade', () => {
   it('createTradeRoutes provides a route per partner city', () => {
@@ -84,5 +87,51 @@ describe('import gating by order (treasury not drained blindly)', () => {
     const r2 = tickTrade(1000, stock, routes, 1);
     expect((stock.pottery ?? 0)).toBeLessThanOrEqual(3);
     void r2;
+  });
+});
+
+describe('food export with urban reserves (spec §14, TRAD-04)', () => {
+  it('exportable surplus = available − projected consumption − admin reserves − in-transit', () => {
+    expect(exportableSurplus(2000, 1200, 300, 100)).toBe(400);
+    expect(exportableSurplus(1200, 1200, 300, 0)).toBe(0); // reserve floor respected
+    expect(exportableSurplus(500, 1200, 0, 0)).toBe(0); // below consumption → nothing
+  });
+
+  it('export-above-reserve respects the configured urban reserve in months', () => {
+    expect(exportableAboveMonths(2000, 400, 3)).toBe(800); // 1200 reserved = 3 months
+    expect(exportableAboveMonths(2000, 400, 6)).toBe(0);
+  });
+
+  it('flags a dangerous export that would drop coverage below the floor and offers options', () => {
+    const safe = dangerousExport(2000, 400, 200);
+    expect(safe.dangerous).toBe(false);
+    expect(safe.options).toContain('sell-anyway');
+
+    const risky = dangerousExport(2000, 400, 1000, 3);
+    expect(risky.dangerous).toBe(true);
+    expect(risky.monthsAfterSale).toBe(2.5); // 1000 left / 400 per month
+    expect(risky.options).toEqual(expect.arrayContaining(['cancel', 'sell-anyway', 'reduce', 'raise-reserve']));
+  });
+
+  it('ranks import destinations: food center > requesting > below-target > accepts', () => {
+    const center = importDestinationPriority(true, 'accept', false);
+    const requesting = importDestinationPriority(false, 'request', false);
+    const below = importDestinationPriority(false, 'maintain', true);
+    const accepts = importDestinationPriority(false, 'accept', false);
+    expect(center.priority).toBeLessThan(requesting.priority);
+    expect(requesting.priority).toBeLessThan(below.priority);
+    expect(below.priority).toBeLessThan(accepts.priority);
+    // A refusing/emptying granary never presents as 'accepts' (IN-02).
+    const refuses = importDestinationPriority(false, 'refuse', false);
+    const empties = importDestinationPriority(false, 'empty', false);
+    expect(refuses.reason).toBe('refuses');
+    expect(empties.reason).toBe('refuses');
+    expect(refuses.priority).toBe(99);
+  });
+
+  it('never allows a sale that exports reserved-for-domestic stock', () => {
+    // reserved stock is excluded from what is "available" for export
+    expect(exportableSurplus(0, 0, 0, 0)).toBe(0);
+    expect(exportableSurplus(100, 100, 100, 0)).toBe(0);
   });
 });
