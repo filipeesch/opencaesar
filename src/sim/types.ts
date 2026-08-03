@@ -62,7 +62,8 @@ export interface CommandLogEntry {
 /** A replayable command (structured form of a CommandLogEntry for save/load). */
 export type SaveCommand =
   | { kind: 'place'; type: BuildingType; x: number; y: number }
-  | { kind: 'setPolicy'; taxRate: number; wageRate: number };
+  | { kind: 'setPolicy'; taxRate: number; wageRate: number }
+  | { kind: 'demolish'; x: number; y: number };
 
 /** Serializable save payload capturing everything needed to resume a sim deterministically. */
 export interface SaveData {
@@ -70,6 +71,10 @@ export interface SaveData {
   seed: number;
   mapSize: number;
   commands: SaveCommand[];
+  /** Commands still queued (deferred) at save time — re-enqueued on load. */
+  pendingCommands?: SaveCommand[];
+  /** Whether the sim was paused at save time (restored on load). */
+  paused?: boolean;
   tickCount: number;
   savedAt: number;
 }

@@ -54,10 +54,10 @@ import type {
 import type { BuildingInstance, WalkerInstance } from './walkers';
 import { createWalker, updateWalker } from './walkers';
 
-type PendingCommand =
-  | { kind: 'place'; type: BuildingType; x: number; y: number }
-  | { kind: 'policy'; taxRate: number; wageRate: number }
-  | { kind: 'demolish'; x: number; y: number };
+/** Deferred commands. These share the exact shape of the replayable
+ *  `SaveCommand` type, so a paused queue can be serialized verbatim into a save
+ *  and re-enqueued on load, and the same exhaustive dispatch handles both. */
+type PendingCommand = SaveCommand;
 
 /** Live-derived metrics from the running sim, exposed to advisors/UI (WARNING 1). */
 export interface DerivedSnapshot {
@@ -150,11 +150,7 @@ export class SimRunner {
     if (this.pendingCommands.length === 0) return;
     const batch = this.pendingCommands;
     this.pendingCommands = [];
-    for (const cmd of batch) {
-      if (cmd.kind === 'place') this.placeBuilding(cmd.type, cmd.x, cmd.y);
-      else if (cmd.kind === 'policy') this.setPolicy(cmd.taxRate, cmd.wageRate);
-      else this.demolish(cmd.x, cmd.y);
-    }
+    for (const cmd of batch) applyCommand(this, cmd);
   }
 
   private enqueue(cmd: PendingCommand): void {
@@ -433,7 +429,7 @@ export class SimRunner {
   /** Set the tax and wage rates (each clamped to 0..1). */
   setPolicy(taxRate: number, wageRate: number): Policy {
     if (this.paused) {
-      this.enqueue({ kind: 'policy', taxRate: clamp01(taxRate), wageRate: clamp01(wageRate) });
+      this.enqueue({ kind: 'setPolicy', taxRate: clamp01(taxRate), wageRate: clamp01(wageRate) });
       return { ...this.policy };
     }
     this.policy = { taxRate: clamp01(taxRate), wageRate: clamp01(wageRate) };
@@ -565,9 +561,11 @@ export class SimRunner {
     return [...this.commandLog];
   }
 
-  /** Serializable payload that captures this sim for deterministic resume. */
+  /** Serializable payload that captures this sim for deterministic resume.
+   *  Commands still queued while paused are included so nothing is dropped on
+   *  save → reload. */
   getSaveData(): SaveData {
-    return {
+    const data: SaveData = {
       version: 1,
       seed: this.seed,
       mapSize: this.mapSize,
@@ -575,27 +573,33 @@ export class SimRunner {
       tickCount: this.tickCount,
       savedAt: Date.now(),
     };
+    if (this.pendingCommands.length > 0) {
+      data.pendingCommands = this.pendingCommands.map((c) => ({ ...c }));
+    }
+    data.paused = this.paused;
+    return data;
   }
 
   /**
    * Reconstruct a sim from a save by replaying its command sequence, then
    * ticking to the saved tick count. Because the sim is deterministic, the
-   * resulting state equals the original run at save time.
+   * resulting state equals the original run at save time. Commands that were
+   * still pending at save time (the sim was paused) are re-enqueued so the
+   * queue survives the round-trip.
    */
   static fromSaveData(save: SaveData): SimRunner {
     // Reconstruct through the no-map path so map generation and the sim body
     // share the same RNG stream, exactly as the original run did.
     const runner = new SimRunner(save.seed, undefined, save.mapSize);
-    for (const c of save.commands) {
-      if (c.kind === 'place') {
-        runner.placeBuilding(c.type, c.x, c.y);
-      } else if (c.kind === 'setPolicy') {
-        runner.setPolicy(c.taxRate, c.wageRate);
-      } else {
-        runner.demolish(c.x, c.y);
-      }
-    }
+    for (const c of save.commands) applyCommand(runner, c);
     while (runner.tickCount < save.tickCount) runner.tick();
+    // Re-queue commands that were deferred (paused) at save time, preserving
+    // order, and restore the paused state so the next resume tick drains them
+    // exactly as the original run did.
+    if (save.pendingCommands && save.pendingCommands.length > 0) {
+      for (const c of save.pendingCommands) runner.enqueue({ ...c });
+    }
+    runner.paused = save.paused ?? false;
     return runner;
   }
 
@@ -838,6 +842,22 @@ export class SimRunner {
   private tileKey(x: number, y: number): number {
     // 20 bits each — ample for maps up to 1024x1024 (same scheme as pathfind).
     return (x << 20) | y;
+  }
+}
+
+/** Apply a replayable save command to a runner. Exhaustive dispatch: adding a
+ *  new SaveCommand kind fails typecheck here instead of silently routing to an
+ *  unrelated branch. */
+function applyCommand(runner: SimRunner, cmd: SaveCommand): void {
+  if (cmd.kind === 'place') {
+    runner.placeBuilding(cmd.type, cmd.x, cmd.y);
+  } else if (cmd.kind === 'setPolicy') {
+    runner.setPolicy(cmd.taxRate, cmd.wageRate);
+  } else if (cmd.kind === 'demolish') {
+    runner.demolish(cmd.x, cmd.y);
+  } else {
+    const exhaustive: never = cmd;
+    throw new Error(`unknown command kind: ${(exhaustive as { kind: string }).kind}`);
   }
 }
 
