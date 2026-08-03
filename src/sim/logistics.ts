@@ -114,7 +114,7 @@ export class ReservationPool {
 
   reserve(commodity: string, amount = 1): boolean {
     const have = this.available(commodity);
-    if (have < 1) return false;
+    if (have < amount) return false;
     this.reservations.set(commodity, (this.reservations.get(commodity) ?? 0) + amount);
     return true;
   }

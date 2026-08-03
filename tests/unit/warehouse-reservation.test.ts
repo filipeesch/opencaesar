@@ -70,3 +70,36 @@ describe('reservation pool expiry is deterministic (decision 5)', () => {
     expect(pool.available('wheat')).toBe(3);
   });
 });
+
+describe('over-reservation guard (WR-03)', () => {
+  it('requesting more than available returns false and never over-reserves', () => {
+    const pool = new ReservationPool();
+    pool.taxable.set('wheat', 3);
+    expect(pool.reserve('wheat', 5)).toBe(false);
+    expect(pool.reserved('wheat')).toBe(0);
+    expect(pool.available('wheat')).toBe(3);
+
+    expect(pool.reserve('wheat', 3)).toBe(true);
+    expect(pool.available('wheat')).toBe(0);
+    // an amount that exceeds the now-exhausted remainder also fails
+    expect(pool.reserve('wheat', 1)).toBe(false);
+    expect(pool.reserved('wheat')).toBe(3);
+    expect(pool.available('wheat')).toBe(0);
+  });
+
+  it('reserveWithExpiry inherits the no-over-reserve guard', () => {
+    const pool = new ReservationPool();
+    pool.taxable.set('wheat', 3);
+    expect(pool.reserveWithExpiry('wheat', 5, 10, 30)).toBe(false);
+    expect(pool.reserved('wheat')).toBe(0);
+    expect(pool.available('wheat')).toBe(3);
+    expect(pool.expireReservations(100000)).toBe(0); // nothing recorded
+
+    expect(pool.reserveWithExpiry('wheat', 3, 10, 30)).toBe(true);
+    expect(pool.reserved('wheat')).toBe(3);
+    expect(pool.available('wheat')).toBe(0);
+    expect(pool.expireReservations(40)).toBe(1);
+    expect(pool.reserved('wheat')).toBe(0);
+    expect(pool.available('wheat')).toBe(3);
+  });
+});
