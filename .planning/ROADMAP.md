@@ -17,7 +17,7 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
 - [x] **Phase 1: Time & Deterministic Core** - TimeSystem (pause + speeds), paused-command queue, expanded per-tile state, golden determinism
 - [x] **Phase 2: Data Catalogs & Military-Absence Gate** - validate catalogs on load; balance externalization; CI military-token validator
 - [x] **Phase 3: Road Graph & Walker Categories** - road network graph with dirty-flag recompute; road types; wandering/destination/recruiter walkers
-- [ ] **Phase 4: Water System** - wells, reservoirs, aqueducts, fountains, public baths, water overlay
+- [x] **Phase 4: Water System** - wells, reservoirs, aqueducts, fountains, public baths, water overlay
 - [ ] **Phase 5: Agriculture & Food** - food types, farm varieties, fishing wharf, granary commands
 - [ ] **Phase 6: Production & Manufacturing** - extraction sites and workshops with physical loads
 - [ ] **Phase 7: Warehouses & Logistics** - warehouses, per-commodity orders, commercial center, logistics advisor data
@@ -89,7 +89,12 @@ Plans:
   1. Houses receive water classes from fountains/wells with coverage; fountains go dark without water/workers.
   2. Reservoirs store and supply water; baths consume it and affect health/desirability.
   3. Aqueducts carry flow visibly tile-by-tile; the overlay shows sources, flow, and coverage.
-**Plans**: TBD
+**Plans**: 3 (3 complete)
+
+Plans:
+- [x] 04-01: Wells desirability + reservoir storage/level/inlet/outlet (WATR-01/02)
+- [x] 04-02: Aqueduct flow propagation/determinism + fountain network/go-dark (WATR-03/04)
+- [x] 04-03: Baths supplied+staffed wiring + water overlay advisor data (WATR-05/06)
 
 ### Phase 5: Agriculture & Food
 **Goal**: Food variety, farm types with fertility-based output, fishing wharf, granary commands.
