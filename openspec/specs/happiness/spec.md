@@ -9,7 +9,6 @@ wage signals the rest of the sim already tracks. Happiness is derived each tick
 city ratings for HUD display.
 
 ## Requirements
-
 ### Requirement: Per-house happiness
 
 The system SHALL compute a Happiness score (0–100) for each house from its current food, water, and labor coverage, its desirability, and whether wages were paid last tick. Happiness SHALL be exposed in the house building snapshot.
@@ -29,6 +28,7 @@ The system SHALL compute a Happiness score (0–100) for each house from its cur
 - **WHEN** a house gains or loses a service
 - **THEN** its happiness recomputes to reflect the new coverage in the same tick
 
+
 ### Requirement: City Happiness rating
 
 The system SHALL track a city Happiness rating derived from the happiness of all houses (e.g. population-weighted average), exposed in `Ratings` for HUD display, and SHALL update every tick.
@@ -42,3 +42,19 @@ The system SHALL track a city Happiness rating derived from the happiness of all
 
 - **WHEN** houses lose services or wages go unpaid
 - **THEN** the Happiness rating falls to reflect the hardship
+
+### Requirement: City mood/sentiment feeds attraction
+
+The system SHALL maintain a city mood/sentiment signal (derived from
+per-house happiness and city hardship) that feeds migration attractiveness and
+city ratings, alongside the per-house happiness already derived.
+
+#### Scenario: Mood feeds migration attractiveness
+
+- **WHEN** city mood rises (served, prosperous population)
+- **THEN** migration attractiveness increases
+
+#### Scenario: Hardship lowers mood
+
+- **WHEN** houses lose services or wages go unpaid
+- **THEN** city mood falls, lowering migration attractiveness and ratings
