@@ -88,6 +88,12 @@ describe('physical-load production (AGRI-02, spec §3.1, §6.6–6.8)', () => {
     expect(base({ currentOutput: 999 })).toBe('output-full');
     expect(base({ workerRatio: 0.4 })).toBe('working-partial');
     expect(base({ modifiers: { condition: 0 } })).toBe('damaged');
+    // The once-dead vocabulary is now reachable from real conditions (IN-01).
+    expect(base({ laborAccess: false })).toBe('no-labor-access');
+    expect(base({ fireRisk: true })).toBe('fire-risk');
+    expect(base({ collapseRisk: true })).toBe('collapse-risk');
+    expect(base({ harvestReady: true })).toBe('harvest-ready');
+    expect(base({ harvestReady: true, carrierAvailable: false })).toBe('awaiting-carrier');
   });
 });
 

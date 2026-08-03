@@ -135,13 +135,31 @@ export function effectiveFarmProduction(
 }
 
 /** The farm's current stop reason given its situation (spec §6.7). */
-export function farmStopReason(input: EffectiveFarmInput & { roadAccess: boolean; staffed: boolean }): FarmStopReason {
+export function farmStopReason(input: EffectiveFarmInput & {
+  roadAccess: boolean;
+  staffed: boolean;
+  /** False: the workforce cannot physically reach the fields (default true/ok). */
+  laborAccess?: boolean;
+  /** True: the current crop is ripe and awaiting the next step (default false). */
+  harvestReady?: boolean;
+  /** False: output is ready but no carrier is assigned to move it (default true/ok). */
+  carrierAvailable?: boolean;
+  /** True: the farm is at fire risk (default false). */
+  fireRisk?: boolean;
+  /** True: the farm is at collapse risk (default false). */
+  collapseRisk?: boolean;
+}): FarmStopReason {
   const { def, paused, roadAccess, staffed, fertility, currentOutput } = input;
   if (paused) return 'paused';
   if (!staffed) return 'seeking-workers';
   if (!roadAccess) return 'no-road-access';
+  if (input.laborAccess === false) return 'no-labor-access';
   if (def.requiresFertile && fertility <= 0) return 'low-fertility';
+  if (input.fireRisk) return 'fire-risk';
+  if (input.collapseRisk) return 'collapse-risk';
   if (currentOutput >= def.outputCapacity) return 'output-full';
+  if (input.harvestReady && input.carrierAvailable === false) return 'awaiting-carrier';
+  if (input.harvestReady) return 'harvest-ready';
   const ratio = Math.max(0, Math.min(1, input.workerRatio));
   if (ratio < 1) return 'working-partial';
   if ((input.modifiers?.condition ?? 1) <= 0) return 'damaged';
