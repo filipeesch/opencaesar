@@ -8,6 +8,8 @@ import { computeServiceCoverage } from './services';
 import { type CityStats, computeTargets } from './ratings';
 import type { TileWater, ReservoirState } from './water';
 import { BUILDINGS } from './buildings';
+import { HOUSE_TIERS } from './config';
+import { dailyFoodConsumption, foodVariety, houseFoodDays, houseFoodFromUnits } from './housing';
 
 export interface SimSnapshot {
   population: number;
@@ -436,8 +438,10 @@ export function foodHudFromState(state: SimState): FoodHudIndicator {
 }
 
 /**
- * Per-tile food overlays (spec §22): general supply days and variety per house.
- * Buildings without house state read 0 (no invented values).
+ * Per-tile food overlays (spec §22): general supply days and variety per house,
+ * derived from the house's REAL food inventory when one is tracked (§13, via
+ * houseFoodDays/foodVariety). Only houses with no inventory yet fall back to the
+ * foodCooldown proxy. Buildings without house state read 0 (no invented values).
  */
 export function foodOverlayGrids(state: SimState): Record<string, number[][]> {
   const width = state.width;
@@ -446,14 +450,26 @@ export function foodOverlayGrids(state: SimState): Record<string, number[][]> {
   const variety = Array.from({ length: height }, () => new Array<number>(width).fill(0));
   for (const b of state.buildings) {
     if (!b.house) continue;
-    const days = b.house.foodCooldown > 0 ? 10 : 0;
+    let days: number;
+    let varietyCount: number;
+    const inventory = b.house.foodInventory;
+    if (inventory && Object.keys(inventory).length > 0) {
+      const inv = houseFoodFromUnits(inventory, 'wheat');
+      const pop = HOUSE_TIERS[Math.max(0, Math.min(HOUSE_TIERS.length - 1, b.house.tier))].population;
+      days = houseFoodDays(inv, dailyFoodConsumption(pop));
+      varietyCount = foodVariety(inv);
+    } else {
+      // No real inventory tracked yet: fall back to the foodCooldown proxy.
+      days = b.house.foodCooldown > 0 ? 10 : 0;
+      varietyCount = b.house.foodCooldown > 0 ? 1 : 0;
+    }
     for (let dy = 0; dy < b.footprint; dy++) {
       for (let dx = 0; dx < b.footprint; dx++) {
         const x = b.x + dx;
         const y = b.y + dy;
         if (x >= 0 && x < width && y >= 0 && y < height) {
           supply[y][x] = days;
-          variety[y][x] = b.house.foodCooldown > 0 ? 1 : 0;
+          variety[y][x] = varietyCount;
         }
       }
     }

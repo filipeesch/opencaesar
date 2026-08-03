@@ -266,6 +266,25 @@ describe('food HUD months-of-food & advisor data (AGRI-03, spec §15/§21)', () 
     expect(a.rows.find((r) => r.food === 'wheat')!.production).toBeCloseTo(15, 5);
   });
 
+  it('WR-04: supply/variety overlays derive from real house food levels, not constants', () => {
+    const light = houseBuilding(1, 1, 1, 0, { wheat: 100 });
+    const heavy = houseBuilding(2, 4, 4, 0, { wheat: 100, vegetables: 50 });
+    const empty = houseBuilding(3, 7, 7, 0, undefined, 0); // no inventory, unfed → proxy 0
+    const grids = foodOverlayGrids(mkFoodState([light, heavy, empty], 100));
+    // Tier-0 house population is 5 → daily need 0.15 → 100 units ≈ 666.7 days.
+    const lightDays = grids.supplyDays[1][1];
+    const heavyDays = grids.supplyDays[4][4];
+    expect(lightDays).toBeGreaterThan(0);
+    expect(heavyDays).toBeGreaterThan(lightDays); // more food → more days (varies, not 10/1)
+    expect(grids.variety[1][1]).toBe(1); // wheat only
+    expect(grids.variety[4][4]).toBe(2); // wheat + vegetables
+    expect(grids.variety[7][7]).toBe(0);
+    expect(grids.supplyDays[7][7]).toBe(0);
+    // And the values differ across houses — never a constant 10/1 across tiles.
+    expect(lightDays).not.toBe(10);
+    expect(grids.variety[4][4]).not.toBe(grids.variety[1][1]);
+  });
+
 });
 
 describe('grouped food notifications (AGRI-03, spec §23.4)', () => {
