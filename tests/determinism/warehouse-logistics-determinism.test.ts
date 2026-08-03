@@ -91,4 +91,26 @@ describe('warehouse/logistics chain determinism (decision 5)', () => {
     expect(a.reserved('pottery')).toBe(1); // plain reserve never expires
     expect(a.available('pottery')).toBe(b.available('pottery'));
   });
+
+  it('per-entry expiry (mixed plain + staggered deadlines) is identical across pools', () => {
+    const build = () => {
+      const p = new ReservationPool();
+      p.taxable.set('wheat', 10);
+      p.reserve('wheat', 2); // plain — never expires
+      p.reserveWithExpiry('wheat', 3, 10, 30); // expires 40
+      p.reserveWithExpiry('wheat', 1, 20, 5); // expires 25
+      return p;
+    };
+    const a = build();
+    const b = build();
+    // identical release counts, reserved and available at every sampled tick
+    for (const tick of [20, 25, 39, 40, 45]) {
+      expect(a.expireReservations(tick)).toBe(b.expireReservations(tick));
+      expect(a.reserved('wheat')).toBe(b.reserved('wheat'));
+      expect(a.available('wheat')).toBe(b.available('wheat'));
+    }
+    // only the plain 2-unit reserve remains after all deadlines pass
+    expect(a.reserved('wheat')).toBe(2);
+    expect(a.available('wheat')).toBe(8);
+  });
 });

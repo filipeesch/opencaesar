@@ -109,8 +109,11 @@ export class CommercialCenter {
 export class ReservationPool {
   readonly taxable = new Map<string, number>(); // commodity -> reserved loads
   private reservations = new Map<string, number>();
-  /** commodity -> tick at which its reserved units may return to availability. */
-  private expiry = new Map<string, number>();
+  /** commodity -> per-reservation expiry entries. Each reserveWithExpiry records
+   *  its own entry so entries expire independently at their own deadline — a
+   *  later call on the same commodity never extends an earlier entry, and a
+   *  plain reserve() has no entry here so it never expires. */
+  private expiry = new Map<string, Array<{ amount: number; expiresAt: number }>>();
 
   reserve(commodity: string, amount = 1): boolean {
     const have = this.available(commodity);
@@ -120,26 +123,40 @@ export class ReservationPool {
   }
 
   /** Reserve with a deterministic tick-based expiry window (decision 5): when
-   *  the reservation succeeds it records `now + expiresIn` as the expiry tick
-   *  and expireReservations releases it from that tick on. The window never
-   *  reads a wall clock — only the injected tick `now` and the constant
-   *  `expiresIn` matter. */
+   *  the reservation succeeds it records `now + expiresIn` as that entry's
+   *  expiry tick and expireReservations releases it from that tick on. The
+   *  window never reads a wall clock — only the injected tick `now` and the
+   *  constant `expiresIn` matter. */
   reserveWithExpiry(commodity: string, amount: number, now: number, expiresIn = 30): boolean {
     const ok = this.reserve(commodity, amount);
-    if (ok) this.expiry.set(commodity, now + expiresIn);
+    if (ok) {
+      const list = this.expiry.get(commodity) ?? [];
+      list.push({ amount, expiresAt: now + expiresIn });
+      this.expiry.set(commodity, list);
+    }
     return ok;
   }
 
-  /** Release every commodity whose recorded expiry is <= `now`, returning the
-   *  reserved units to availability. Returns how many commodities were expired. */
+  /** Release exactly the reserved units whose recorded expiry is <= `now`,
+   *  returning them to availability. Plain reserve() entries have no expiry
+   *  entry here and are never released. Returns how many expiry entries were
+   *  released. */
   expireReservations(now: number): number {
     let expired = 0;
-    for (const [commodity, at] of this.expiry) {
-      if (at <= now) {
-        this.release(commodity, this.reserved(commodity));
-        this.expiry.delete(commodity);
-        expired += 1;
+    for (const [commodity, list] of this.expiry) {
+      let released = 0;
+      const remaining: Array<{ amount: number; expiresAt: number }> = [];
+      for (const entry of list) {
+        if (entry.expiresAt <= now) {
+          released += entry.amount;
+          expired += 1;
+        } else {
+          remaining.push(entry);
+        }
       }
+      if (released > 0) this.release(commodity, released);
+      if (remaining.length === 0) this.expiry.delete(commodity);
+      else this.expiry.set(commodity, remaining);
     }
     return expired;
   }
