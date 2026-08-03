@@ -108,6 +108,16 @@ export class Map {
         }
       }
     }
+
+    // Deposit seeding (WR-02): without this, TileState.resourceType is only
+    // ever written by test helpers, so on every generated map (real gameplay)
+    // the clay pit, iron mine and marble quarry would be permanently blocked by
+    // their own deposit gate — only the timber yard could ever produce. We seed
+    // deposits deterministically (seeded RNG only, no Math.random): a few
+    // ambient clusters per resource for variety, plus a guaranteed full-footprint
+    // block per resource (mirroring the fertile-farm guarantee above) so every
+    // seed is guaranteed a buildable site of each kind.
+    seedDeposits(map, width, height, rng);
     return map;
   }
 
@@ -191,6 +201,127 @@ export class Map {
    */
   randomTile(rng: Rng): Vec2 {
     return { x: Math.floor(randFloat(rng, 0, this.width)), y: Math.floor(randFloat(rng, 0, this.height)) };
+  }
+}
+
+/**
+ * Deposit resources (WR-02): the resourceType each extraction building needs
+ * under its full footprint, mapped to the footprint size. Clay/iron use 2x2
+ * sites (clay pit, iron mine), marble needs a 3x3 (marble quarry).
+ */
+const DEPOSIT_LAYOUT: ReadonlyArray<{ kind: string; footprint: number }> = [
+  { kind: 'clay_deposit', footprint: 2 },
+  { kind: 'iron_deposit', footprint: 2 },
+  { kind: 'marble_deposit', footprint: 3 },
+];
+
+/**
+ * Seed deposit resourceType tiles on a generated map (WR-02). Deterministic —
+ * the only randomness flows through the injected seeded RNG (never
+ * Math.random), so a given seed yields identical deposits across runs and the
+ * sim body continues the same RNG stream the map generation consumed.
+ *
+ * Strategy, mirroring the terrain generation: a few ambient clusters per
+ * resource for map variety, PLUS a guaranteed full-footprint block per resource
+ * (deterministic scan, no RNG) so every seed is buildable for each extraction
+ * kind — and a guaranteed 2x2 trees patch so the timber yard's full-footprint
+ * gate has forest terrain to sit on too.
+ */
+function seedDeposits(map: Map, width: number, height: number, rng: Rng): void {
+  // Ambient deposit clusters (seeded RNG): carve organic patches over land.
+  for (const { kind, footprint } of DEPOSIT_LAYOUT) {
+    const clusters = 2 + Math.floor(rng.next() * 2);
+    const radius = footprint + 1;
+    for (let i = 0; i < clusters; i++) {
+      const cx = footprint + rng.next() * Math.max(1, width - footprint * 2);
+      const cy = footprint + rng.next() * Math.max(1, height - footprint * 2);
+      carveDeposit(map, cx, cy, radius, kind);
+    }
+  }
+
+  // Guaranteed buildable full-footprint block per deposit kind (no RNG) so a
+  // site placed there passes the full-footprint deposit gate on any map.
+  for (const { kind, footprint } of DEPOSIT_LAYOUT) {
+    guaranteeDepositBlock(map, kind, footprint);
+  }
+
+  // Guarantee a solid 2x2 trees patch for the timber yard (2x2 footprint).
+  guaranteeTreesBlock(map);
+}
+
+/** Carve an organic blob of `resourceType` over land (never water). */
+function carveDeposit(map: Map, cx: number, cy: number, radius: number, kind: string): void {
+  const r = Math.max(2, radius);
+  const salt = kind === 'clay_deposit' ? 31 : kind === 'iron_deposit' ? 37 : 41;
+  const x0 = Math.max(0, Math.floor(cx - r - 1));
+  const x1 = Math.min(map.width - 1, Math.ceil(cx + r + 1));
+  const y0 = Math.max(0, Math.floor(cy - r - 1));
+  const y1 = Math.min(map.height - 1, Math.ceil(cy + r + 1));
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      if (map.get(x, y) === 'water') continue;
+      const dx = x - cx;
+      const dy = y - cy;
+      const wob = hash2d(x, y, salt) - 0.5;
+      if (Math.sqrt(dx * dx + dy * dy) <= r + wob * r * 0.35) {
+        map.mutateTileState(x, y, (s) => {
+          s.resourceType = kind;
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Force a full `footprint`x`footprint` block of `kind` somewhere on non-water
+ * land — the deposit-gate equivalent of the fertile-farm guarantee.
+ */
+function guaranteeDepositBlock(map: Map, kind: string, footprint: number): void {
+  for (let y = 1; y <= map.height - footprint - 1; y++) {
+    for (let x = 1; x <= map.width - footprint - 1; x++) {
+      let land = true;
+      for (let dy = 0; dy < footprint; dy++) {
+        for (let dx = 0; dx < footprint; dx++) {
+          if (map.get(x + dx, y + dy) === 'water') {
+            land = false;
+            break;
+          }
+        }
+        if (!land) break;
+      }
+      if (!land) continue;
+      for (let dy = 0; dy < footprint; dy++) {
+        for (let dx = 0; dx < footprint; dx++) {
+          map.mutateTileState(x + dx, y + dy, (s) => {
+            s.resourceType = kind;
+          });
+        }
+      }
+      return;
+    }
+  }
+}
+
+/**
+ * Force a solid 2x2 trees patch on non-water, non-fertile land so the timber
+ * yard (2x2 footprint, full-footprint trees gate) is buildable on any map.
+ * Skips fertile so it never overwrites the farm guarantee block.
+ */
+function guaranteeTreesBlock(map: Map): void {
+  for (let y = 1; y <= map.height - 3; y++) {
+    for (let x = 1; x <= map.width - 3; x++) {
+      const land =
+        map.get(x, y) !== 'water' && map.get(x, y) !== 'fertile' &&
+        map.get(x + 1, y) !== 'water' && map.get(x + 1, y) !== 'fertile' &&
+        map.get(x, y + 1) !== 'water' && map.get(x, y + 1) !== 'fertile' &&
+        map.get(x + 1, y + 1) !== 'water' && map.get(x + 1, y + 1) !== 'fertile';
+      if (!land) continue;
+      map.set(x, y, 'trees');
+      map.set(x + 1, y, 'trees');
+      map.set(x, y + 1, 'trees');
+      map.set(x + 1, y + 1, 'trees');
+      return;
+    }
   }
 }
 

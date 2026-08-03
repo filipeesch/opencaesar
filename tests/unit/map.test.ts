@@ -88,4 +88,44 @@ describe('generated maps', () => {
     const b = SimMap.generate(40, 40, mulberry32(1337)).toGrid();
     expect(b).toEqual(a);
   });
+
+  it('WR-02: every generated map carries a full-footprint deposit region of each kind (clay/iron 2x2, marble 3x3) on buildable land', () => {
+    // Without deposit seeding, live-play extraction of clay/iron/marble would be
+    // permanently blocked by the deposit gate — only timber (trees terrain)
+    // could produce. Each generated map must guarantee a footprint-sized block
+    // of every resource on non-water land so each extraction site is buildable.
+    const cases = [
+      { kind: 'clay_deposit', footprint: 2 },
+      { kind: 'iron_deposit', footprint: 2 },
+      { kind: 'marble_deposit', footprint: 3 },
+    ] as const;
+    for (let seed = 0; seed < 25; seed++) {
+      const map = SimMap.generate(40, 40, mulberry32(seed));
+      for (const { kind, footprint } of cases) {
+        let found = false;
+        map.forEach((x, y, t) => {
+          if (found || t === 'water') return;
+          if (x + footprint > map.width || y + footprint > map.height) return;
+          let ok = true;
+          for (let dy = 0; dy < footprint && ok; dy++) {
+            for (let dx = 0; dx < footprint; dx++) {
+              if (map.tileState(x + dx, y + dy).resourceType !== kind) { ok = false; break; }
+            }
+          }
+          if (ok) found = true;
+        });
+        expect(found, `seed ${seed} ${kind}`).toBe(true);
+      }
+
+      // A full 2x2 trees patch so the timber yard's full-footprint gate is
+      // buildable too.
+      let treesOk = false;
+      map.forEach((x, y, t) => {
+        if (treesOk || t !== 'trees') return;
+        if (x + 2 > map.width || y + 2 > map.height) return;
+        if (map.get(x + 1, y) === 'trees' && map.get(x, y + 1) === 'trees' && map.get(x + 1, y + 1) === 'trees') treesOk = true;
+      });
+      expect(treesOk, `seed ${seed} trees 2x2`).toBe(true);
+    }
+  });
 });
