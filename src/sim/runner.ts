@@ -13,6 +13,7 @@ import { pickEvent, applyEvent, eventDuration, eventSustainMsg, eventFinalMsg } 
 import { EVENTS } from '../../data/events';
 import { BUILDINGS } from './buildings';
 import { CONFIG, HOUSE_TIERS } from './config';
+import { validateCatalogs, throwCatalogIssues } from '../../data/validate';
 import { assignedWorkers, computeRatings, tickEconomy, totalJobs, workerPool } from './economy';
 import { cityHappiness, houseHappiness } from './happiness';
 import { computeTargets, tickRatings } from './ratings';
@@ -58,6 +59,13 @@ import { createWalker, updateWalker } from './walkers';
  *  `SaveCommand` type, so a paused queue can be serialized verbatim into a save
  *  and re-enqueued on load, and the same exhaustive dispatch handles both. */
 type PendingCommand = SaveCommand;
+
+/** One-time guard: catalogs are validated on the first SimRunner construction
+ *  per process (DATA-01). Cheap enough to run once, and the test suite pays no
+ *  per-construction cost. INVARIANT: the memo skips re-validation on every later
+ *  construction, so BALANCE and all data catalogs must stay immutable at
+ *  runtime — do not add mutable catalog re-tuning without re-examining this. */
+let catalogsValidated = false;
 
 /** Live-derived metrics from the running sim, exposed to advisors/UI (WARNING 1). */
 export interface DerivedSnapshot {
@@ -111,6 +119,10 @@ export class SimRunner {
   private objective: ObjectiveTracker | null = null;
 
   constructor(seed: number, map?: SimMap, mapSize?: number) {
+    if (!catalogsValidated) {
+      throwCatalogIssues(validateCatalogs());
+      catalogsValidated = true;
+    }
     this.seed = seed;
     this.rng = mulberry32(seed);
     if (map) {
