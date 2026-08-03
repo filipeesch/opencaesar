@@ -16,7 +16,7 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
 
 - [x] **Phase 1: Time & Deterministic Core** - TimeSystem (pause + speeds), paused-command queue, expanded per-tile state, golden determinism
 - [x] **Phase 2: Data Catalogs & Military-Absence Gate** - validate catalogs on load; balance externalization; CI military-token validator
-- [ ] **Phase 3: Road Graph & Walker Categories** - road network graph with dirty-flag recompute; road types; wandering/destination/recruiter walkers
+- [x] **Phase 3: Road Graph & Walker Categories** - road network graph with dirty-flag recompute; road types; wandering/destination/recruiter walkers
 - [ ] **Phase 4: Water System** - wells, reservoirs, aqueducts, fountains, public baths, water overlay
 - [ ] **Phase 5: Agriculture & Food** - food types, farm varieties, fishing wharf, granary commands
 - [ ] **Phase 6: Production & Manufacturing** - extraction sites and workshops with physical loads
@@ -74,7 +74,12 @@ Plans:
   1. Adding/demolishing a road recomputes only the affected region; connectivity reflects the change.
   2. Road types affect walker speed and desirability.
   3. Wandering, destination, and recruiter walkers behave per their data (return at max steps, pathfind, labor-pool link).
-**Plans**: TBD
+**Plans**: 3 (3 complete)
+
+Plans:
+- [x] 03-01: Road graph dirty-flag recompute + connectivity (ROAD-01)
+- [x] 03-02: Road-type wiring: speed/desirability effects (ROAD-02)
+- [x] 03-03: Walker categories, per-type data, roadblock permissions, graph-path travel (ROAD-03)
 
 ### Phase 4: Water System
 **Goal**: Wells, reservoirs, aqueducts, fountains, public baths, and the water overlay.
