@@ -1,67 +1,59 @@
 import { describe, it, expect } from 'vitest';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FORBIDDEN_TOKENS, scanMilitarySources } from '../scripts/check-military.mjs';
 
 /**
  * Military-absence gate (game.md §1, §51; design D9).
  *
  * Prevents any military content from entering the simulation or data. Only
  * labeled documentation mentions (e.g. a comment containing "--NO-MILITARY--")
- * are tolerated. This test runs in CI and blocks merge on violation.
+ * are tolerated. Tokens and the scan logic are imported from
+ * scripts/check-military.mjs — the single source of truth shared with the
+ * standalone `npm run check:military` CLI gate.
  */
-const FORBIDDEN_TOKENS = [
-  'military',
-  'army',
-  'legion',
-  'soldier',
-  'fort',
-  'barracks',
-  'weapon',
-  'enemy',
-  'invasion',
-  'combat',
-  'damageFromUnit',
-];
 
 const here = fileURLToPath(import.meta.url);
 const root = join(here, '..', '..');
 
-function sourceFiles(dir: string): string[] {
-  const out: string[] = [];
+function countSourceFiles(dir: string): number {
+  let count = 0;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
       if (entry.name === 'node_modules' || entry.name === 'test-results') continue;
-      out.push(...sourceFiles(full));
+      count += countSourceFiles(full);
     } else if (/\.(ts|tsx|js|cjs|mjs)$/.test(entry.name)) {
-      out.push(full);
+      count += 1;
     }
   }
-  return out;
+  return count;
 }
 
 describe('military-absence gate (D9)', () => {
-  const files = [...sourceFiles(join(root, 'src')), ...sourceFiles(join(root, 'data'))];
-
-  it('scans all src/ and data/ source files', () => {
-    expect(files.length).toBeGreaterThan(0);
+  it('scans a non-empty set of src/ and data/ source files', () => {
+    const scanned = countSourceFiles(join(root, 'src')) + countSourceFiles(join(root, 'data'));
+    expect(scanned).toBeGreaterThan(0);
   });
 
   it('contains no forbidden military tokens outside labeled docs', () => {
-    const offenders: string[] = [];
-    for (const file of files) {
-      const text = readFileSync(file, 'utf8');
-      for (const token of FORBIDDEN_TOKENS) {
-        const re = new RegExp(`\\b${token}\\b`, 'i');
-        const lines = text.split('\n');
-        for (let i = 0; i < lines.length; i++) {
-          if (re.test(lines[i]) && !lines[i].includes('--NO-MILITARY--')) {
-            offenders.push(`${file}:${i + 1} (${token})`);
-          }
-        }
-      }
+    expect(scanMilitarySources()).toEqual([]);
+  });
+
+  it('allow --NO-MILITARY-- labeled lines and flag unlabeled token lines', () => {
+    const probe = join(root, 'src', '__military_probe__.ts');
+    try {
+      expect(FORBIDDEN_TOKENS).toEqual(expect.arrayContaining(['army', 'enemy']));
+      writeFileSync(
+        probe,
+        'const a = 1; // army (--NO-MILITARY--)\nconst b = 2; // enemy\n',
+      );
+      const offenders = scanMilitarySources();
+      expect(offenders.filter((o) => o.includes('army')).length).toBe(0);
+      expect(offenders.some((o) => o.includes('enemy'))).toBe(true);
+    } finally {
+      rmSync(probe, { force: true });
     }
-    expect(offenders).toEqual([]);
   });
 });
