@@ -3,10 +3,29 @@
  *
  * The simulation advances in discrete ticks. Callers feed raw real-time deltas
  * (e.g. Phaser's frame `delta` in ms); TimeSystem accumulates them and returns
- * how many sim ticks elapse. Because ticks are produced by integer division of
- * accumulated time, the total tick count for a given amount of simulated time is
- * independent of how that time is sliced into frames — guaranteeing identical
- * state regardless of frame rate.
+ * how many sim ticks elapse. The accumulator adds `realDtMs * speed` each frame
+ * and emits one tick per full `stepMs` of simulated time via integer division
+ * (the `acc -= stepMs` loop), carrying the sub-step remainder into the next
+ * frame. Pausing halts the clock (advance returns 0 and nothing accumulates);
+ * an optional `maxCatchupSteps` bounds the catch-up burst after a long hitch.
+ *
+ * ### Frame-rate independence (integer division)
+ *
+ * For a wall-clock window of T ms at speed S, the tick count is
+ * floor((T*S)/stepMs). Because the accumulator is linear — each frame adds its
+ * share and every full `stepMs` of accumulated simulated ms becomes exactly one
+ * tick while the fractional remainder carries over — any partition of T into
+ * frame deltas {d1..dn} with sum = T produces the same total simulated ms and
+ * therefore the identical tick count. The result depends only on T and S, never
+ * on how the wall clock is sliced into frames, so identical sim state results at
+ * any frame rate.
+ *
+ * The identity holds exactly by default. A finite `maxCatchupSteps` throttles a
+ * single `advance` to that many ticks at most; the overflow is carried forward
+ * as backlog instead of being dropped, so simulated time is never lost, a
+ * one-off hitch cannot cause a huge burst, and the identity is restored as soon
+ * as the backlog has drained. That bounded-per-frame behaviour is the deliberate
+ * trade-off for callers who prefer it over strict slicing invariance.
  */
 export class TimeSystem {
   private acc = 0;
@@ -16,10 +35,10 @@ export class TimeSystem {
   speed = 1;
   /** When paused, the sim clock halts and advance() returns 0. */
   paused = false;
-  /** Upper bound of catch-up ticks per advance to avoid spiral-of-death after hitches. */
+  /** Upper bound of catch-up ticks per advance (default: unbounded). */
   private readonly maxCatchupSteps: number;
 
-  constructor(stepMs: number, maxCatchupSteps = 5) {
+  constructor(stepMs: number, maxCatchupSteps: number = Number.POSITIVE_INFINITY) {
     this.stepMs = stepMs;
     this.maxCatchupSteps = maxCatchupSteps;
   }
@@ -33,10 +52,9 @@ export class TimeSystem {
       this.acc -= this.stepMs;
       steps++;
     }
-    if (steps >= this.maxCatchupSteps) {
-      // Drop the backlog so a single long hitch can't cause a huge burst.
-      this.acc = 0;
-    }
+    // Any backlog above maxCatchupSteps stays in `acc` for the next advance:
+    // time is carried, never dropped, so slicing invariance is preserved once
+    // the backlog drains (see contract above).
     return steps;
   }
 
