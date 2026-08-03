@@ -5,8 +5,8 @@
  * construction. Same seed + same map + same command sequence → identical
  * state after N ticks (see determinism tests).
  *
- * API: tick(), getState(), placeBuilding(type, x, y), setPolicy(tax, wage),
- * getCommandLog(). getState() returns plain serializable data.
+ * API: tick(), getState(), placeBuilding(type, x, y), demolish(x, y),
+ * setPolicy(tax, wage), getCommandLog(). getState() returns plain serializable data.
  */
 
 import { pickEvent, applyEvent, eventDuration, eventSustainMsg, eventFinalMsg } from './events';
@@ -27,6 +27,7 @@ import { WaterSystem } from './water';
 import { buildCodex } from './campaign';
 import { desirabilityOf, tickHousing } from './housing';
 import { Map as SimMap } from './map';
+import type { TileState } from './tile';
 import { findRoadPath } from './pathfind';
 import { checkPlacement } from './placement';
 import type { Rng } from './rng';
@@ -55,7 +56,8 @@ import { createWalker, updateWalker } from './walkers';
 
 type PendingCommand =
   | { kind: 'place'; type: BuildingType; x: number; y: number }
-  | { kind: 'policy'; taxRate: number; wageRate: number };
+  | { kind: 'policy'; taxRate: number; wageRate: number }
+  | { kind: 'demolish'; x: number; y: number };
 
 /** Live-derived metrics from the running sim, exposed to advisors/UI (WARNING 1). */
 export interface DerivedSnapshot {
@@ -150,7 +152,8 @@ export class SimRunner {
     this.pendingCommands = [];
     for (const cmd of batch) {
       if (cmd.kind === 'place') this.placeBuilding(cmd.type, cmd.x, cmd.y);
-      else this.setPolicy(cmd.taxRate, cmd.wageRate);
+      else if (cmd.kind === 'policy') this.setPolicy(cmd.taxRate, cmd.wageRate);
+      else this.demolish(cmd.x, cmd.y);
     }
   }
 
@@ -385,6 +388,36 @@ export class SimRunner {
     return { ok: true };
   }
 
+  /**
+   * Demolish the building whose footprint covers (x, y). Returns false when no
+   * building occupies the tile. Removes the building from the sim, clears its
+   * footprint from the occupancy grid, and (for roads) resets the footprint to
+   * 'earth'. While paused, the order is queued (PendingCommand) and applied on
+   * the next fixed tick.
+   */
+  demolish(x: number, y: number): boolean {
+    if (this.paused) {
+      this.enqueue({ kind: 'demolish', x, y });
+      return true;
+    }
+    const building = this.buildingAt(x, y);
+    if (!building) return false;
+    const { id, type, footprint } = building;
+    this.buildings = this.buildings.filter((b) => b.id !== id);
+    this.buildingById.delete(id);
+    for (let dy = 0; dy < footprint; dy++) {
+      for (let dx = 0; dx < footprint; dx++) {
+        this.occupiedTiles.delete(this.tileKey(building.x + dx, building.y + dy));
+      }
+    }
+    if (type === 'road') {
+      this.map.setRect(building.x, building.y, building.x + footprint - 1, building.y + footprint - 1, 'earth');
+    }
+    this.commandLog.push({ tick: this.tickCount, command: `demolish ${x},${y}`, result: 'ok' });
+    this.saveCommands.push({ kind: 'demolish', x, y });
+    return true;
+  }
+
   /** Non-mutating placement check (used by the renderer ghost preview). */
   canPlace(type: BuildingType, x: number, y: number): PlacementResult {
     return checkPlacement(
@@ -446,6 +479,16 @@ export class SimRunner {
     };
   }
 
+  /** Read-only per-tile simulation state (CORE-03). Returns a shallow copy so no
+   *  live reference escapes src/sim/ — mutating the result cannot affect the sim.
+   *  Grid-derived fields reflect the authoritative terrain grid: a tile reads
+   *  `road: true` exactly when its terrain is a road (placed via placeBuilding,
+   *  reset to earth on demolish). */
+  getTileState(x: number, y: number): TileState {
+    const s = this.map.tileState(x, y);
+    return { ...s, road: this.map.get(x, y) === 'road' };
+  }
+
   /** Inputs used to derive a house's happiness for the snapshot. */
   /**
    * Ratings — culture, prosperity, stability, and favor derived from city state.
@@ -454,7 +497,6 @@ export class SimRunner {
   getRatings(): Ratings {
     return this.getState().ratings;
   }
-
   getTreasury(): number {
     return this.getState().treasury;
   }
@@ -547,8 +589,10 @@ export class SimRunner {
     for (const c of save.commands) {
       if (c.kind === 'place') {
         runner.placeBuilding(c.type, c.x, c.y);
-      } else {
+      } else if (c.kind === 'setPolicy') {
         runner.setPolicy(c.taxRate, c.wageRate);
+      } else {
+        runner.demolish(c.x, c.y);
       }
     }
     while (runner.tickCount < save.tickCount) runner.tick();

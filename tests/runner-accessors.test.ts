@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { Map as SimMap } from '../src/sim/map';
 import { SimRunner } from '../src/sim/runner';
 
 describe('SimRunner accessors', () => {
@@ -48,6 +49,49 @@ describe('SimRunner accessors', () => {
     r.tick();
     const events = r.getEvents();
     expect(Array.isArray(events)).toBe(true);
+  });
+
+  it('getTileState returns a read-only copy of all 15 per-tile fields (CORE-03)', () => {
+    const r = new SimRunner(1337);
+    const s = r.getTileState(5, 5);
+    // All 15 CORE-03 fields, starting from neutral defaults on a fresh runner.
+    expect(s).toEqual({
+      elevation: 0,
+      fertility: 0,
+      resourceType: null,
+      resourceAmount: 0,
+      waterDepth: 0,
+      aqueduct: false,
+      road: false,
+      desirability: 0,
+      fireRisk: 0,
+      collapseRisk: 0,
+      pollution: 0,
+      traffic: 0,
+      serviceCoverage: 0,
+      ownership: 'none',
+      blocked: false,
+    });
+
+    // Mutating the returned object must not corrupt subsequent reads (read-only contract).
+    s.fertility = 99;
+    s.resourceType = 'wheat';
+    s.ownership = 'industrial';
+    const again = r.getTileState(5, 5);
+    expect(again.fertility).toBe(0);
+    expect(again.resourceType).toBeNull();
+    expect(again.ownership).toBe('none');
+  });
+
+  it('getTileState reflects road placement on the terrain grid (WR-01)', () => {
+    const r = new SimRunner(1337, SimMap.fromLayout(12, 12, () => 'earth'));
+    expect(r.getTileState(2, 2).road).toBe(false); // earth until placed
+
+    r.placeBuilding('road', 2, 2);
+    expect(r.getTileState(2, 2).road).toBe(true); // road now present
+
+    r.demolish(2, 2);
+    expect(r.getTileState(2, 2).road).toBe(false); // reset to earth on demolish
   });
 });
 
