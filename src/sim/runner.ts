@@ -48,6 +48,7 @@ import type {
   EventRecord,
   MissionState,
   WalkerState,
+  WalkerType,
 } from './types';
 import type { BuildingInstance, WalkerInstance } from './walkers';
 import { createWalker, updateWalker } from './walkers';
@@ -572,7 +573,11 @@ export class SimRunner {
       const start = this.adjacentRoadTile(b);
       if (!start) continue;
 
-      const walkerType = b.type === 'house' ? 'labor' : b.type === 'market' ? 'market' : 'well';
+      const walkerType: WalkerType =
+        b.type === 'house' ? 'labor' :
+        b.type === 'market' ? 'market' :
+        (b.type === 'well' || b.type === 'fountain') ? 'well' :
+        b.type as WalkerType;
       const w = createWalker(walkerType, start.x, start.y, this.nextWalkerId++);
       this.walkers.push(w);
       if (b.type === 'house' && b.house) b.house.laborCooldown = CONFIG.serviceCooldownTicks;
@@ -750,6 +755,7 @@ export class SimRunner {
             foodCooldown: b.house!.foodCooldown,
             waterCooldown: b.house!.waterCooldown,
             laborCooldown: b.house!.laborCooldown,
+            services: b.house!.services ? { ...b.house!.services } : undefined,
             desirability: input.desirability,
             happiness: houseHappiness(input),
           };

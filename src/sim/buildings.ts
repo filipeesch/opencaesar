@@ -131,22 +131,27 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   clinic: {
     type: 'clinic', name: 'Clinic', category: 'health',
     footprint: 1, cost: 110, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 1,
+    spawnEveryTicks: CONFIG.marketSpawnEveryTicks,
   },
   school: {
     type: 'school', name: 'School', category: 'education',
     footprint: 2, cost: 150, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 2,
+    spawnEveryTicks: CONFIG.marketSpawnEveryTicks,
   },
   library: {
     type: 'library', name: 'Library', category: 'education',
     footprint: 1, cost: 130, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 1,
+    spawnEveryTicks: CONFIG.marketSpawnEveryTicks,
   },
   temple: {
     type: 'temple', name: 'Temple', category: 'religion',
     footprint: 2, cost: 160, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 2,
+    spawnEveryTicks: CONFIG.marketSpawnEveryTicks,
   },
   theatre: {
     type: 'theatre', name: 'Theatre', category: 'entertainment',
     footprint: 2, cost: 180, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 2,
+    spawnEveryTicks: CONFIG.marketSpawnEveryTicks,
   },
   forum: {
     type: 'forum', name: 'Forum', category: 'government',

@@ -33,6 +33,18 @@ export function setTradeRoute(routes: Record<string, TradeRouteState>, cityId: s
   route.enabled = enabled;
 }
 
+/**
+ * Set a per-commodity import order (target stock) for a route. Imports only
+ * occur for goods explicitly ordered, up to the target, so the treasury is not
+ * drained by importing everything available.
+ */
+export function setImportOrder(routes: Record<string, TradeRouteState>, cityId: string, good: string, target: number): void {
+  const route = routes[cityId];
+  if (!route || target <= 0) return;
+  route.imports[good] = target;
+  if (!route.enabled) route.enabled = true;
+}
+
 export function tradePrice(goodId: string, cityId: string, isExport: boolean): number {
   const city = TRADE_CITIES[cityId];
   const def = COMMODITIES[goodId];
@@ -84,14 +96,21 @@ export function tickTrade(
       exportsTotal[good] = (exportsTotal[good] ?? 0) + sell;
       route.usedQuota = (route.usedQuota ?? 0) + sell;
     }
-    // Import goods the city sells, capped by treasury.
+    // Import goods the city sells, but only those explicitly ordered (route.imports
+    // is a target stock per good). This gates imports by demand so the treasury is
+    // not drained by importing every sellable good every tick.
     for (const good of city.sells) {
+      const target = route.imports[good] ?? 0;
+      if (target <= 0) continue; // not ordered → do not import
+      const current = stock[good] ?? 0;
+      const need = target - current;
+      if (need <= 0) continue;
       const price = tradePrice(good, route.cityId, false);
-      const amount = Math.min(1, Math.floor(treasury / price));
+      const amount = Math.min(1, need, Math.floor(treasury / price));
       if (amount <= 0) continue;
       treasury -= price * amount;
-      stock[good] = (stock[good] ?? 0) + amount;
-      route.imports[good] = amount;
+      stock[good] = current + amount;
+      route.imports[good] = Math.max(target, current + amount); // keep the target
       importsTotal[good] = (importsTotal[good] ?? 0) + amount;
     }
   }

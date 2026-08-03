@@ -24,7 +24,9 @@ export type BuildingCategory =
   | 'engineering' | 'safety' | 'health' | 'education' | 'entertainment'
   | 'religion' | 'government' | 'ornament';
 
-export type WalkerType = 'market' | 'well' | 'labor';
+export type WalkerType =
+  | 'market' | 'well' | 'labor'
+  | 'clinic' | 'school' | 'library' | 'temple' | 'theatre';
 
 export type PlacementError =
   | 'invalid-type'

@@ -73,3 +73,19 @@ describe('building catalog is placeable (issue: HUD showed only 6 types)', () =>
     expect(d.services.entertainment).toBeCloseTo(0.8, 1);
   });
 });
+
+describe('service walkers deliver coverage to houses (suggestion fix)', () => {
+  it('a clinic walker grants health service access to an adjacent house', () => {
+    const r = flatRunner();
+    // clinic at (6,21); its spawn walker starts on the road tile (6,20) and the
+    // house at (6,19) sits adjacent to it, so coverage is applied deterministically.
+    expect(r.placeBuilding('clinic', 6, 21).ok).toBe(true);
+    expect(r.placeBuilding('house', 6, 19).ok).toBe(true);
+    // staff the clinic from other houses
+    for (const x of [2, 4]) r.placeBuilding('house', x, 21);
+    for (let i = 0; i < 200; i++) r.tick();
+    const house = r.getState().buildings.find((b) => b.type === 'house' && b.x === 6 && b.y === 19);
+    const access = (house?.house as { services?: Record<string, number> } | undefined)?.services;
+    expect(access?.['health'] ?? 0).toBeGreaterThan(0);
+  });
+});

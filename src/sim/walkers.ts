@@ -45,7 +45,17 @@ export interface HouseInstance {
   laborCooldown: number;
   evolveCounter: number;
   devolveCounter: number;
+  /** Service access delivered by walkers (health/literacy/religion/entertainment). */
+  services?: Partial<Record<string, number>>;
 }
+
+const SERVICE_BY_WALKER: Record<string, string> = {
+  clinic: 'health',
+  school: 'literacy',
+  library: 'literacy',
+  temple: 'religion',
+  theatre: 'entertainment',
+};
 
 export interface BuildingInstance {
   id: number;
@@ -136,15 +146,21 @@ function applyCoverage(sim: SimInternals, w: WalkerInstance): void {
     serviceHousesAround(sim, w, 'water');
   } else if (w.type === 'market' && w.carryingGood === 'wheat' && w.carriedAmount > 0) {
     serviceHousesAround(sim, w, 'food');
+  } else if (SERVICE_BY_WALKER[w.type]) {
+    serviceHousesAround(sim, w, SERVICE_BY_WALKER[w.type]);
   }
 }
 
-function serviceHousesAround(sim: SimInternals, w: WalkerInstance, service: 'food' | 'water'): void {
+function serviceHousesAround(sim: SimInternals, w: WalkerInstance, service: string): void {
   for (const d of DIRS) {
     const b = sim.buildingAt(w.x + d.x, w.y + d.y);
     if (b && b.house) {
       if (service === 'food') b.house.foodCooldown = CONFIG.serviceCooldownTicks;
-      else b.house.waterCooldown = CONFIG.serviceCooldownTicks;
+      else if (service === 'water') b.house.waterCooldown = CONFIG.serviceCooldownTicks;
+      else {
+        b.house.services = b.house.services ?? {};
+        b.house.services[service] = CONFIG.serviceCooldownTicks;
+      }
     }
   }
 }

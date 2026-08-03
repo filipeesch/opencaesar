@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createTradeRoutes, setTradeRoute, tradePrice, tickTrade } from '../src/sim/trade';
+import { createTradeRoutes, setTradeRoute, setImportOrder, tradePrice, tickTrade } from '../src/sim/trade';
 
 describe('trade', () => {
   it('createTradeRoutes provides a route per partner city', () => {
@@ -59,5 +59,30 @@ describe('trade quotas', () => {
     const r3 = tickTrade(1000, { wheat: 10 }, routes, 2);
     expect(r3.exports.wheat ?? 0).toBe(2);
     expect(routes['massilia'].usedQuota).toBe(2);
+  });
+});
+
+describe('import gating by order (treasury not drained blindly)', () => {
+  it('imports nothing unless a commodity is explicitly ordered', () => {
+    const routes = createTradeRoutes();
+    setTradeRoute(routes, 'massilia', true); // enabled but no import orders
+    const stock: Record<string, number> = {};
+    const res = tickTrade(1000, stock, routes, 1);
+    // Only exports happen; no blind imports of every sellable good.
+    expect(Object.keys(res.imports).length).toBe(0);
+    expect(res.treasury).toBe(1000); // treasury unchanged (no exports available, no imports)
+  });
+
+  it('imports up to an ordered target and stops at the target', () => {
+    const routes = createTradeRoutes();
+    setImportOrder(routes, 'massilia', 'pottery', 3);
+    const stock: Record<string, number> = {};
+    const r1 = tickTrade(1000, stock, routes, 1);
+    expect(r1.imports.pottery ?? 0).toBeGreaterThan(0);
+    expect(stock.pottery ?? 0).toBeLessThanOrEqual(3);
+    // a second tick imports less/zero once the target is reached
+    const r2 = tickTrade(1000, stock, routes, 1);
+    expect((stock.pottery ?? 0)).toBeLessThanOrEqual(3);
+    void r2;
   });
 });

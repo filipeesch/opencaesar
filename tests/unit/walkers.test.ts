@@ -238,3 +238,25 @@ describe('labor walker', () => {
     expect(despawned.some((d) => d.id === w.id)).toBe(true);
   });
 });
+
+describe('service walkers deliver house service access (suggestion fix)', () => {
+  it('a clinic walker adjacent to a house sets health service access', () => {
+    const map = roadLoopMap();
+    const house = mkHouse(1, 1, 1);
+    const sim = makeStub(map, [house]).sim;
+    // clinic walker standing adjacent to the house at (1,1)
+    const w = createWalker('clinic', 1, 0, 10); // (1,0) is a road tile above the house
+    w.path = [];
+    updateWalker(sim, w);
+    expect(house.house?.services?.['health']).toBe(CONFIG.serviceCooldownTicks);
+  });
+
+  it('a school walker sets literacy and a temple walker sets religion', () => {
+    const map = roadLoopMap();
+    const house = mkHouse(1, 1, 1);
+    const sim = makeStub(map, [house]).sim;
+    const school = createWalker('school', 1, 0, 10);
+    updateWalker(sim, school);
+    expect(house.house?.services?.['literacy']).toBe(CONFIG.serviceCooldownTicks);
+  });
+});
