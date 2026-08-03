@@ -2,7 +2,7 @@
  * Missions — self-contained campaign objectives.
  */
 
-import { MISSIONS } from '../../data/missions';
+import { MISSIONS, EXTRA_MISSIONS } from '../../data/missions';
 
 export interface MissionState {
   id: string;
@@ -60,4 +60,10 @@ export function tickMission(state: MissionState, check: MissionCheck): void {
 
 export function missionName(id: string): string {
   return MISSIONS[id]?.name ?? id;
+}
+
+/** Campaign list: base missions + extras = 10. */
+export function campaignMissions(): string[] {
+  const base = Object.keys(MISSIONS).filter((k) => k !== 'tutorial');
+  return ['tutorial', ...base, ...Object.keys(EXTRA_MISSIONS)];
 }
