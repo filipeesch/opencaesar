@@ -9,9 +9,11 @@ describe('expanded tile state (CORE-03)', () => {
     expect(s.elevation).toBe(0);
     expect(s.fertility).toBe(0);
     expect(s.resourceType).toBeNull();
+    expect(s.resourceAmount).toBe(0);
     expect(s.waterDepth).toBe(0);
     expect(s.aqueduct).toBe(false);
     expect(s.road).toBe(false);
+    expect(s.desirability).toBe(0);
     expect(s.fireRisk).toBe(0);
     expect(s.collapseRisk).toBe(0);
     expect(s.pollution).toBe(0);
