@@ -18,7 +18,7 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
 - [x] **Phase 2: Data Catalogs & Military-Absence Gate** - validate catalogs on load; balance externalization; CI military-token validator
 - [x] **Phase 3: Road Graph & Walker Categories** - road network graph with dirty-flag recompute; road types; wandering/destination/recruiter walkers
 - [x] **Phase 4: Water System** - wells, reservoirs, aqueducts, fountains, public baths, water overlay
-- [ ] **Phase 5: Agriculture & Food** - food types, farm varieties, fishing wharf, granary commands
+- [x] **Phase 5: Agriculture & Food** - food types, farm varieties, fishing wharf, granary commands
 - [ ] **Phase 6: Production & Manufacturing** - extraction sites and workshops with physical loads
 - [ ] **Phase 7: Warehouses & Logistics** - warehouses, per-commodity orders, commercial center, logistics advisor data
 - [ ] **Phase 8: Markets & Home Distribution** - buyer/seller walkers, reservation, per-market config
@@ -104,10 +104,10 @@ Plans:
    1. Farm types produce on fertile land with road access and workers; paused farms stop.
    2. Granaries accept/refuse/request/maintain/reserve/export food per command.
    3. Farm → granary → market → house food pipeline works for multiple food types.
-**Plans**: TBD
+**Plans**: 1 (1 complete)
 
 Plans:
-- [ ] 05-01: Full food supply chain (imported from `game-specs/fodd-supply-chain.md`) — production, physical loads, granary orders/reservations, market distribution, house consumption/variety, import/export, management UI
+- [x] 05-01: Full food supply chain (imported from `game-specs/fodd-supply-chain.md`) — production, physical loads, granary orders/reservations, market distribution, house consumption/variety, import/export, management UI
 
 ### Phase 6: Production & Manufacturing
 **Goal**: Extraction sites and workshops producing physical loads.
