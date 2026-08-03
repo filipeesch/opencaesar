@@ -192,4 +192,30 @@ describe('per-market config honored at runtime only when explicitly set (MARK-02
     expect(granary.stock.wheat).toBe(100);
     expect(market.stock.wheat).toBe(50);
   });
+
+  it('in-transit units already cover the restock target → the buyer does not dispatch another fetch (WR-01)', () => {
+    const map = loopMap();
+    const market = stubBuilding({ id: 1, type: 'market', x: 2, y: 1, stock: { wheat: 0 }, workersRequired: 1, workersAssigned: 1 });
+    const granary = stubBuilding({ id: 2, type: 'granary', x: 3, y: 1, stock: { wheat: 100 } });
+    const stub = walkerStub(map, [market, granary], 1, 3);
+    const cfg = defaultMarketConfig();
+    cfg.targetStock = 20;
+    stub.configs.set(market.id, cfg);
+    // A live buyer already carrying 40 wheat toward this market covers the target
+    // (0 stock + 40 in transit >= 20), so the deciding buyer must not fetch again.
+    const inTransit = createWalker('buyer', 2, 0, 11);
+    inTransit.marketId = market.id;
+    inTransit.carryingGood = 'wheat';
+    inTransit.carriedAmount = 40;
+    // The stub types sim.walkers as readonly; the live array is mutable at runtime.
+    (stub.sim.walkers as WalkerInstance[]).push(inTransit);
+    const buyer = createWalker('buyer', 2, 0, 10);
+    buyer.marketId = market.id;
+    updateWalker(stub.sim, buyer);
+    // No dispatch → the buyer carries nothing and the granary keeps its wheat.
+    expect(buyer.carryingGood).toBeNull();
+    expect(buyer.carriedAmount).toBe(0);
+    expect(granary.stock.wheat).toBe(100);
+    expect(market.stock.wheat ?? 0).toBe(0);
+  });
 });

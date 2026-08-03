@@ -313,6 +313,10 @@ function decideBuyer(sim: SimInternals, w: WalkerInstance, profile: WalkerProfil
   const state = marketFoodState(sim, market, cfg);
   const food = nextFoodToFetch(state);
   if (!food) return;
+  // WR-01: a configured market's restock target already covered by stock plus
+  // units in transit — a buyer must not dispatch another fetch for that food,
+  // or the fetch would overshoot the configured target.
+  if (cfg && readFood(market, food) + state.inTransit[food] >= cfg.targetStock) return;
   const granary = pickBuyerGranary(sim, w, market, food, profile, cfg?.buyerRadius);
   if (!granary) return;
   const stock = readFood(granary, food);
