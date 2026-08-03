@@ -177,7 +177,9 @@ export function dangerousExport(
     warning: dangerous
       ? `This sale reduces the food reserve to ${Math.round(after * 10) / 10} month(s) of coverage.`
       : 'This sale leaves the urban reserve intact.',
-    options: dangerous ? ['cancel', 'sell-anyway', 'reduce', 'raise-reserve'] : ['sell-anyway'],
+    // Only a dangerous sale raises approval options; a safe sale offers none
+    // (IN-03) — no pointless 'sell-anyway' gate on non-dangerous exports.
+    options: dangerous ? ['cancel', 'sell-anyway', 'reduce', 'raise-reserve'] : [],
   };
 }
 

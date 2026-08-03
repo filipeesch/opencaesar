@@ -105,7 +105,8 @@ describe('food export with urban reserves (spec §14, TRAD-04)', () => {
   it('flags a dangerous export that would drop coverage below the floor and offers options', () => {
     const safe = dangerousExport(2000, 400, 200);
     expect(safe.dangerous).toBe(false);
-    expect(safe.options).toContain('sell-anyway');
+    // A safe sale needs no approval gate (IN-03): no options shown.
+    expect(safe.options).toEqual([]);
 
     const risky = dangerousExport(2000, 400, 1000, 3);
     expect(risky.dangerous).toBe(true);
