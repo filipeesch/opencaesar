@@ -7,7 +7,7 @@ import { EVENTS } from '../../data/events';
 export interface EventResult {
   id: string;
   name: string;
-  severity: string;
+  severity: 'mild' | 'serious' | 'disaster';
   message: string;
   culture?: number;
   prosperity?: number;
@@ -55,4 +55,21 @@ export function applyEvent(id: string, ratings: { culture: number; prosperity: n
     stability: r.stability,
     favor: r.favor,
   };
+}
+
+/** Duration (ticks) of an event, defaulting to 40. */
+export function eventDuration(id: string): number {
+  const ev = EVENTS[id];
+  return ev?.durationTicks ?? 40;
+}
+
+/** Message emitted partway through an active event (or null if none). */
+export function eventSustainMsg(id: string): string | null {
+  return EVENTS[id]?.sustainMsg ?? null;
+}
+
+/** Message emitted when an event concludes. */
+export function eventFinalMsg(id: string): string {
+  const ev = EVENTS[id];
+  return ev?.finalMsg ?? `The ${ev?.name ?? id} has concluded.`;
 }

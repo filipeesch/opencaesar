@@ -9,6 +9,8 @@
  * getCommandLog(). getState() returns plain serializable data.
  */
 
+import { pickEvent, applyEvent, eventDuration, eventSustainMsg, eventFinalMsg } from './events';
+import { EVENTS } from '../../data/events';
 import { BUILDINGS } from './buildings';
 import { CONFIG, HOUSE_TIERS } from './config';
 import { assignedWorkers, computeRatings, tickEconomy, totalJobs, workerPool } from './economy';
@@ -60,6 +62,7 @@ export class SimRunner {
   private nextWalkerId = 1;
 
   private messages: SimMessage[] = [];
+  private eventLog: EventRecord[] = [];
   private commandLog: CommandLogEntry[] = [];
   /** Ordered list of state-changing commands, used to reconstruct a deterministic save. */
   private saveCommands: SaveCommand[] = [];
@@ -101,6 +104,27 @@ export class SimRunner {
 
     // Walkers move last: coverage and arrivals see the tick's final services.
     for (const w of [...this.walkers]) updateWalker(this.simInternals(), w);
+
+    // Random events (deterministic by seed + tick), with lifecycle tracking.
+    if (this.activeEvent) {
+      this.activeEvent.remaining -= 1;
+      const ev = this.activeEvent;
+      if (ev.remaining <= 0) {
+        this.logEvent('event', eventFinalMsg(ev.id), EVENTS[ev.id]?.severity ?? 'mild');
+        this.activeEvent = null;
+      } else if (ev.remaining === Math.floor(ev.total / 2)) {
+        const sustain = eventSustainMsg(ev.id);
+        if (sustain) this.logEvent('event', sustain, EVENTS[ev.id]?.severity ?? 'mild');
+      }
+    }
+    if (!this.activeEvent && this.tickCount % 40 === 0) {
+      const ev = pickEvent(this.seed, this.tickCount);
+      if (ev) {
+        const result = applyEvent(ev, { culture: 10, prosperity: this.getState().ratings.prosperity, stability: 10, favor: 10 });
+        this.logEvent('event', `${result.name}: ${result.message}`, result.severity);
+        this.activeEvent = { id: ev, remaining: eventDuration(ev), total: eventDuration(ev) };
+      }
+    }
   }
 
   /** Place a building at footprint anchor (x, y). Rejected commands leave state unchanged. */
@@ -244,12 +268,7 @@ export class SimRunner {
   }
 
   getEvents(): EventRecord[] {
-    return this.getState().messages.map((m) => ({
-      tick: this.getState().tick,
-      type: 'message',
-      text: typeof m === 'string' ? m : (m && 'text' in m ? String(m.text) : String(m)),
-      severity: 'mild',
-    }));
+    return [...this.eventLog];
   }
 
   startMission(id: string): void {
@@ -271,6 +290,7 @@ export class SimRunner {
 
   private mission: MissionState | null = null;
   private tradeRoutes: Record<string, TradeRoute> = {};
+  private activeEvent: { id: string; remaining: number; total: number } | null = null;
   private houseHappinessInput(b: BuildingInstance) {
     const services = {
       food: b.house!.foodCooldown > 0,
@@ -476,6 +496,13 @@ export class SimRunner {
     this.messages.push({ tick: this.tickCount, type, text });
     if (this.messages.length > CONFIG.messageLogCapacity) {
       this.messages.splice(0, this.messages.length - CONFIG.messageLogCapacity);
+    }
+  }
+
+  private logEvent(type: string, text: string, severity: 'mild' | 'serious' | 'disaster'): void {
+    this.eventLog.push({ tick: this.tickCount, type, text, severity });
+    if (this.eventLog.length > CONFIG.messageLogCapacity) {
+      this.eventLog.splice(0, this.eventLog.length - CONFIG.messageLogCapacity);
     }
   }
 

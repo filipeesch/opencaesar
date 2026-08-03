@@ -50,3 +50,13 @@ describe('SimRunner accessors', () => {
     expect(Array.isArray(events)).toBe(true);
   });
 });
+
+describe('event lifecycle in runner', () => {
+  it('fires a deterministic event log from tick stepping', () => {
+    const runner = new SimRunner(12345);
+    for (let i = 0; i < 200; i++) runner.tick();
+    const events = runner.getEvents();
+    expect(Array.isArray(events)).toBe(true);
+    expect(events.length).toBeGreaterThan(0);
+  });
+});
