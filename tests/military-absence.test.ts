@@ -56,4 +56,11 @@ describe('military-absence gate (D9)', () => {
       rmSync(probe, { force: true });
     }
   });
+
+  it('check-military.mjs exports match the declared .d.mts surface', async () => {
+    const mod = await import('../scripts/check-military.mjs');
+    expect(Object.keys(mod)).toEqual(expect.arrayContaining(['FORBIDDEN_TOKENS', 'scanMilitarySources']));
+    expect(mod.FORBIDDEN_TOKENS).toBe(FORBIDDEN_TOKENS);
+    expect(mod.scanMilitarySources).toBe(scanMilitarySources);
+  });
 });
