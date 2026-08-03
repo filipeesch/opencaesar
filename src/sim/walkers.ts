@@ -17,6 +17,11 @@ import { roadSpeedMultiplier } from './roadTypes';
 import type { BuildingType, Good, Vec2, WalkerType } from './types';
 import type { WalkerProfile } from './walkerProfiles';
 import { walkerProfile, mayTraverse } from './walkerProfiles';
+import {
+  MARKET_FOOD_CAPS, SELLER_CAPACITY, marketAgents, nextFoodToFetch, pickGranary,
+  sellerLoadComposition, recordMarketVisit,
+} from './logistics';
+import type { GranaryCandidate, MarketCoverage, MarketFoodState } from './logistics';
 
 export interface WalkerInstance {
   id: number;
@@ -42,6 +47,12 @@ export interface WalkerInstance {
   origin: Vec2 | null;
   /** Road tiles walked since leaving `origin` (0 when back at it). */
   stepsTaken: number;
+  /** Market building a buyer/seller belongs to (deposit/reload/coverage target). */
+  marketId?: number;
+  /** Buyer: granary whose stock the in-trip units were reserved from (restored on failure). */
+  reservedGranaryId?: number;
+  /** Seller: the multi-food load currently being carried to houses (units per food). */
+  carryingLoad?: Record<string, number>;
 }
 
 /** House-only simulation state (undefined on non-house buildings). */
@@ -54,6 +65,10 @@ export interface HouseInstance {
   devolveCounter: number;
   /** Service access delivered by walkers (health/literacy/religion/entertainment). */
   services?: Partial<Record<string, number>>;
+  /** Per-food physical units a house has received from sellers (live food state, §13). */
+  foodInventory?: Record<string, number>;
+  /** Per-house market coverage bookkeeping (§12.13). */
+  marketCoverage?: MarketCoverage;
 }
 
 const SERVICE_BY_WALKER: Record<string, string> = {
@@ -96,6 +111,8 @@ export interface SimInternals {
   /** Nearest road tile adjacent to a building footprint, or null. */
   adjacentRoadTile: (b: BuildingInstance) => Vec2 | null;
   despawn: (w: WalkerInstance) => void;
+  /** Current sim tick (optional; used to timestamp market-visit coverage). */
+  tick?: number;
 }
 
 const DIRS: readonly Vec2[] = [
@@ -129,6 +146,9 @@ export function createWalker(type: WalkerType, x: number, y: number, id: number)
 export function updateWalker(sim: SimInternals, w: WalkerInstance): void {
   w.lifetime -= 1;
   if (w.lifetime <= 0) {
+    // A buyer/seller that never completed returns its held stock (never lose
+    // product — WR-02), then despawns.
+    releaseWalkerLoad(sim, w);
     sim.despawn(w);
     return;
   }
@@ -155,11 +175,54 @@ export function updateWalker(sim: SimInternals, w: WalkerInstance): void {
 function applyCoverage(sim: SimInternals, w: WalkerInstance, profile: WalkerProfile): void {
   if (w.type === 'well') {
     serviceHousesAround(sim, w, 'water', profile);
+  } else if (w.type === 'seller' && w.carryingLoad) {
+    deliverToAdjacentHouses(sim, w, profile);
   } else if (w.type === 'market' && w.carryingGood === 'wheat' && w.carriedAmount > 0) {
     serviceHousesAround(sim, w, 'food', profile);
   } else if (SERVICE_BY_WALKER[w.type]) {
     serviceHousesAround(sim, w, SERVICE_BY_WALKER[w.type], profile);
   }
+}
+
+/**
+ * Seller delivery (§12.9–12.12): a wandering seller carrying a multi-food load
+ * drops one unit of its basic-first load into each adjacent house that needs
+ * food, marks the house fed (foodCooldown), and records per-house market
+ * coverage (§12.13). Physical units leave the load and land in the house's
+ * inventory — no teleportation, no loss.
+ */
+function deliverToAdjacentHouses(sim: SimInternals, w: WalkerInstance, profile: WalkerProfile): void {
+  const load = w.carryingLoad;
+  if (!load) return;
+  for (const d of DIRS) {
+    const b = sim.buildingAt(w.x + d.x, w.y + d.y);
+    if (!b || !b.house) continue;
+    if (b.house.foodCooldown > 0) continue; // recently fed — not hungry
+    const food = nextLoadedFood(load);
+    if (!food) continue;
+    load[food] = (load[food] ?? 0) - 1;
+    if ((load[food] ?? 0) <= 0) delete load[food];
+    b.house.foodCooldown = profile.serviceTTL;
+    b.house.foodInventory = b.house.foodInventory ?? {};
+    b.house.foodInventory[food] = (b.house.foodInventory[food] ?? 0) + 1;
+    const cov = b.house.marketCoverage ?? {
+      houseId: String(b.id), lastMarketVisit: 0, lastFoodDelivery: 0, servingMarketId: '', foodDeliveredByType: {},
+    };
+    const marketId = w.marketId != null ? String(w.marketId) : '';
+    if (marketId) {
+      recordMarketVisit(cov, sim.tick ?? 1, food, 1, marketId);
+    } else {
+      cov.lastFoodDelivery += 1;
+    }
+    b.house.marketCoverage = cov;
+  }
+}
+
+/** The first food with units left in a seller's load (basic-first ordering). */
+function nextLoadedFood(load: Record<string, number>): string | null {
+  for (const f of FOOD_KEYS) if ((load[f] ?? 0) > 0) return f;
+  for (const [f, v] of Object.entries(load)) if (v > 0) return f;
+  return null;
 }
 
 function serviceHousesAround(sim: SimInternals, w: WalkerInstance, service: string, profile: WalkerProfile): void {
@@ -180,6 +243,8 @@ function serviceHousesAround(sim: SimInternals, w: WalkerInstance, service: stri
 function decide(sim: SimInternals, w: WalkerInstance, profile: WalkerProfile): void {
   if (w.type === 'market') decideMarket(sim, w, profile);
   else if (w.type === 'labor') decideLabor(sim, w, profile);
+  else if (w.type === 'buyer') decideBuyer(sim, w, profile);
+  else if (w.type === 'seller') decideSeller(sim, w);
 }
 
 function decideMarket(sim: SimInternals, w: WalkerInstance, profile: WalkerProfile): void {
@@ -195,6 +260,169 @@ function decideMarket(sim: SimInternals, w: WalkerInstance, profile: WalkerProfi
 function decideLabor(sim: SimInternals, w: WalkerInstance, profile: WalkerProfile): void {
   const b = nearestBuildingNeedingLabor(sim, w);
   if (b) startSeeking(sim, w, b, profile);
+}
+
+/** Foods the food-supply chain tracks (mirrors advisor FOOD_KEYS). */
+const FOOD_KEYS = ['wheat', 'vegetables', 'fruit', 'meat', 'fish'];
+/** Units a buyer fetches per trip (WR-02; bounded by granary availability). */
+const BUYER_FETCH_AMOUNT = 40;
+
+/**
+ * Market buyer destination walker (§12.5, WR-02): choose which food to fetch
+ * with nextFoodToFetch, reserve the units at the granary immediately (so they
+ * cannot be double-picked), travel, then return the load to the market. The
+ * granary's stock is reduced at departure (reservation holds) and the units
+ * physically land in the market only on deposit; a trip that never completes
+ * returns them to the granary.
+ */
+function decideBuyer(sim: SimInternals, w: WalkerInstance, profile: WalkerProfile): void {
+  if (w.carryingGood !== null && w.carriedAmount > 0) {
+    // Return leg: deposit the load at the market.
+    const market = buyerMarket(sim, w);
+    if (market && startSeeking(sim, w, market, profile)) return;
+    // No market reachable → restore the reservation (never lose product).
+    releaseWalkerLoad(sim, w);
+    sim.despawn(w);
+    return;
+  }
+  const market = buyerMarket(sim, w);
+  if (!market) return;
+  const eff = market.workersRequired > 0 ? market.workersAssigned / market.workersRequired : 0;
+  if (marketAgents(eff).buyers <= 0) return; // market staffs no buyer at this efficiency (§12.3)
+  const state = marketFoodState(market);
+  const food = nextFoodToFetch(state);
+  if (!food) return;
+  const granary = pickBuyerGranary(sim, w, food, profile);
+  if (!granary) return;
+  const stock = readFood(granary, food);
+  const take = Math.min(BUYER_FETCH_AMOUNT, stock);
+  if (take <= 0) return;
+  // Reserve-and-collect at departure: back the units out of the granary now so
+  // no second buyer can pick them; they arrive at the market only on deposit.
+  writeFood(granary, food, stock - take);
+  w.carryingGood = food as Good;
+  w.carriedAmount = take;
+  w.reservedGranaryId = granary.id;
+  startSeeking(sim, w, granary, profile);
+}
+
+/**
+ * Market seller wandering walker (§12.9–12.12, WR-02): at its home market it
+ * composes a multi-food load (sellerLoadComposition) and deducts it from market
+ * stock; while wandering it delivers units to adjacent hungry houses
+ * (see deliverToAdjacentHouses). Runs reload only at the market (origin).
+ */
+function decideSeller(sim: SimInternals, w: WalkerInstance): void {
+  if (w.carryingLoad && loadAmount(w.carryingLoad) > 0) return; // mid-delivery run
+  const market = w.marketId != null ? sim.buildingById(w.marketId) : nearestMarket(sim, w);
+  if (!market) return;
+  const eff = market.workersRequired > 0 ? market.workersAssigned / market.workersRequired : 1;
+  if (marketAgents(eff).sellers <= 0) return; // market staffs no seller at this efficiency (§12.3)
+  // Reload only while standing at the market (physical origin of the load).
+  if (!w.origin || w.x !== w.origin.x || w.y !== w.origin.y) return;
+  const load = sellerLoadComposition(market.stock as Record<string, number>, MARKET_FOOD_CAPS, SELLER_CAPACITY, FOOD_KEYS);
+  if (loadAmount(load) <= 0) return;
+  for (const [f, amt] of Object.entries(load)) {
+    writeFood(market, f, Math.max(0, readFood(market, f) - amt));
+  }
+  w.carryingLoad = load;
+}
+
+function loadAmount(load: Record<string, number>): number {
+  let t = 0;
+  for (const v of Object.values(load)) t += v;
+  return t;
+}
+
+function buyerMarket(sim: SimInternals, w: WalkerInstance): BuildingInstance | null {
+  if (w.marketId != null) {
+    const m = sim.buildingById(w.marketId);
+    if (m) return m;
+  }
+  return nearestMarket(sim, w);
+}
+
+function nearestMarket(sim: SimInternals, w: WalkerInstance): BuildingInstance | null {
+  let best: BuildingInstance | null = null;
+  let bestDist = Infinity;
+  for (const b of sim.buildings) {
+    if (b.type !== 'market') continue;
+    const d = manhattan(w.x, w.y, b.x, b.y);
+    if (d < bestDist) {
+      bestDist = d;
+      best = b;
+    }
+  }
+  return best;
+}
+
+/** Market demand signal for buyer food choice: restock whatever is below its
+ *  per-food cap, basic food first when completely absent (§12.6–12.7). */
+function marketFoodState(market: BuildingInstance): MarketFoodState {
+  const current: Record<string, number> = {};
+  const expectedConsumption: Record<string, number> = {};
+  for (const f of FOOD_KEYS) {
+    const stock = readFood(market, f);
+    current[f] = stock;
+    const cap = MARKET_FOOD_CAPS[f] ?? 0;
+    expectedConsumption[f] = stock >= cap ? 0 : 1;
+  }
+  return { current, inTransit: {}, expectedConsumption, basicFood: 'wheat', evolutionBlocking: null };
+}
+
+/** Best road-reachable granary with available stock of `food` (scoreGranary/pickGranary). */
+function pickBuyerGranary(sim: SimInternals, w: WalkerInstance, food: string, profile: WalkerProfile): BuildingInstance | null {
+  const candidates: GranaryCandidate[] = [];
+  for (const b of sim.buildings) {
+    if (b.type !== 'granary') continue;
+    const avail = readFood(b, food);
+    if (avail <= 0) continue;
+    const to = sim.adjacentRoadTile(b);
+    if (!to) continue;
+    const path = findRoadPath(sim.map, { x: w.x, y: w.y }, to, traversableFor(sim, profile));
+    if (path === null) continue;
+    candidates.push({ id: String(b.id), roadDistance: path.length, congestion: 0, priority: 0, available: avail, blockRisk: 0 });
+  }
+  const chosen = pickGranary(candidates);
+  if (!chosen) return null;
+  const g = sim.buildingById(Number(chosen.id));
+  return g && g.type === 'granary' ? g : null;
+}
+
+/** Read a food's units from a building's good stock (string-keyed access). */
+function readFood(b: BuildingInstance, food: string): number {
+  return (b.stock as Record<string, number | undefined>)[food] ?? 0;
+}
+
+/** Write a food's units into a building's good stock (string-keyed access). */
+function writeFood(b: BuildingInstance, food: string, value: number): void {
+  (b.stock as Record<string, number | undefined>)[food] = value;
+}
+
+/**
+ * Return any stock a buyer/seller still holds when a trip fails or expires so
+ * product is never destroyed without a handoff (WR-02).
+ */
+function releaseWalkerLoad(sim: SimInternals, w: WalkerInstance): void {
+  if (w.type === 'buyer' && w.carryingGood && w.carriedAmount > 0 && w.reservedGranaryId != null) {
+    const g = sim.buildingById(w.reservedGranaryId);
+    if (g && g.stock) writeFood(g, w.carryingGood, readFood(g, w.carryingGood) + w.carriedAmount);
+    w.carryingGood = null;
+    w.carriedAmount = 0;
+    w.reservedGranaryId = undefined;
+  }
+  if (w.type === 'seller' && w.carryingLoad) {
+    const leftover = loadAmount(w.carryingLoad);
+    if (leftover > 0) {
+      const market = w.marketId != null ? sim.buildingById(w.marketId) : nearestMarket(sim, w);
+      if (market && market.stock) {
+        for (const [f, amt] of Object.entries(w.carryingLoad)) {
+          if (amt > 0) writeFood(market, f, readFood(market, f) + amt);
+        }
+      }
+    }
+    w.carryingLoad = {};
+  }
 }
 
 /** Turn the walker toward a building. Returns false when unreachable. */
@@ -243,6 +471,17 @@ function handleArrival(sim: SimInternals, w: WalkerInstance, profile: WalkerProf
         w.carriedAmount = take;
       }
     }
+  } else if (w.type === 'buyer') {
+    // Arrive home: physically deposit the reserved load into the market stock.
+    if (target.type === 'market' && w.carryingGood && w.carriedAmount > 0) {
+      writeFood(target, w.carryingGood, readFood(target, w.carryingGood) + w.carriedAmount);
+      w.carryingGood = null;
+      w.carriedAmount = 0;
+      w.reservedGranaryId = undefined;
+      sim.despawn(w);
+      return false;
+    }
+    // Arrived at the granary source: the next decide turns the walker home.
   } else if (w.type === 'labor') {
     target.laborConnected = true;
     target.laborCooldown = profile.serviceTTL;

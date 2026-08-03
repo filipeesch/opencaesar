@@ -40,6 +40,8 @@ const CATEGORY_BY_ID: Record<string, WalkerCategory> = {
   well: 'wandering',
   fountain: 'wandering',
   market: 'destination',
+  buyer: 'destination',
+  seller: 'wandering',
   engineer: 'wandering',
   fireman: 'wandering',
   doctor: 'wandering',

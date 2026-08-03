@@ -19,10 +19,12 @@ export const BUILDING_COLORS: Record<Exclude<BuildingType, 'house'>, number> = {
 /** House color scales with tier: gray shack → red villa. */
 export const HOUSE_COLORS: readonly number[] = [0x9e9d9a, 0xc9a27d, 0xd98c3f, 0xdc562e, 0xc9302c];
 
-export const WALKER_COLORS: Record<'market' | 'well' | 'labor' | 'clinic' | 'school' | 'library' | 'temple' | 'theatre', number> = {
+export const WALKER_COLORS: Record<'market' | 'well' | 'labor' | 'buyer' | 'seller' | 'clinic' | 'school' | 'library' | 'temple' | 'theatre', number> = {
   market: 0xec407a,
   well: 0x29b6f6,
   labor: 0xffa726,
+  buyer: 0x66bb6a,
+  seller: 0xffb74d,
   clinic: 0xef5350,
   school: 0x42a5f5,
   library: 0x7e57c2,

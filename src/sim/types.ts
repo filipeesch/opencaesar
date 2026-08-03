@@ -26,6 +26,7 @@ export type BuildingCategory =
 
 export type WalkerType =
   | 'market' | 'well' | 'labor'
+  | 'buyer' | 'seller'
   | 'clinic' | 'school' | 'library' | 'temple' | 'theatre';
 
 export type PlacementError =

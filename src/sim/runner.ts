@@ -809,6 +809,7 @@ export class SimRunner {
       buildingAt: (x: number, y: number) => this.buildingAt(x, y),
       adjacentRoadTile: (b: BuildingInstance) => this.adjacentRoadTile(b),
       despawn: (w: WalkerInstance) => this.despawnWalker(w),
+      tick: this.tickCount,
     };
   }
 
