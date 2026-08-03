@@ -51,10 +51,11 @@ describe('SimRunner accessors', () => {
     expect(Array.isArray(events)).toBe(true);
   });
 
-  it('getTileState returns a read-only copy of all 15 per-tile fields (CORE-03)', () => {
+  it('getTileState returns a read-only copy of all 16 per-tile fields (CORE-03)', () => {
     const r = new SimRunner(1337);
     const s = r.getTileState(5, 5);
-    // All 15 CORE-03 fields, starting from neutral defaults on a fresh runner.
+    // All 16 CORE-03 fields (incl. roadType from ROAD-02), starting from neutral
+    // defaults on a fresh runner.
     expect(s).toEqual({
       elevation: 0,
       fertility: 0,
@@ -63,6 +64,7 @@ describe('SimRunner accessors', () => {
       waterDepth: 0,
       aqueduct: false,
       road: false,
+      roadType: null,
       desirability: 0,
       fireRisk: 0,
       collapseRisk: 0,

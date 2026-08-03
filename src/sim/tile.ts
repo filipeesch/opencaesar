@@ -6,6 +6,8 @@
  * are unaffected), while this bag exposes the richer fields the full spec calls
  * for. All fields default to "neutral" so reading them is always safe.
  */
+import type { RoadType } from './roadTypes';
+
 export interface TileState {
   elevation: number;
   fertility: number;
@@ -14,6 +16,8 @@ export interface TileState {
   waterDepth: number;
   aqueduct: boolean;
   road: boolean;
+  /** Road-type refinement of a 'road' terrain tile; null means a plain dirt road. */
+  roadType: RoadType | null;
   desirability: number;
   fireRisk: number;
   collapseRisk: number;
@@ -33,6 +37,7 @@ export function defaultTileState(): TileState {
     waterDepth: 0,
     aqueduct: false,
     road: false,
+    roadType: null,
     desirability: 0,
     fireRisk: 0,
     collapseRisk: 0,

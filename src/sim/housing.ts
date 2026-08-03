@@ -6,6 +6,7 @@
 
 import { CONFIG, HOUSE_TIERS } from './config';
 import type { Map } from './map';
+import { roadDesirability } from './roadTypes';
 import type { MessageType, Policy } from './types';
 import type { BuildingInstance } from './walkers';
 
@@ -45,7 +46,16 @@ export function desirabilityOf(
     (services.water ? CONFIG.desirabilityServiceBonus : 0) +
     (services.labor ? CONFIG.desirabilityServiceBonus : 0);
   const penalty = wagesUnpaid ? CONFIG.desirabilityUnpaidWagesPenalty : 0;
-  const total = base + policyPart + servicesBonus - penalty;
+  // Adjacent-road desirability: each orthogonally adjacent road tile contributes
+  // its road type's desirability (null/plain roads read as dirt = 0). Roadblock
+  // tiles contribute their (0) desirability, adding nothing.
+  let roadBonus = 0;
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (map.get(nx, ny) === 'road') roadBonus += roadDesirability(map.roadTypeAt(nx, ny) ?? 'dirt');
+  }
+  const total = base + policyPart + servicesBonus - penalty + roadBonus;
   if (total < 0) return 0;
   if (total > 200) return 200;
   return Math.round(total);

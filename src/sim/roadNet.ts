@@ -23,6 +23,9 @@ function key(x: number, y: number): number {
 function tileKey(t: Vec2): number {
   return key(t.x, t.y);
 }
+function unkey(k: number): Vec2 {
+  return { x: k >> 20, y: k & 0xfffff };
+}
 
 export class RoadNetwork {
   /** adjacency: tileKey -> set of neighbor tileKeys. */
@@ -71,8 +74,11 @@ export class RoadNetwork {
     const set = this.edges.get(k) ?? new Set<number>();
     for (const nk of neighbors) set.add(nk);
     this.edges.set(k, set);
-    this.recolorRegion(neighbors);
-    this.lastAffected = [{ x, y }];
+    // An isolated add has no road neighbors, so seed the recolor with the new
+    // tile itself — otherwise the fallback branch would receive an empty seeds
+    // list, never flood, and the tile would have no component id.
+    const seeds = neighbors.length > 0 ? neighbors : [k];
+    this.lastAffected = this.recolorRegion(seeds);
   }
 
   /** Remove a road tile, splitting components that lose their only link (local). */
@@ -82,8 +88,7 @@ export class RoadNetwork {
     this.edges.delete(k);
     for (const nk of neighbors) this.edges.get(nk)?.delete(k);
     this.components.delete(k);
-    this.recolorRegion(neighbors);
-    this.lastAffected = [{ x, y }];
+    this.lastAffected = this.recolorRegion(neighbors);
   }
 
   /** Orthogonally adjacent road tiles. */
@@ -131,8 +136,9 @@ export class RoadNetwork {
     }
   }
 
-  /** Re-color just the components touched by `seeds` (neighbors of a change). */
-  private recolorRegion(seeds: number[]): void {
+  /** Re-color just the components touched by `seeds` (neighbors of a change).
+   *  Returns the tiles actually re-computed (the affected/dirty region). */
+  private recolorRegion(seeds: number[]): Vec2[] {
     const touchedCompIds = new Set<number>();
     // Clear coloring for any component that a seed belongs to.
     for (const k of seeds) {
@@ -141,37 +147,51 @@ export class RoadNetwork {
       touchedCompIds.add(c);
     }
     if (touchedCompIds.size === 0) {
-      // New isolated node (no neighbors) gets a fresh component.
-      for (const k of seeds) if (this.edges.has(k) && !this.components.has(k)) this.floodComponent(k);
-      return;
+      // New isolated node (no neighbors) gets a fresh component. Seeds here are
+      // bare keys with no prior component (the caller seeds isolated adds with
+      // the new tile itself).
+      const colored: Vec2[] = [];
+      for (const k of seeds) {
+        if (this.edges.has(k) && !this.components.has(k)) {
+          this.floodComponent(k);
+          colored.push(unkey(k));
+        }
+      }
+      return colored;
     }
     const affected = new Set<number>();
     this.components.forEach((c, k) => {
       if (touchedCompIds.has(c)) affected.add(k);
     });
     for (const k of affected) this.components.delete(k);
-    // Re-flood each affected seed that still has edges.
-    const seen = new Set<number>();
+    // Re-flood each affected seed that still has edges; collect every tile that
+    // ends up with a freshly assigned component (the genuinely re-computed
+    // region, including any tile newly added by this change).
+    const recolored = new Set<number>();
     for (const k of [...affected, ...seeds]) {
-      if (this.edges.has(k) && !this.components.has(k) && !seen.has(this.components.get(k) ?? -1)) {
-        this.floodComponent(k);
-        seen.add(this.components.get(k) ?? -1);
+      if (this.edges.has(k) && !this.components.has(k)) {
+        for (const ck of this.floodComponent(k)) recolored.add(ck);
       }
     }
+    return [...recolored].map(unkey);
   }
 
-  private floodComponent(start: number): void {
+  private floodComponent(start: number): Set<number> {
     const id = this.nextComponent++;
+    const colored = new Set<number>();
     const stack = [start];
     this.components.set(start, id);
+    colored.add(start);
     while (stack.length) {
       const cur = stack.pop()!;
       for (const nb of this.edges.get(cur) ?? []) {
         if (!this.components.has(nb)) {
           this.components.set(nb, id);
+          colored.add(nb);
           stack.push(nb);
         }
       }
     }
+    return colored;
   }
 }

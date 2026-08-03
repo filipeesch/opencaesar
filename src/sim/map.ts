@@ -2,6 +2,7 @@ import { CONFIG } from './config';
 import type { Rng } from './rng';
 import { randFloat } from './rng';
 import type { TileQuery, TileType, Vec2 } from './types';
+import type { RoadType } from './roadTypes';
 import type { TileState } from './tile';
 import { defaultTileState } from './tile';
 
@@ -134,6 +135,20 @@ export class Map {
   mutateTileState(x: number, y: number, fn: (s: TileState) => void): void {
     if (!this.inBounds(x, y) || !this.states[y]) return;
     fn(this.states[y][x]);
+  }
+
+  /** Road-type refinement of a tile (null = plain dirt road) or null when out of
+   *  bounds / never set. Terrain authority is untouched — 'road' stays 'road'. */
+  roadTypeAt(x: number, y: number): RoadType | null {
+    if (!this.inBounds(x, y) || !this.states[y]) return null;
+    return this.states[y][x].roadType;
+  }
+
+  /** Set the road-type refinement of a tile (null resets to plain dirt road);
+   *  no-ops when out of bounds. Does not change terrain. */
+  setRoadType(x: number, y: number, type: RoadType | null): void {
+    if (!this.inBounds(x, y) || !this.states[y]) return;
+    this.states[y][x].roadType = type;
   }
 
   setRect(x1: number, y1: number, x2: number, y2: number, tile: TileType): void {
