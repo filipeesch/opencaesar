@@ -15,6 +15,7 @@ import type { Rng } from './rng';
 import { randInt } from './rng';
 import { roadSpeedMultiplier } from './roadTypes';
 import type { BuildingType, Good, Vec2, WalkerType } from './types';
+import type { FirePhase } from './safety';
 import type { WalkerProfile } from './walkerProfiles';
 import { walkerProfile, mayTraverse } from './walkerProfiles';
 import {
@@ -131,6 +132,24 @@ export interface BuildingInstance {
   lastDestinationId?: string | null;
   /** Kind of the last porter destination ('workshop' | 'warehouse'), or null. */
   lastDestinationKind?: 'workshop' | 'warehouse' | null;
+  /** Civil-safety state (fire lifecycle, structural danger, crime). Internal
+   *  only — never serialized to BuildingState, so goldens/SimState stay
+   *  byte-identical. Consumed by the derived risk overlay and advisors. */
+  safety?: BuildingSafetyState;
+}
+
+/** Civil-safety per-building state (Phase 11). Internal to the sim run. */
+export interface BuildingSafetyState {
+  /** Fire lifecycle phase (none → burning → evacuating → destroyed). */
+  fire: FirePhase;
+  /** Structurally unsafe (collapse risk high / fire-destroyed) until repaired. */
+  danger: boolean;
+  /** Live collapse risk 0..1 (for the risk overlay). */
+  collapseRisk: number;
+  /** Live crime level 0..1 (patrols lower it). */
+  crime: number;
+  /** Ticks a doused building stays immune to re-ignition (firemen response). */
+  dousedTicks: number;
 }
 
 /**
@@ -159,6 +178,11 @@ export interface SimInternals {
   tradeEntry?: () => Vec2 | null;
   /** TRAD-03 additive: free storage room for a good at a building id. */
   tradeStorageRoom?: (good: string, buildingId: number) => number;
+  /** Civil-safety hooks (Phase 11): the runner owns state mutation; walkers
+   *  trigger it when serving a nearby building. All optional — additive. */
+  extinguishFire?: (buildingId: number) => void;
+  repairBuilding?: (buildingId: number) => void;
+  patrolCrime?: (buildingId: number) => void;
 }
 
 const DIRS: readonly Vec2[] = [
@@ -225,6 +249,25 @@ function applyCoverage(sim: SimInternals, w: WalkerInstance, profile: WalkerProf
     deliverToAdjacentHouses(sim, w, profile);
   } else if (w.type === 'market' && w.carryingGood === 'wheat' && w.carriedAmount > 0) {
     serviceHousesAround(sim, w, 'food', profile);
+  } else if (w.type === 'fireman') {
+    // Fireman extinguishes burning buildings it walks past.
+    for (const d of DIRS) {
+      const b = sim.buildingAt(w.x + d.x, w.y + d.y);
+      if (!b || !b.safety || b.safety.fire === 'none') continue;
+      if (b.safety.fire !== 'destroyed') sim.extinguishFire?.(b.id);
+    }
+  } else if (w.type === 'engineer') {
+    // Engineer repairs buildings marked structurally dangerous.
+    for (const d of DIRS) {
+      const b = sim.buildingAt(w.x + d.x, w.y + d.y);
+      if (b?.safety?.danger) sim.repairBuilding?.(b.id);
+    }
+  } else if (w.type === 'marshal') {
+    // Marshal patrols: calms crime near buildings it passes (peaceful).
+    for (const d of DIRS) {
+      const b = sim.buildingAt(w.x + d.x, w.y + d.y);
+      if (b?.safety) sim.patrolCrime?.(b.id);
+    }
   } else if (SERVICE_BY_WALKER[w.type]) {
     serviceHousesAround(sim, w, SERVICE_BY_WALKER[w.type], profile);
   }

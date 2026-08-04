@@ -11,6 +11,7 @@
 
 import { pickEvent, applyEvent, eventDuration, eventSustainMsg, eventFinalMsg } from './events';
 import { EVENTS } from '../../data/events';
+import { WALKERS } from '../../data/walkers';
 import { BUILDINGS } from './buildings';
 import { CONFIG, HOUSE_TIERS } from './config';
 import { validateCatalogs, throwCatalogIssues } from '../../data/validate';
@@ -29,7 +30,7 @@ import { TRADE_CITIES, type TradeCityDef } from '../../data/trade';
 import { CARAVAN_CAPACITY, SHIP_CAPACITY } from './transport';
 import { tickMission } from './missions';
 import { computeServiceCoverage } from './services';
-import { computeRisks } from './safety';
+import { computeRisks, tickFire } from './safety';
 import { taxCollected } from './taxation';
 import { unlockedGov } from './governance';
 import { ObjectiveTracker } from './objectives';
@@ -82,6 +83,7 @@ import { productionAdvisorRows, productionAdvisorSummary, logisticsAdvisorFromSt
 import type { ProductionAdvisorRow, ProductionAdvisorSummary, ProductionInternalNote } from './advisors';
 import { tradeAdvisorFromState } from './advisors';
 import type { TradeAdvisorView, TradePriceSnapshot, TradePriceSnapshotGood } from './advisors';
+import { civilizationOverlayData } from './advisors';
 
 /** Deferred commands. These share the exact shape of the replayable
  *  `SaveCommand` type, so a paused queue can be serialized verbatim into a save
@@ -105,6 +107,14 @@ const WORKSHOP_INPUT_CAPACITY = 10;
 
 function manhattan(x1: number, y1: number, x2: number, y2: number): number {
   return Math.abs(x1 - x2) + Math.abs(y1 - y2);
+}
+
+/** Reverse lookup: the catalog walker id a building spawns (fire_station → fireman). */
+function walkerIdForBuilding(type: string): WalkerType | null {
+  for (const def of Object.values(WALKERS)) {
+    if (def.spawnedBy.includes(type)) return def.id as WalkerType;
+  }
+  return null;
 }
 
 /** Live-derived metrics from the running sim, exposed to advisors/UI (WARNING 1). */
@@ -270,8 +280,83 @@ export class SimRunner {
     // Anti-hoarding cap: excess above the limit is dropped and ledgered.
     this.tickFinanceCap();
 
+    // Civil safety: per-building fire lifecycle, collapse risk, crime.
+    this.tickSafety();
+
     // Remaining systems read live sim state into a derived snapshot (WARNING 1 fix).
     this.tickDerivedSystems();
+  }
+
+  private tickSafety(): void {
+    const earthquake = this.activeEvent?.id === 'earthquake';
+    const fireEvent = this.activeEvent?.id === 'fire';
+    const firemen = this.walkers.filter((w) => w.type === 'fireman');
+    for (const b of this.buildings) {
+      const fresh = !b.safety;
+      const s = (b.safety ??= { fire: 'none', danger: false, collapseRisk: 0, crime: 0, dousedTicks: 0 });
+      const fireCoverage = this.safetyCoverage(b, 'fire_station');
+      const engineerCoverage = this.safetyCoverage(b, 'engineer_post');
+      const securityCoverage = this.safetyCoverage(b, 'prefecture');
+      const r = computeRisks({
+        density: this.buildingDensity(b),
+        ageMonths: this.tickCount / 40,
+        fireCoverage,
+        engineerCoverage,
+        securityCoverage,
+      });
+      // Fire events / earthquakes raise ignition hazard; stations and nearby
+      // firemen provide the brigade response that puts fires out. Surges are
+      // sized so only dense neighborhoods (fireRisk above ~0.5) ignite.
+      const hazard = Math.min(1, r.fireRisk + (fireEvent ? 0.35 : earthquake ? 0.2 : 0));
+      const response = fireCoverage >= 0.5 || this.firemanNear(b, firemen) ? 0.6 : 0;
+      s.collapseRisk = Math.min(1, r.collapseRisk + (earthquake ? 0.6 : 0));
+      if (s.fire === 'none') {
+        // A doused building stays out until its immunity window passes.
+        if (s.dousedTicks > 0) s.dousedTicks -= 1;
+        else if (hazard > 0.7) s.fire = 'burning';
+      } else {
+        const next = tickFire(s.fire, hazard, response);
+        if (next !== s.fire) {
+          s.fire = next;
+          // A brigade response extinguishes a burn and douses the site.
+          if (next === 'none') s.dousedTicks = 10;
+        }
+      }
+      s.danger = s.danger || s.collapseRisk > 0.8 || s.fire === 'destroyed';
+      // Crime starts at the derived level; afterwards it converges toward it,
+      // so a patrol (marshal) leaves a visible multi-tick calm.
+      s.crime = fresh ? r.crime : s.crime + (r.crime - s.crime) * 0.05;
+    }
+  }
+
+  /** Structural density: fraction of the 24 tiles within manhattan 3 occupied. */
+  private buildingDensity(b: BuildingInstance): number {
+    let n = 0;
+    for (let dy = -3; dy <= 3; dy++) {
+      for (let dx = -3; dx <= 3; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const o = this.buildingAt(b.x + dx, b.y + dy);
+        if (o && o.id !== b.id) n++;
+      }
+    }
+    return Math.min(1, n / 24);
+  }
+
+  /** 1 when an active station of the given type covers the building (radius 6). */
+  private safetyCoverage(b: BuildingInstance, stationType: string): number {
+    for (const s of this.buildings) {
+      if (s.type !== stationType || !s.active) continue;
+      if (manhattan(s.x, s.y, b.x, b.y) <= CONFIG.safetyCoverageRadius) return 1;
+    }
+    return 0;
+  }
+
+  /** Any fireman walker within manhattan patrol radius of the building. */
+  private firemanNear(b: BuildingInstance, firemen: WalkerInstance[]): boolean {
+    for (const w of firemen) {
+      if (manhattan(w.x, w.y, b.x, b.y) <= CONFIG.safetyPatrolRadius) return true;
+    }
+    return false;
   }
 
   private tickDerivedSystems(): void {
@@ -671,7 +756,13 @@ export class SimRunner {
 
     let fireRisk = 0; let collapseRisk = 0; let crime = 0;
     for (const b of this.buildings) {
-      const r = computeRisks({ density: b.type === 'house' ? 0.8 : 0.4, ageMonths: this.tickCount / 40, fireCoverage: 0, engineerCoverage: 0, securityCoverage: 0 });
+      const r = computeRisks({
+        density: this.buildingDensity(b),
+        ageMonths: this.tickCount / 40,
+        fireCoverage: this.safetyCoverage(b, 'fire_station'),
+        engineerCoverage: this.safetyCoverage(b, 'engineer_post'),
+        securityCoverage: this.safetyCoverage(b, 'prefecture'),
+      });
       fireRisk = Math.max(fireRisk, r.fireRisk); collapseRisk = Math.max(collapseRisk, r.collapseRisk); crime = Math.max(crime, r.crime);
     }
     const taxes = taxCollected(population, 2, this.policy.taxRate, 1);
@@ -691,6 +782,19 @@ export class SimRunner {
   /** Live-derived advisor data (wired from the running sim). */
   getDerived(): DerivedSnapshot {
     return this.derived ?? this.derivedSnapshot();
+  }
+
+  /** Civilization overlay (Phase 11): per-tile fire / danger / collapse /
+   *  crime grids projected from the live per-building safety state. */
+  getCivilizationOverlay(): Record<string, number[][]> {
+    return civilizationOverlayData(
+      this.width,
+      this.height,
+      this.buildings.map((b) => {
+        const fp = BUILDINGS[b.type].footprint;
+        return { x: b.x, y: b.y, w: fp, h: fp, safety: b.safety };
+      }),
+    );
   }
 
   /** Production advisor rows derived from live sim state (PROD-02). Reads the
@@ -1249,7 +1353,12 @@ export class SimRunner {
         b.type === 'house' ? 'labor' :
         b.type === 'market' ? 'market' :
         (b.type === 'well' || b.type === 'fountain') ? 'well' :
-        b.type as WalkerType;
+        // Safety buildings spawn their catalog walkers (fireman/engineer/
+        // marshal); every other building keeps the legacy building-named
+        // walker type so serialized walker state stays byte-identical.
+        (b.type === 'fire_station' || b.type === 'engineer_post' || b.type === 'prefecture')
+          ? (walkerIdForBuilding(b.type) ?? (b.type as WalkerType))
+          : (b.type as WalkerType);
       // Spawn only onto a road the walker may actually traverse: a 'stop' walker
       // (labor, well, most service walkers) must never spawn onto a
       // service_roadblock it cannot cross — that would trap it at 0 speed
@@ -1694,6 +1803,24 @@ export class SimRunner {
         const b = this.buildingById.get(id);
         if (!b) return 0;
         return this.storageRoom(b, good);
+      },
+      // Civil-safety hooks (Phase 11): walkers trigger state mutation.
+      extinguishFire: (id: number) => {
+        const b = this.buildingById.get(id);
+        if (b?.safety && b.safety.fire !== 'destroyed') {
+          b.safety.fire = 'none';
+          b.safety.dousedTicks = 10;
+        }
+      },
+      repairBuilding: (id: number) => {
+        const b = this.buildingById.get(id);
+        if (!b?.safety) return;
+        b.safety.danger = false;
+        b.safety.collapseRisk = 0;
+        if (b.safety.fire === 'destroyed') b.safety.fire = 'none';
+      },      patrolCrime: (id: number) => {
+        const b = this.buildingById.get(id);
+        if (b?.safety) b.safety.crime = Math.max(0, b.safety.crime - 0.3);
       },
     };
   }

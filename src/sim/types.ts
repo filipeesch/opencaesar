@@ -21,7 +21,7 @@ export type BuildingType =
   | 'clay_pit' | 'timber_yard' | 'iron_mine' | 'quarry'
   | 'olive_farm' | 'grape_farm'
   | 'pottery_workshop' | 'furniture_workshop' | 'oil_press' | 'winery' | 'tool_workshop'
-  | 'warehouse';
+  | 'warehouse' | 'prefecture';
 
 export type BuildingCategory =
   | 'roads' | 'housing' | 'food' | 'water' | 'infrastructure'
@@ -33,7 +33,8 @@ export type WalkerType =
   | 'market' | 'well' | 'labor'
   | 'buyer' | 'seller'
   | 'clinic' | 'school' | 'library' | 'temple' | 'theatre'
-  | 'caravan' | 'ship';
+  | 'caravan' | 'ship'
+  | 'fireman' | 'engineer' | 'marshal';
 
 export type PlacementError =
   | 'invalid-type'

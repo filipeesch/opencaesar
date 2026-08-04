@@ -178,6 +178,10 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     id: 'fire_station', name: 'Fire Station', category: 'safety', footprint: [2, 2], cost: 150, workers: 6, requiresRoad: true,
     spawns: ['fireman'],
   },
+  prefecture: {
+    id: 'prefecture', name: 'Prefecture', category: 'safety', footprint: [2, 2], cost: 120, workers: 5, requiresRoad: true,
+    spawns: ['marshal'],
+  },
   // Health
   clinic: {
     id: 'clinic', name: 'Clinic', category: 'health', footprint: [1, 1], cost: 80, workers: 4, requiresRoad: true,

@@ -23,6 +23,12 @@ export const BALANCE = {
   wellSpawnEveryTicks: 30,
   /** Spawn interval for labor walkers per house. */
   laborSpawnEveryTicks: 60,
+  /** Spawn interval for safety walkers (fireman / engineer / marshal). */
+  safetySpawnEveryTicks: 40,
+  /** Coverage radius (manhattan tiles) of safety stations (fire/engineer/security). */
+  safetyCoverageRadius: 8,
+  /** Radius within which a fireman walker counts as brigade response. */
+  safetyPatrolRadius: 5,
   /** How much wheat a market walker fetches from a granary per trip. */
   marketFetchAmount: 5,
 

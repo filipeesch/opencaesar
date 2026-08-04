@@ -21,6 +21,7 @@ import type { TradeOrderMode } from './trade';
 import type { TradeRoute } from './types';
 import type { Policy } from './types';
 import type { FinanceLedger } from './finance';
+import type { FirePhase } from './safety';
 
 export interface SimSnapshot {
   population: number;
@@ -212,6 +213,47 @@ export function waterOverlayData(input: WaterOverlayInput): Record<string, numbe
     sources, wellCoverage, fountainCoverage, houseWaterClass,
     aqueductPresent, aqueductFlow, reservoirFilled, reservoirLevel, desirability,
   };
+}
+
+/** Per-building safety state fed into the civilization overlay (Phase 11). */
+export interface CivilizationBuildingInput {
+  x: number;
+  y: number;
+  /** Footprint width/height in tiles. */
+  w: number;
+  h: number;
+  safety?: { fire: FirePhase; danger: boolean; collapseRisk: number; crime: number };
+}
+
+/**
+ * Civilization overlay advisor data (Phase 11): per-tile number[][] grids for
+ * fire (0..1 by lifecycle phase), structural danger (0/1), collapse risk
+ * (0..1), and crime (0..1). Pure projection of the per-building safety state —
+ * every painted tile traces back to a building's footprint.
+ */
+export function civilizationOverlayData(
+  width: number,
+  height: number,
+  buildings: readonly CivilizationBuildingInput[],
+): Record<string, number[][]> {
+  const fire = emptyGrid(width, height);
+  const danger = emptyGrid(width, height);
+  const collapse = emptyGrid(width, height);
+  const crime = emptyGrid(width, height);
+  for (const b of buildings) {
+    const fpW = Math.max(1, b.w);
+    const fpH = Math.max(1, b.h);
+    for (let y = b.y; y < Math.min(b.y + fpH, height); y++) {
+      for (let x = b.x; x < Math.min(b.x + fpW, width); x++) {
+        const s = b.safety;
+        fire[y][x] = !s || s.fire === 'none' ? 0 : s.fire === 'burning' ? 0.9 : s.fire === 'evacuating' ? 0.6 : 1;
+        collapse[y][x] = s?.collapseRisk ?? 0;
+        crime[y][x] = s?.crime ?? 0;
+        danger[y][x] = s?.danger ? 1 : 0;
+      }
+    }
+  }
+  return { fire, danger, collapse, crime };
 }
 
 /** Residence/production/storage/market walker inspector datasets (task 11.2). */

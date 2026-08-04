@@ -17,6 +17,7 @@ export const WALKERS: Record<string, WalkerDef> = {
   market: { id: 'market', name: 'Market', service: 'market', spawnedBy: ['market'] },
   engineer: { id: 'engineer', name: 'Engineer', service: 'engineer', spawnedBy: ['engineer_post'] },
   fireman: { id: 'fireman', name: 'Fireman', service: 'fireman', spawnedBy: ['fire_station'] },
+  marshal: { id: 'marshal', name: 'Marshal', service: 'marshal', spawnedBy: ['prefecture'] },
   doctor: { id: 'doctor', name: 'Doctor', service: 'clinic', spawnedBy: ['clinic', 'hospital'] },
   teacher: { id: 'teacher', name: 'Teacher', service: 'school', spawnedBy: ['school'] },
   librarian: { id: 'librarian', name: 'Librarian', service: 'library', spawnedBy: ['library'] },

@@ -123,10 +123,17 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   engineer_post: {
     type: 'engineer_post', name: 'Engineering Post', category: 'engineering',
     footprint: 1, cost: 70, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 1,
+    spawnEveryTicks: CONFIG.safetySpawnEveryTicks,
   },
   fire_station: {
     type: 'fire_station', name: 'Fire Station', category: 'safety',
     footprint: 2, cost: 120, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 2,
+    spawnEveryTicks: CONFIG.safetySpawnEveryTicks,
+  },
+  prefecture: {
+    type: 'prefecture', name: 'Prefecture', category: 'safety',
+    footprint: 2, cost: 120, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 5,
+    spawnEveryTicks: CONFIG.safetySpawnEveryTicks,
   },
   clinic: {
     type: 'clinic', name: 'Clinic', category: 'health',

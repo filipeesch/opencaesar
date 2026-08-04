@@ -27,7 +27,7 @@ const RISE: Record<Exclude<BuildingType, 'road'>, number> = {
   clay_pit: 12, timber_yard: 12, iron_mine: 14, quarry: 16,
   olive_farm: 12, grape_farm: 12,
   pottery_workshop: 14, furniture_workshop: 14, oil_press: 14, winery: 14, tool_workshop: 14,
-  warehouse: 18,
+  warehouse: 18, prefecture: 16,
 };
 
 export interface BuildingArtOptions {

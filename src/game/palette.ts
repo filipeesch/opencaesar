@@ -17,7 +17,7 @@ export const BUILDING_COLORS: Record<Exclude<BuildingType, 'house'>, number> = {
   clay_pit: 0xba8a5c, timber_yard: 0x6b8e23, iron_mine: 0x7a7a7a, quarry: 0xb0a89a,
   olive_farm: 0x9caf4f, grape_farm: 0x8e5ea8,
   pottery_workshop: 0xc98a3f, furniture_workshop: 0x8b5a2b, oil_press: 0xd9c565, winery: 0x8e2f4f, tool_workshop: 0x5f6d7a,
-  warehouse: 0x9d8b6a,
+  warehouse: 0x9d8b6a, prefecture: 0x8f6db0,
 };
 
 /** House color scales with tier: gray shack → red villa. */
