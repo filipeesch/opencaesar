@@ -76,7 +76,8 @@ export type SaveCommand =
   | { kind: 'demolish'; x: number; y: number }
   | { kind: 'requestRoyalSubsidy' }
   | { kind: 'takeLoan'; amount: number }
-  | { kind: 'repayLoan'; amount: number };
+  | { kind: 'repayLoan'; amount: number }
+  | { kind: 'holdFestival'; tierId: string };
 
 /** Serializable save payload capturing everything needed to resume a sim deterministically. */
 export interface SaveData {
@@ -143,6 +144,8 @@ export interface WalkerState {
   /** Building id the walker is heading for, or null when wandering/idle. */
   targetBuildingId: number | null;
   carryingGood: Good | null;
+  /** God a temple/grand_temple walker worships (present when spawned by one). */
+  god?: string;
 }
 
 export interface Ratings {

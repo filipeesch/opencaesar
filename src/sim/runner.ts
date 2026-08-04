@@ -29,8 +29,9 @@ import { COMMODITIES } from '../../data/commodities';
 import { TRADE_CITIES, type TradeCityDef } from '../../data/trade';
 import { CARAVAN_CAPACITY, SHIP_CAPACITY } from './transport';
 import { tickMission } from './missions';
-import { computeServiceCoverage, GODS, computeFavor } from './services';
-import { TEMPLE_COVERAGE_FACTOR, GRAND_TEMPLE_COVERAGE_FACTOR } from '../../data/religion';
+import { computeServiceCoverage, GODS, computeFavor, FESTIVAL_TIERS, startFestival, tickFestival } from './services';
+import type { FestivalPlan, FestivalTier } from './services';
+import { TEMPLE_COVERAGE_FACTOR, GRAND_TEMPLE_COVERAGE_FACTOR, FESTIVAL_BOOST_WINDOW_TICKS, MONTH_TICKS } from '../../data/religion';
 import { computeRisks, tickFire } from './safety';
 import { taxCollected } from './taxation';
 import { unlockedGov } from './governance';
@@ -175,6 +176,10 @@ export class SimRunner {
   private marketConfigs = new Map<number, MarketConfig>();
   /** Ordered list of state-changing commands, used to reconstruct a deterministic save. */
   private saveCommands: SaveCommand[] = [];
+  /** Festival preparation in progress, or null (Phase 13, RELI-01). */
+  private festivalPlan: FestivalPlan | null = null;
+  /** Active festival worship/favor boost window, or null. */
+  private festivalBoost: { tierId: FestivalTier['id']; remaining: number } | null = null;
   private lowFoodWarnCooldown = 0;
   private paused = false;
   private pendingCommands: PendingCommand[] = [];
@@ -271,6 +276,21 @@ export class SimRunner {
         const result = applyEvent(ev, { culture: 10, prosperity: this.getState().ratings.prosperity, stability: 10, favor: 10 });
         this.logEvent('event', `${result.name}: ${result.message}`, result.severity);
         this.activeEvent = { id: ev, remaining: eventDuration(ev), total: eventDuration(ev) };
+      }
+    }
+
+    // Festivals (Phase 13): prep advances one month per tick at the 40-tick
+    // month cadence; a finished prep opens the worship/favor boost window.
+    if (this.tickCount % 40 === 0) {
+      if (this.festivalPlan) {
+        tickFestival(this.festivalPlan);
+        if (this.festivalPlan.ready) {
+          this.festivalBoost = { tierId: this.festivalPlan.tierId, remaining: FESTIVAL_BOOST_WINDOW_TICKS };
+          this.festivalPlan = null;
+        }
+      } else if (this.festivalBoost) {
+        this.festivalBoost.remaining -= MONTH_TICKS;
+        if (this.festivalBoost.remaining <= 0) this.festivalBoost = null;
       }
     }
 
@@ -757,7 +777,7 @@ export class SimRunner {
    */
   private liveGodWorship(): Record<string, number> {
     const temples = this.buildings.filter((b) => (b.type === 'temple' || b.type === 'grand_temple') && b.god);
-    if (temples.length === 0) return {};
+    if (temples.length === 0 && !this.festivalBoost) return {};
     const houses = this.buildings.filter((b) => b.house);
     const total = houses.length;
     const factorOf = (type: BuildingType) =>
@@ -773,6 +793,13 @@ export class SimRunner {
       const boosted = Math.min(1, covered * factorOf(t.type));
       worship[god] = Math.max(worship[god] ?? 0, boosted);
     }
+    // Festival boost (Phase 13): honors every god while the window is active,
+    // raising each god's worship (gods without temples rise from 0).
+    if (this.festivalBoost) {
+      const tier = FESTIVAL_TIERS.find((t) => t.id === this.festivalBoost!.tierId);
+      const boost = tier?.worshipBoost ?? 0;
+      for (const god of GODS) worship[god] = Math.min(1, (worship[god] ?? 0) + boost);
+    }
     return worship;
   }
 
@@ -786,6 +813,9 @@ export class SimRunner {
       hasHealth: has('health'), hasWater: has('water'), hasFood: has('food'),
     });
     const godWorship = this.liveGodWorship();
+    const festivalFavorBoost = this.festivalBoost
+      ? (FESTIVAL_TIERS.find((t) => t.id === this.festivalBoost!.tierId)?.favorBoost ?? 0)
+      : 0;
     const serviceCoverage = computeServiceCoverage({
       doctorCoverage: this.civicCoverage('health'),
       educationCoverage: this.civicCoverage('literacy'),
@@ -815,7 +845,7 @@ export class SimRunner {
     const codex = buildCodex();
     return {
       population, culture: targets.culture, prosperity: targets.prosperity, stability: targets.stability,
-      favor: Math.min(100, targets.favor + computeFavor(godWorship)),
+      favor: Math.min(100, targets.favor + computeFavor(godWorship) + festivalFavorBoost),
       employment: { jobs: employment.totalJobs, employed: employment.employed },
       services: serviceCoverage,
       godWorship,
@@ -1275,6 +1305,38 @@ export class SimRunner {
     this.commandLog.push({ tick: this.tickCount, command: `repayLoan ${amount}`, result: 'ok' });
     this.saveCommands.push({ kind: 'repayLoan', amount });
     return { ok: true, repaid };
+  }
+
+  /**
+   * Hold a festival (Phase 13, RELI-01): spend the tier cost now, prep over
+   * `prepMonths` months, then a boost window raises every god's worship and
+   * favor. Rejected commands leave state unchanged. One festival at a time —
+   * a running plan or an active boost blocks a new one.
+   */
+  holdFestival(tierId: string): { ok: boolean; error?: string } {
+    if (this.paused) {
+      this.enqueue({ kind: 'holdFestival', tierId });
+      return { ok: true };
+    }
+    const tier = FESTIVAL_TIERS.find((t) => t.id === tierId);
+    if (!tier) return { ok: false, error: 'unknown-tier' };
+    if (this.festivalPlan || this.festivalBoost) return { ok: false, error: 'festival-in-progress' };
+    if (this.getTreasury() < tier.cost) return { ok: false, error: 'not-enough-money' };
+    this.treasuryAccount.addExpense('festival', tier.cost);
+    this.festivalPlan = startFestival(tier.id);
+    this.commandLog.push({ tick: this.tickCount, command: `holdFestival ${tier.id}`, result: 'ok' });
+    this.saveCommands.push({ kind: 'holdFestival', tierId });
+    return { ok: true };
+  }
+
+  /** Festival status for the religion advisor: the tier in prep, the active
+   *  boost tier, and its remaining ticks. Read-only. */
+  getFestival(): { prepTier: string | null; boostTier: string | null; boostRemaining: number } {
+    return {
+      prepTier: this.festivalPlan?.tierId ?? null,
+      boostTier: this.festivalBoost?.tierId ?? null,
+      boostRemaining: this.festivalBoost?.remaining ?? 0,
+    };
   }
 
   /** Total residents across all houses. */
@@ -1984,7 +2046,7 @@ export class SimRunner {
  *  unrelated branch. */
 function applyCommand(runner: SimRunner, cmd: SaveCommand): void {
   if (cmd.kind === 'place') {
-    runner.placeBuilding(cmd.type, cmd.x, cmd.y);
+    runner.placeBuilding(cmd.type, cmd.x, cmd.y, cmd.god !== undefined ? { god: cmd.god } : undefined);
   } else if (cmd.kind === 'setPolicy') {
     runner.setPolicy(cmd.taxRate, cmd.wageRate);
   } else if (cmd.kind === 'demolish') {
@@ -1995,6 +2057,8 @@ function applyCommand(runner: SimRunner, cmd: SaveCommand): void {
     runner.takeLoan(cmd.amount);
   } else if (cmd.kind === 'repayLoan') {
     runner.repayLoan(cmd.amount);
+  } else if (cmd.kind === 'holdFestival') {
+    runner.holdFestival(cmd.tierId);
   } else {
     const exhaustive: never = cmd;
     throw new Error(`unknown command kind: ${(exhaustive as { kind: string }).kind}`);

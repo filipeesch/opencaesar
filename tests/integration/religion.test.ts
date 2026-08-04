@@ -126,3 +126,40 @@ describe('worship drives aggregate religion coverage (RELI-01)', () => {
     expect(d.services.religion).toBeCloseTo(Math.max(0, Math.min(1, avg)), 6);
   });
 });
+
+describe('festivals raise worship and favor (RELI-01)', () => {
+  it('a small festival honors all five gods and boosts favor, then fades', () => {
+    const r = baseCity([['temple', 8, 10, 'ceres']]);
+    const control = baseCity([['temple', 8, 10, 'ceres']]);
+    for (let i = 0; i < 300; i++) r.tick();
+    for (let i = 0; i < 300; i++) control.tick();
+    expect(r.holdFestival('small').ok).toBe(true);
+    for (let i = 0; i < 40; i++) r.tick(); // 1-month prep
+    for (let i = 0; i < 40; i++) control.tick(); // twin runs side-by-side
+
+    const during = r.getDerived();
+    const controlNow = control.getDerived();
+    // +0.05 worship on every god: jupiter (no temple) rises exactly to the
+    // boost floor; ceres rises 0.05 above the twin's live coverage.
+    expect(during.godWorship['jupiter'] ?? 0).toBe(0.05);
+    expect(during.godWorship['ceres'] ?? 0).toBeCloseTo(Math.min(1, (controlNow.godWorship['ceres'] ?? 0) + 0.05), 6);
+    expect(during.favor).toBe(100); // all 5 gods worshipped → 20×5, clamped
+
+    for (let i = 0; i < 480; i++) r.tick();
+    for (let i = 0; i < 480; i++) control.tick();
+    const after = r.getDerived();
+    const controlEnd = control.getDerived();
+    expect(r.getFestival().boostTier).toBeNull();
+    expect(after.godWorship['jupiter'] ?? 0).toBe(0);
+    expect(after.godWorship['ceres'] ?? 0).toBeCloseTo(controlEnd.godWorship['ceres'] ?? 0, 6);
+    expect(after.favor).toBe(40);
+  });
+
+  it('a festival costs denarii from the treasury', () => {
+    const r = baseCity([['temple', 8, 10, 'ceres']]);
+    for (let i = 0; i < 300; i++) r.tick();
+    const before = r.getTreasury();
+    expect(r.holdFestival('medium').ok).toBe(true);
+    expect(r.getTreasury()).toBe(before - 250);
+  });
+});
