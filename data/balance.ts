@@ -43,6 +43,10 @@ export const BALANCE = {
   desirabilityServiceBonus: 15,
   /** Desirability penalty applied while wages go unpaid. */
   desirabilityUnpaidWagesPenalty: 100,
+  /** Consecutive unpaid-wage ticks per arrears-depth step (the base penalty
+   *  applies for the first period; each additional full period adds another
+   *  base penalty). */
+  desirabilityArrearsDepthPeriodTicks: 1080,
 
   // Food ----------------------------------------------------------------------
   /** Wheat produced per tick by a staffed farm on fertile land. */
@@ -59,6 +63,16 @@ export const BALANCE = {
   wagePerWorkerPerTick: 2,
   /** Treasury value treated as full prosperity revenue score. */
   prosperityRevenueTarget: 2000,
+
+  // Finance (FIN-01 / Phase 10) -----------------------------------------------
+  /** Maximum royal subsidy grant per year (denarii). */
+  royalSubsidyCap: 500,
+  /** Annual loan interest rate (accrued once per year, tick-based). */
+  loanInterestRate: 0.1,
+  /** Maximum principal a single loan request may take. */
+  loanMaxAmount: 2000,
+  /** Treasury above this limit loses the excess (anti-hoarding). */
+  treasuryOverflowLimit: 5000,
 
   // Happiness -----------------------------------------------------------------
   /** Weight of food coverage toward a house's happiness (out of 100). */

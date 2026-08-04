@@ -70,7 +70,10 @@ export interface CommandLogEntry {
 export type SaveCommand =
   | { kind: 'place'; type: BuildingType; x: number; y: number }
   | { kind: 'setPolicy'; taxRate: number; wageRate: number }
-  | { kind: 'demolish'; x: number; y: number };
+  | { kind: 'demolish'; x: number; y: number }
+  | { kind: 'requestRoyalSubsidy' }
+  | { kind: 'takeLoan'; amount: number }
+  | { kind: 'repayLoan'; amount: number };
 
 /** Serializable save payload capturing everything needed to resume a sim deterministically. */
 export interface SaveData {

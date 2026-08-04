@@ -36,6 +36,10 @@ import { ObjectiveTracker } from './objectives';
 import { WaterSystem } from './water';
 import { buildCodex } from './campaign';
 import { desirabilityOf, tickHousing } from './housing';
+import { Treasury, rollYear } from './finance';
+import type { FinanceLedger } from './finance';
+import { financeAdvisorFromState } from './advisors';
+import type { FinanceAdvisorView } from './advisors';
 import { defaultWarehousePolicy, warehouseAccepts, defaultMarketConfig } from './logistics';
 import type { LogisticsAdvisorView, MarketConfig } from './logistics';
 import {
@@ -132,7 +136,13 @@ export class SimRunner {
   private readonly mapSize: number;
 
   private tickCount = 0;
-  private treasury: number;
+  /** Categorized treasury ledger — every revenue/expense write goes through it. */
+  private readonly treasuryAccount: Treasury;
+  private financeYear = 0;
+  /** Consecutive ticks with unpaid wages (drives the arrears depth factor). */
+  private unpaidStreakTicks = 0;
+  /** Favor penalty from the last loan interest accrual (surfaced via advisor). */
+  private loanFavorPenalty = 0;
   private policy: Policy = { taxRate: 0.1, wageRate: 0.1 };
   private lastWagesUnpaid = 0;
 
@@ -179,7 +189,7 @@ export class SimRunner {
       // replay from a save).
       this.map = SimMap.generate(this.width, this.height, this.rng);
     }
-    this.treasury = CONFIG.startingTreasury;
+    this.treasuryAccount = new Treasury(CONFIG.startingTreasury);
   }
 
   // Public API -----------------------------------------------------------------
@@ -212,13 +222,19 @@ export class SimRunner {
   tick(): void {
     this.drainPendingCommands();
     this.tickCount += 1;
+    this.tickFinanceRollover();
     this.tickSpawns();
     this.tickLabor();
     this.tickFood();
     this.tickProduction();
     this.tickEconomyInternal();
-    tickHousing(this.map, this.buildings, this.policy, this.lastWagesUnpaid > 0, (type, text) =>
-      this.emitMessage(type, text),
+    tickHousing(
+      this.map,
+      this.buildings,
+      this.policy,
+      this.lastWagesUnpaid > 0,
+      (type, text) => this.emitMessage(type, text),
+      this.arrearsDepth(),
     );
 
     // Walkers move last: coverage and arrivals see the tick's final services.
@@ -251,6 +267,9 @@ export class SimRunner {
     // External trade (quota-reset by year).
     this.tickTradeSystem();
 
+    // Anti-hoarding cap: excess above the limit is dropped and ledgered.
+    this.tickFinanceCap();
+
     // Remaining systems read live sim state into a derived snapshot (WARNING 1 fix).
     this.tickDerivedSystems();
   }
@@ -282,8 +301,11 @@ export class SimRunner {
           stock.wheat = (stock.wheat ?? 0) + (b.stock.wheat ?? 0);
         }
       }
-      const result = tickTrade(this.treasury, stock, legacyRoutes, year);
-      this.treasury = result.treasury;
+      const result = tickTrade(this.treasuryAccount.balance, stock, legacyRoutes, year);
+      const delta = result.treasury - this.treasuryAccount.balance;
+      if (delta > 0) this.treasuryAccount.addRevenue('trade', delta);
+      else if (delta < 0) this.treasuryAccount.addExpense('trade', -delta);
+      this.treasuryAccount.balance = result.treasury;
       // Apply physical export/import stock changes across granaries/farms.
       const exportedWheat = result.exports.wheat ?? 0;
       if (exportedWheat > 0) {
@@ -512,7 +534,7 @@ export class SimRunner {
         return;
       }
       const price = this.tradePriceFor(city, good, true);
-      this.treasury += price * qty;
+      this.treasuryAccount.addRevenue('trade', price * qty);
       route.exportProceeds = (route.exportProceeds ?? 0) + price * qty;
       consumeQuota(route, good, qty);
       this.spawnTradeCarrier(city, good, qty, true, source.id, null);
@@ -527,7 +549,7 @@ export class SimRunner {
         return;
       }
       const stockTotal = this.totalTradeStock(good);
-      const gate = importGatedBy({ order, stock: stockTotal, target, quotaLeft: quotaRemaining(route, good), treasury: this.treasury, price: this.tradePriceFor(city, good, false) });
+      const gate = importGatedBy({ order, stock: stockTotal, target, quotaLeft: quotaRemaining(route, good), treasury: this.treasuryAccount.balance, price: this.tradePriceFor(city, good, false) });
       if (!gate.allowed) {
         schedule();
         return;
@@ -538,13 +560,13 @@ export class SimRunner {
         return;
       }
       const price = this.tradePriceFor(city, good, false);
-      const affordable = Math.floor(this.treasury / price);
+      const affordable = Math.floor(this.treasuryAccount.balance / price);
       const qty = Math.min(target - stockTotal, capacity, quotaRemaining(route, good), affordable, this.storageRoom(dest, good));
       if (qty <= 0) {
         schedule();
         return;
       }
-      this.treasury -= price * qty;
+      this.treasuryAccount.addExpense('trade', price * qty);
       route.importSpend = (route.importSpend ?? 0) + price * qty;
       consumeQuota(route, good, qty);
       this.spawnTradeCarrier(city, good, qty, false, null, dest.id);
@@ -590,12 +612,12 @@ export class SimRunner {
     const cost = Math.round(city.routeOpeningCost);
     let route = this.tradeRoutes[cityId];
     if (route?.enabled) return { ok: true, cost: 0, error: 'already open' };
-    if (this.treasury < cost) return { ok: false, cost, error: 'insufficient funds' };
+    if (this.treasuryAccount.balance < cost) return { ok: false, cost, error: 'insufficient funds' };
     if (!route) {
       route = { cityId, enabled: false, imports: {}, exports: {} };
       this.tradeRoutes[cityId] = route;
     }
-    this.treasury -= cost;
+    this.treasuryAccount.addExpense('other', cost);
     route.enabled = true;
     route.orders = route.orders ?? {};
     route.openYear = Math.floor(this.tickCount / 360);
@@ -823,7 +845,7 @@ export class SimRunner {
     const result = checkPlacement(
       this.map,
       (tx, ty) => this.occupiedTiles.has(this.tileKey(tx, ty)),
-      this.treasury,
+      this.treasuryAccount.balance,
       type,
       x,
       y,
@@ -834,7 +856,7 @@ export class SimRunner {
     }
 
     const def = BUILDINGS[type];
-    this.treasury -= def.cost;
+    this.treasuryAccount.addExpense('other', def.cost);
 
     const id = this.nextBuildingId++;
     const building: BuildingInstance = {
@@ -919,7 +941,7 @@ export class SimRunner {
     return checkPlacement(
       this.map,
       (tx, ty) => this.occupiedTiles.has(this.tileKey(tx, ty)),
-      this.treasury,
+      this.treasuryAccount.balance,
       type,
       x,
       y,
@@ -964,9 +986,9 @@ export class SimRunner {
       tiles: this.map.toGrid(),
       buildings: this.buildings.map((b) => this.toBuildingState(b)),
       walkers: this.walkers.map((w) => this.toWalkerState(w)),
-      treasury: this.treasury,
+      treasury: this.treasuryAccount.balance,
       policy: { ...this.policy },
-      ratings: computeRatings(this.buildings, this.treasury, happiness),
+      ratings: computeRatings(this.buildings, this.treasuryAccount.balance, happiness),
       totalWorkers: workerPool(this.buildings),
       assignedWorkers: assignedWorkers(this.buildings),
       totalJobs: totalJobs(this.buildings),
@@ -995,6 +1017,81 @@ export class SimRunner {
   }
   getTreasury(): number {
     return this.getState().treasury;
+  }
+
+  /** Categorized year-to-date ledger (additive accessor). */
+  getTreasuryLedger(): FinanceLedger {
+    return { revenue: { ...this.treasuryAccount.revenue }, expenses: { ...this.treasuryAccount.expenses } };
+  }
+
+  getDebt(): number {
+    return this.treasuryAccount.debt;
+  }
+
+  getSubsidyUsedThisYear(): number {
+    return this.treasuryAccount.subsidyUsedThisYear;
+  }
+
+  /** Favor penalty from the last annual loan interest accrual. */
+  getLoanFavorPenalty(): number {
+    return this.loanFavorPenalty;
+  }
+
+  /** Finance advisor view — a pure projection of live treasury state. */
+  getFinanceAdvisor(): FinanceAdvisorView {
+    return financeAdvisorFromState(
+      {
+        balance: this.treasuryAccount.balance,
+        revenue: { ...this.treasuryAccount.revenue },
+        expenses: { ...this.treasuryAccount.expenses },
+        debt: this.treasuryAccount.debt,
+        outstandingInterest: this.treasuryAccount.outstandingInterest,
+        subsidyUsedThisYear: this.treasuryAccount.subsidyUsedThisYear,
+      },
+      this.unpaidStreakTicks,
+      { ...this.policy },
+    );
+  }
+
+  /** Request the bounded annual royal subsidy (once per year, command-replayable). */
+  requestRoyalSubsidy(): { ok: boolean; grant: number } {
+    if (this.paused) {
+      this.enqueue({ kind: 'requestRoyalSubsidy' });
+      return { ok: true, grant: 0 };
+    }
+    const grant = this.treasuryAccount.requestSubsidy(CONFIG.royalSubsidyCap);
+    this.commandLog.push({ tick: this.tickCount, command: 'requestRoyalSubsidy', result: 'ok' });
+    this.saveCommands.push({ kind: 'requestRoyalSubsidy' });
+    return { ok: true, grant };
+  }
+
+  /** Take a loan of up to CONFIG.loanMaxAmount denarii (command-replayable). */
+  takeLoan(amount: number): { ok: boolean; received: number; error?: string } {
+    if (this.paused) {
+      this.enqueue({ kind: 'takeLoan', amount });
+      return { ok: true, received: 0 };
+    }
+    if (amount <= 0) return { ok: false, received: 0, error: 'amount must be positive' };
+    if (amount > CONFIG.loanMaxAmount) {
+      return { ok: false, received: 0, error: `loan exceeds the ${CONFIG.loanMaxAmount} denarii limit` };
+    }
+    const received = this.treasuryAccount.takeLoan(amount, CONFIG.loanInterestRate);
+    this.commandLog.push({ tick: this.tickCount, command: `takeLoan ${amount}`, result: 'ok' });
+    this.saveCommands.push({ kind: 'takeLoan', amount });
+    return { ok: true, received };
+  }
+
+  /** Repay part of the outstanding debt (command-replayable). */
+  repayLoan(amount: number): { ok: boolean; repaid: number } {
+    if (this.paused) {
+      this.enqueue({ kind: 'repayLoan', amount });
+      return { ok: true, repaid: 0 };
+    }
+    if (amount <= 0) return { ok: true, repaid: 0 };
+    const repaid = this.treasuryAccount.repayLoan(amount);
+    this.commandLog.push({ tick: this.tickCount, command: `repayLoan ${amount}`, result: 'ok' });
+    this.saveCommands.push({ kind: 'repayLoan', amount });
+    return { ok: true, repaid };
   }
 
   /** Total residents across all houses. */
@@ -1046,9 +1143,14 @@ export class SimRunner {
       hasFood: services.food,
       hasWater: services.water,
       hasLabor: services.labor,
-      desirability: desirabilityOf(this.map, b.x, b.y, this.policy, this.lastWagesUnpaid > 0, services),
+      desirability: desirabilityOf(this.map, b.x, b.y, this.policy, this.lastWagesUnpaid > 0, services, this.arrearsDepth()),
       wagesUnpaid: this.lastWagesUnpaid > 0,
     };
+  }
+
+  /** Consecutive-unpaid-wage arrears steps (0 = none). */
+  private arrearsDepth(): number {
+    return Math.floor(this.unpaidStreakTicks / CONFIG.desirabilityArrearsDepthPeriodTicks);
   }
 
   /** Stable JSON rendering of the snapshot (used by determinism and golden tests). */
@@ -1229,11 +1331,32 @@ export class SimRunner {
     }
   }
 
+  /** Year rollover: reset the ledger + subsidy guard, then accrue loan interest. */
+  private tickFinanceRollover(): void {
+    const year = Math.floor(this.tickCount / 360);
+    if (year === this.financeYear) return;
+    this.financeYear = year;
+    rollYear(this.treasuryAccount);
+    this.loanFavorPenalty = this.treasuryAccount.accrue(CONFIG.loanInterestRate).favorPenalty;
+  }
+
+  /** Anti-hoarding cap: drop the balance above CONFIG.treasuryOverflowLimit. */
+  private tickFinanceCap(): void {
+    const limit = CONFIG.treasuryOverflowLimit;
+    if (this.treasuryAccount.balance <= limit) return;
+    this.treasuryAccount.addExpense('overflow', this.treasuryAccount.balance - limit);
+  }
+
   /** Collect taxes, pay wages (treasury never goes below zero). */
   private tickEconomyInternal(): void {
-    const { treasury, result } = tickEconomy(this.buildings, this.policy, this.treasury);
-    this.treasury = treasury;
+    const { treasury, result } = tickEconomy(this.buildings, this.policy, this.treasuryAccount.balance);
+    // Ledger taxes and the wages actually paid; the balance assignment keeps the
+    // pre-swap arithmetic byte-for-byte (taxes do not extend wage payment).
+    this.treasuryAccount.addRevenue('taxes', result.taxIncome);
+    this.treasuryAccount.addExpense('wages', result.wagesDue - result.wagesUnpaid);
+    this.treasuryAccount.balance = treasury;
     this.lastWagesUnpaid = result.wagesUnpaid;
+    this.unpaidStreakTicks = result.wagesUnpaid > 0 ? this.unpaidStreakTicks + 1 : 0;
   }
 
   /**
@@ -1654,6 +1777,12 @@ function applyCommand(runner: SimRunner, cmd: SaveCommand): void {
     runner.setPolicy(cmd.taxRate, cmd.wageRate);
   } else if (cmd.kind === 'demolish') {
     runner.demolish(cmd.x, cmd.y);
+  } else if (cmd.kind === 'requestRoyalSubsidy') {
+    runner.requestRoyalSubsidy();
+  } else if (cmd.kind === 'takeLoan') {
+    runner.takeLoan(cmd.amount);
+  } else if (cmd.kind === 'repayLoan') {
+    runner.repayLoan(cmd.amount);
   } else {
     const exhaustive: never = cmd;
     throw new Error(`unknown command kind: ${(exhaustive as { kind: string }).kind}`);

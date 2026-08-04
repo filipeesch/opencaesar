@@ -19,6 +19,8 @@ import { TRADE_CITIES, tradeCityName } from '../../data/trade';
 import { quotaFor } from './trade';
 import type { TradeOrderMode } from './trade';
 import type { TradeRoute } from './types';
+import type { Policy } from './types';
+import type { FinanceLedger } from './finance';
 
 export interface SimSnapshot {
   population: number;
@@ -43,6 +45,56 @@ export interface SimSnapshot {
 export interface AdvisorDataset {
   name: string;
   data: Record<string, number>;
+}
+
+/** Finance advisor (FIN-01): a pure projection over injected treasury state. */
+export interface TreasuryView {
+  balance: number;
+  revenue: FinanceLedger['revenue'];
+  expenses: FinanceLedger['expenses'];
+  debt: number;
+  outstandingInterest: number;
+  subsidyUsedThisYear: number;
+}
+
+/** Live-derived finance advisor view — every number comes from real state. */
+export interface FinanceAdvisorView {
+  balance: number;
+  revenue: FinanceLedger['revenue'];
+  expenses: FinanceLedger['expenses'];
+  debt: number;
+  /** Interest accrued but not yet repaid. */
+  interest: number;
+  subsidyUsedThisYear: number;
+  /** Wage arrears currently owed (any unpaid wages this tick). */
+  arrears: boolean;
+  /** Year-to-date income minus spending (same formula as monthlyChange). */
+  deficit: number;
+  /** Denarii dropped this year by the overflow cap. */
+  overflowDroppedThisYear: number;
+  /** Current tax rate (policy context for the wage/tax spread). */
+  taxRate: number;
+  /** Current wage rate (policy context for the wage/tax spread). */
+  wageRate: number;
+}
+
+/** Project a finance advisor view from injected treasury state — never fabricated. */
+export function financeAdvisorFromState(account: TreasuryView, arrears: number, policy: Policy): FinanceAdvisorView {
+  const revenue = { ...account.revenue };
+  const expenses = { ...account.expenses };
+  return {
+    balance: account.balance,
+    revenue,
+    expenses,
+    debt: account.debt,
+    interest: account.outstandingInterest,
+    subsidyUsedThisYear: account.subsidyUsedThisYear,
+    arrears: arrears > 0,
+    deficit: Object.values(revenue).reduce((s, v) => s + (v ?? 0), 0) - Object.values(expenses).reduce((s, v) => s + (v ?? 0), 0),
+    overflowDroppedThisYear: expenses['overflow'] ?? 0,
+    taxRate: policy.taxRate,
+    wageRate: policy.wageRate,
+  };
 }
 
 export function toCityStats(s: SimSnapshot): CityStats {

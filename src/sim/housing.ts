@@ -13,7 +13,8 @@ import type { BuildingInstance } from './walkers';
 /**
  * Desirability of a house tile: base terrain value plus the wage/tax policy
  * spread, plus a bonus per active service (food/water/labor coverage), minus
- * a penalty while wages go unpaid. Clamped to [0, 200].
+ * the unpaid-wages penalty — which deepens by one base penalty per full
+ * arrears-depth period of consecutive unpaid wages. Clamped to [0, 200].
  */
 export function desirabilityOf(
   map: Map,
@@ -22,6 +23,7 @@ export function desirabilityOf(
   policy: Policy,
   wagesUnpaid: boolean,
   services: { food: boolean; water: boolean; labor: boolean } = { food: false, water: false, labor: false },
+  arrearsDepth = 0,
 ): number {
   let base = 0;
   switch (map.get(x, y)) {
@@ -45,7 +47,7 @@ export function desirabilityOf(
     (services.food ? CONFIG.desirabilityServiceBonus : 0) +
     (services.water ? CONFIG.desirabilityServiceBonus : 0) +
     (services.labor ? CONFIG.desirabilityServiceBonus : 0);
-  const penalty = wagesUnpaid ? CONFIG.desirabilityUnpaidWagesPenalty : 0;
+  const penalty = wagesUnpaid ? CONFIG.desirabilityUnpaidWagesPenalty * (1 + arrearsDepth) : 0;
   // Adjacent-road desirability: each orthogonally adjacent road tile contributes
   // its road type's desirability (null/plain roads read as dirt = 0). Roadblock
   // tiles contribute their (0) desirability, adding nothing.
@@ -74,6 +76,9 @@ export interface HousingTickResult {
 /**
  * Advance every house by one tick: decay service cooldowns, then apply the
  * evolution rules. Emits house-evolved / house-devolved messages.
+ * `arrearsDepth` (unpaid-wage arrears steps, 0 = none) deepens the desirability
+ * penalty; a house whose desirability stays below its current tier threshold
+ * devolves even while food and water hold.
  */
 export function tickHousing(
   map: Map,
@@ -81,6 +86,7 @@ export function tickHousing(
   policy: Policy,
   wagesUnpaid: boolean,
   emit: (type: MessageType, text: string) => void,
+  arrearsDepth = 0,
 ): HousingTickResult {
   let evolved = 0;
   let devolved = 0;
@@ -98,22 +104,35 @@ export function tickHousing(
     const hasLabor = house.laborCooldown > 0;
 
     if (hasFood && hasWater) {
-      house.devolveCounter = 0;
       const desirability = desirabilityOf(map, b.x, b.y, policy, wagesUnpaid, {
         food: hasFood,
         water: hasWater,
         labor: hasLabor,
-      });
-      if (hasLabor && desirability >= tierThreshold(house.tier + 2)) {
-        house.evolveCounter += 1;
-        if (house.evolveCounter >= CONFIG.evolveWindowTicks && house.tier < HOUSE_TIERS.length - 1) {
-          house.tier += 1;
-          house.evolveCounter = 0;
-          evolved += 1;
-          emit('house-evolved', `House evolved to ${HOUSE_TIERS[house.tier].name}`);
+      }, arrearsDepth);
+      if (desirability < tierThreshold(house.tier)) {
+        // Sustained desirability below the current tier devolves (e.g. deep
+        // wage arrears), even though food and water are holding.
+        house.evolveCounter = 0;
+        house.devolveCounter += 1;
+        if (house.devolveCounter >= CONFIG.devolveWindowTicks && house.tier > 0) {
+          house.tier -= 1;
+          house.devolveCounter = 0;
+          devolved += 1;
+          emit('house-devolved', `House devolved to ${HOUSE_TIERS[house.tier].name}`);
         }
       } else {
-        house.evolveCounter = 0;
+        house.devolveCounter = 0;
+        if (hasLabor && desirability >= tierThreshold(house.tier + 2)) {
+          house.evolveCounter += 1;
+          if (house.evolveCounter >= CONFIG.evolveWindowTicks && house.tier < HOUSE_TIERS.length - 1) {
+            house.tier += 1;
+            house.evolveCounter = 0;
+            evolved += 1;
+            emit('house-evolved', `House evolved to ${HOUSE_TIERS[house.tier].name}`);
+          }
+        } else {
+          house.evolveCounter = 0;
+        }
       }
     } else {
       house.evolveCounter = 0;
