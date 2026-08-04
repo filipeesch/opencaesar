@@ -6,6 +6,7 @@
 import Phaser from 'phaser';
 import { BUILDINGS } from '../../sim/buildings';
 import { HOUSE_TIERS } from '../../sim/config';
+import { foodHudFromState } from '../../sim/advisors';
 import type { BuildingCategory, BuildingState, BuildingType } from '../../sim/types';
 import { writeSave } from '../save';
 import type { MainScene } from './MainScene';
@@ -47,6 +48,13 @@ export class HUDScene extends Phaser.Scene {
     this.els.tax.textContent = `${Math.round(state.policy.taxRate * 100)}%`;
     this.els.wage.textContent = `${Math.round(state.policy.wageRate * 100)}%`;
 
+    // Months-of-food indicator (spec §15): every value derived from the live sim
+    // snapshot — available food stock over projected monthly consumption.
+    const food = foodHudFromState(state);
+    this.els.food.textContent = `${food.icon} ${food.text}`;
+    this.els.food.className = `hud-food hud-food-${food.band}`;
+    this.els.food.title = `Food supply: ${food.text} (band ${food.band})`;
+
     const derived = this.main?.runner.getDerived();
     if (derived) {
       this.els.culture.textContent = String(derived.culture);
@@ -82,6 +90,7 @@ export class HUDScene extends Phaser.Scene {
       <div class="hud-stat"><span>Happiness</span><b data-testid="stat-happiness"></b></div>
       <div class="hud-stat"><span>Treasury</span><b data-testid="stat-treasury"></b></div>
       <div class="hud-stat"><span>Employed</span><b data-testid="stat-workers"></b></div>
+      <div class="hud-stat"><span>Food</span><b data-testid="stat-food"></b></div>
       <div class="hud-stat"><span>Culture</span><b data-testid="stat-culture"></b></div>
       <div class="hud-stat"><span>Stability</span><b data-testid="stat-stability"></b></div>
       <div class="hud-stat"><span>Favor</span><b data-testid="stat-favor"></b></div>
@@ -193,6 +202,7 @@ export class HUDScene extends Phaser.Scene {
     this.els.happiness = root.querySelector('[data-testid="stat-happiness"]') as HTMLElement;
     this.els.treasury = root.querySelector('[data-testid="stat-treasury"]') as HTMLElement;
     this.els.workers = root.querySelector('[data-testid="stat-workers"]') as HTMLElement;
+    this.els.food = root.querySelector('[data-testid="stat-food"]') as HTMLElement;
     this.els.culture = root.querySelector('[data-testid="stat-culture"]') as HTMLElement;
     this.els.stability = root.querySelector('[data-testid="stat-stability"]') as HTMLElement;
     this.els.favor = root.querySelector('[data-testid="stat-favor"]') as HTMLElement;

@@ -18,7 +18,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "phaser": "^3.90.0"
+    "phaser": "^3.90.0",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",

@@ -16,7 +16,8 @@
 import Phaser from 'phaser';
 import type { TileType } from '../../sim/types';
 import { HOUSE_COLORS, TILE_H, TILE_W } from '../palette';
-import { HOUSE_FRAME_H, SHEETS, sheetLoaded } from '../art';
+import { HOUSE_FRAME_H, SHEETS, sheetLoaded, BUILDING_RESOLUTIONS, preloadSpriteMeta } from '../art';
+import { SHEET_BUILDINGS } from '../art';
 
 const TILE_TYPES: readonly TileType[] = ['earth', 'water', 'fertile', 'trees', 'rock', 'road'];
 
@@ -36,6 +37,7 @@ export class BootScene extends Phaser.Scene {
     await this.loadManifestSheets();
     if (!this.textures.exists('terrain')) this.generateTerrainTexture();
     if (!this.textures.exists('house')) this.generateHouseTexture();
+    await this.loadBuildingSheets();
     // Direct-to-game for tests and dev (`?test` / `?skipHome`); otherwise the
     // home screen menu is the entry point.
     const q = new URLSearchParams(window.location.search);
@@ -77,6 +79,52 @@ export class BootScene extends Phaser.Scene {
 
     for (const { s } of queue) {
       if (this.textures.exists(s.key)) sheetLoaded.add(s.key);
+    }
+  }
+
+  /**
+   * Load building sprite sheets at all resolution levels.
+   * Sheets are stored with keys like `building_granary_30`, `building_granary_60`, etc.
+   * House uses spritesheet (multi-frame), others use image (single frame).
+   */
+  private async loadBuildingSheets(): Promise<void> {
+    let hasAssets = false;
+    for (const buildingType of SHEET_BUILDINGS) {
+      for (const res of BUILDING_RESOLUTIONS) {
+        const key = `building_${buildingType}_${res}`;
+        const url = `assets/buildings/${buildingType}_${res}.png`;
+        try {
+          const resCheck = await fetch(url, { method: 'HEAD' });
+          if (resCheck.ok) {
+            hasAssets = true;
+            if (buildingType === 'house') {
+              this.load.spritesheet(key, url, { frameWidth: res, frameHeight: Math.round(res * 48 / 60) });
+            } else {
+              // Single-image sprites use `load.image` (not spritesheet)
+              this.load.image(key, url);
+            }
+          }
+        } catch {
+          // File doesn't exist for this resolution, skip it
+        }
+      }
+    }
+    if (!hasAssets) return;
+
+    await new Promise<void>((resolve) => {
+      this.load.once(Phaser.Loader.Events.COMPLETE, () => resolve());
+      this.load.start();
+    });
+
+    // Register sprite metadata for renderer
+    for (const buildingType of SHEET_BUILDINGS) {
+      for (const res of BUILDING_RESOLUTIONS) {
+        const key = `building_${buildingType}_${res}`;
+        const tex = this.textures.get(key);
+        if (tex && tex.getSourceImage()) {
+          preloadSpriteMeta(key, tex);
+        }
+      }
     }
   }
 

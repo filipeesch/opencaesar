@@ -13,7 +13,7 @@ import { CONFIG } from '../../sim/config';
 import type { BuildingType, PlacementError, PlacementResult, SaveData, SimState, TileType, Vec2 } from '../../sim/types';
 import { SimRunner } from '../../sim/runner';
 import { TimeSystem } from '../../sim/time';
-import { HOUSE_FOOT_TOP_Y, HOUSE_FRAME_H, houseFrame, isSheetLoaded } from '../art';
+import { HOUSE_FOOT_TOP_Y, HOUSE_FRAME_H, houseFrame, isSheetLoaded, SHEET_BUILDINGS, getSpriteMeta, BUILDING_RESOLUTIONS } from '../art';
 import { drawBuilding } from '../buildingArt';
 import { BUILDING_COLORS, HOUSE_COLORS, TILE_H, TILE_W, WALKER_COLORS } from '../palette';
 
@@ -373,6 +373,34 @@ export class MainScene extends Phaser.Scene {
         continue;
       }
       const alpha = b.active || b.type === 'house' ? 0.95 : 0.55;
+       // Check if this building has a sprite sheet (granary, farm, etc.)
+       if (SHEET_BUILDINGS.has(b.type) && b.type !== 'house') {
+         // Use the highest resolution sprite for crisp rendering at all zoom levels.
+         // Scale is calculated from zoom and original sprite dimensions to maintain alignment.
+         const sheetKey = `building_${b.type}_${BUILDING_RESOLUTIONS[BUILDING_RESOLUTIONS.length - 1]}`;
+         if (this.textures.exists(sheetKey)) {
+           const spriteMeta = getSpriteMeta(sheetKey);
+           if (spriteMeta) {
+             items.push({
+               depth,
+               make: () => {
+                 const zoom = this.cameras.main.zoom;
+                 // Scale so the sprite covers the footprint exactly at this zoom level.
+                 // footprint width in world space: n * TILE_W * zoom
+                 // sprite width at scale 1: spriteMeta.origWidth
+                 // scale = (n * TILE_W * zoom) / spriteMeta.origWidth
+                 const scale = (n * TILE_W * zoom) / spriteMeta.origWidth;
+                 const img = this.add.image(top.x, top.y + n * TILE_H, sheetKey, 0);
+                 img.setScale(scale);
+                 img.setOrigin(0.5, 1.0);
+                 img.setAlpha(alpha);
+                 return img;
+               },
+             });
+             continue;
+           }
+         }
+       }
       items.push({
         depth,
         make: () => {
@@ -409,7 +437,7 @@ export class MainScene extends Phaser.Scene {
         depth,
         make: () => {
           const g = this.add.graphics();
-          const c = WALKER_COLORS[w.type];
+          const c = WALKER_COLORS[w.type as keyof typeof WALKER_COLORS] ?? 0x888888;
           g.fillStyle(c, 0.95);
           g.fillCircle(top.x, top.y + TILE_H / 2, 6);
           g.lineStyle(1, 0x000000, 0.4);
@@ -484,10 +512,15 @@ export class MainScene extends Phaser.Scene {
       objectiveProgress: () => this.runner.getObjectiveProgress(),
       derived: () => this.runner.getDerived(),
       buildTypes: BUILDABLE_TYPES,
-      camera: () => {
-        const c = this.cam;
-        return c ? { zoom: c.zoom, scrollX: c.scrollX, scrollY: c.scrollY } : null;
-      },
+       camera: () => {
+         const c = this.cam;
+         return c ? { zoom: c.zoom, scrollX: c.scrollX, scrollY: c.scrollY } : null;
+       },
+       setZoom: (z: number) => {
+         if (this.cam) {
+           this.cam.setZoom(Phaser.Math.Clamp(z, 0.5, 2.5));
+         }
+       },
     };
     (window as unknown as Record<string, unknown>).__cityApi = api;
   }

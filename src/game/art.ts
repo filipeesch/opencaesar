@@ -28,6 +28,50 @@ export interface SheetSpec {
   frameHeight: number;
 }
 
+/** Resolution levels for building sprite sheets (zoom LOD). */
+export const BUILDING_RESOLUTIONS = [30, 60, 90, 120, 150];
+
+/** Best resolution for default zoom (zoom 1.0). */
+export const DEFAULT_BUILDING_RESOLUTION = 150;
+
+/**
+ * Select the best base resolution for a given zoom level.
+ * Returns the pixel-per-tile resolution at zoom 1.0.
+ * 
+ * Mapping designed so zoom 1.0 (default) uses 90px for good visual quality.
+ * zoom 0.5 -> 30px, zoom 0.75 -> 60px, zoom 1.0 -> 90px, zoom 1.5+ -> 150px
+ */
+export function selectBuildingResolution(zoom: number): number {
+  const idx = Math.round((zoom - 0.5) / 0.25);
+  return BUILDING_RESOLUTIONS[Math.max(0, Math.min(BUILDING_RESOLUTIONS.length - 1, idx))]!;
+}
+
+/**
+ * Building sprite metadata — tracks the original sprite dimensions so the
+ * renderer can scale correctly regardless of the asset's natural aspect.
+ */
+export interface BuildingSpriteMeta {
+  key: string;
+  /** Original sprite width before scaling. */
+  origWidth: number;
+  /** Original sprite height before scaling. */
+  origHeight: number;
+}
+
+/** Cached metadata per building type+resolution. */
+const SPRITE_META: Map<string, BuildingSpriteMeta> = new Map();
+
+export function getSpriteMeta(key: string): BuildingSpriteMeta | null {
+  return SPRITE_META.get(key) ?? null;
+}
+
+export function preloadSpriteMeta(key: string, texture: Phaser.Textures.Texture): void {
+  const src = texture.getSourceImage();
+  if (src) {
+    SPRITE_META.set(key, { key, origWidth: src.width, origHeight: src.height });
+  }
+}
+
 /** The art manifest: sprite sheets keyed by type. */
 export const SHEETS: readonly SheetSpec[] = [
   { key: 'terrain', url: 'assets/terrain.png', frameWidth: TILE_W, frameHeight: TILE_H },
@@ -57,4 +101,4 @@ export function isSheetLoaded(key: string): boolean {
 }
 
 /** Building types backed by a manifest sheet (used to pick the renderer). */
-export const SHEET_BUILDINGS: ReadonlySet<BuildingType> = new Set(['house']);
+export const SHEET_BUILDINGS: ReadonlySet<BuildingType> = new Set(['granary', 'farm']);

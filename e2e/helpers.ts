@@ -16,6 +16,7 @@ declare global {
         codex: { buildings: number; goods: number; services: number; gods: number };
       };
       camera: () => { zoom: number; scrollX: number; scrollY: number };
+      setZoom: (z: number) => void;
     };
   }
 }
