@@ -198,6 +198,7 @@ Plans:
   2. Entertainment venues deliver show-based coverage advancing housing.
 - [x] 12-PLAN: live civic stats + decaying service flags, TIER_CIVIC_GATES on Domus/Villa, hospital/amphitheatre/colosseum catalog, real advisor coverage, getCivicStats, determinism (HEAL-01/EDUC-01/ENTR-01)
 - [x] 13-PLAN: per-god temples + grand temples + live coverage-driven worship/favor + replayable festivals, determinism (RELI-01)
+- [ ] 14-PLAN: population-gated government buildings with live effects (forum/senate/palatine) + deterministic admin requests with partial fulfillment, rewards/penalties by deadline (GOV-01/GOV-02)
 
 ### Phase 13: Religion
 **Goal**: Five gods' temples, grand temples, festivals, and favor.
@@ -215,7 +216,7 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Government buildings unlock at population thresholds with effects.
   2. Requests can be accepted, satisfied (full or partial), and rewarded/penalized by deadline.
-**Plans**: TBD
+**Plans**: 14-PLAN
 
 ### Phase 15: Ratings, Objectives, Events
 **Goal**: Four ratings, objectives/win conditions, and event responses.
