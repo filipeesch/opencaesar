@@ -1,3 +1,10 @@
+---
+phase: 13-religion
+status: passed
+method: automated
+completed: "2026-08-04"
+---
+
 # Phase 13 Verification — Religion (RELI-01)
 
 ## Success criteria (from REQUIREMENTS.md) — evidence in the live sim

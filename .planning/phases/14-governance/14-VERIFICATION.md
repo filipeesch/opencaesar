@@ -1,3 +1,10 @@
+---
+phase: 14-governance
+status: passed
+method: automated
+completed: "2026-08-04"
+---
+
 # Phase 14 Verification — Governance & Requests (GOV-01, GOV-02)
 
 ## Success criteria — evidence in the live sim
