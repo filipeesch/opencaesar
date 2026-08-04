@@ -22,7 +22,7 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
 - [x] **Phase 6: Production & Manufacturing** - extraction sites and workshops with physical loads
 - [x] **Phase 7: Warehouses & Logistics** - warehouses, per-commodity orders, commercial center, logistics advisor data
 - [x] **Phase 8: Markets & Home Distribution** - buyer/seller walkers, reservation, per-market config
-- [ ] **Phase 9: External Trade** - regional map, routes/orders, land caravans + merchant ships, quotas, prices
+- [x] **Phase 9: External Trade** - regional map, routes/orders, land caravans + merchant ships, quotas, prices
 - [ ] **Phase 10: Finance** - full treasury model, royal subsidy, loans, wage/tax balance
 - [ ] **Phase 11: Civil Safety** - fire, collapse/danger, security/crime, civilization overlay
 - [ ] **Phase 12: Health, Education, Entertainment** - doctors/infirmaries, schools/libraries, shows
@@ -162,7 +162,10 @@ Plans:
   1. Opening a route and setting per-good orders affects actual goods movement.
   2. Caravans/ships transport loads physically with capacity and berth/road rules.
   3. Quotas cap and reset annually; import/export prices differ, track history, and gate transactions.
-**Plans**: TBD
+**Plans**: 4 waves (single PLAN.md, 8 tasks)
+
+Plans:
+- [x] 09-PLAN: Regional catalog, order modes, transports, quotas, prices, advisor + determinism (TRAD-01..05 read more)
 
 ### Phase 10: Finance
 **Goal**: Complete treasury model with wages, taxes, trade revenue, subsidy, loans.
