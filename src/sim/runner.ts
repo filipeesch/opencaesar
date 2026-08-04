@@ -37,6 +37,8 @@ import { TEMPLE_COVERAGE_FACTOR, GRAND_TEMPLE_COVERAGE_FACTOR, FESTIVAL_BOOST_WI
 import { computeRisks, tickFire } from './safety';
 import { taxCollected } from './taxation';
 import { unlockedGov, GOV_BUILDINGS, govThreshold } from './governance';
+import { pickRequest, entryById } from '../../data/requests';
+import type { RequestDef } from '../../data/requests';
 import { ObjectiveTracker } from './objectives';
 import { WaterSystem } from './water';
 import { buildCodex } from './campaign';
@@ -77,6 +79,8 @@ import type {
   MissionState,
   WalkerState,
   WalkerType,
+  ActiveRequest,
+  RequestHistoryEntry,
 } from './types';
 import type { BuildingInstance, WalkerInstance, SimInternals } from './walkers';
 import { createWalker, updateWalker } from './walkers';
@@ -186,6 +190,10 @@ export class SimRunner {
   private governor: GovernorState = createGovernor();
   /** Favor granted by governor donations (applied in derivedSnapshot, clamped 100). */
   private governorFavorBonus = 0;
+  /** Active administrative requests (GOV-02), instance id `${id}@${arrivalTick}`. */
+  private requests: ActiveRequest[] = [];
+  /** Last few settled requests (completed or expired) for the advisor view. */
+  private requestHistory: RequestHistoryEntry[] = [];
   private lowFoodWarnCooldown = 0;
   private paused = false;
   private pendingCommands: PendingCommand[] = [];
@@ -312,6 +320,9 @@ export class SimRunner {
       const paid = payGovernor(this.governor, this.treasuryAccount.balance);
       if (paid.salary > 0) this.treasuryAccount.addExpense('governor', paid.salary);
     }
+
+    // Administrative requests (GOV-02): monthly arrival + completion/expiry.
+    if (this.tickCount % 40 === 0) this.tickRequests();
 
     // Missions / campaign win conditions.
     this.tickMissionSystem();
@@ -1448,6 +1459,153 @@ export class SimRunner {
     return this.getState().ratings.population;
   }
 
+  // Requests (GOV-02) -------------------------------------------------------
+
+  /** Request id reference (catalog id) for a given live request instance. */
+  private requestDefOf(id: string): RequestDef | undefined {
+    const catalogId = id.split('@')[0];
+    return entryById(catalogId);
+  }
+
+  /** First storage host (stable building order) holding stock of `good`. */
+  private requestSourceFor(good: string): BuildingInstance | null {
+    for (const b of this.buildings) {
+      if (!this.tradeStorageHosts(good).includes(b.type)) continue;
+      if (((b.stock as Record<string, number | undefined>)[good] ?? 0) <= 0) continue;
+      return b;
+    }
+    return null;
+  }
+
+  /** Month cadence: deterministically arrive new requests and settle active ones. */
+  private tickRequests(): void {
+    // Arrival: forum placed graces the forum's administration, at most 3 active.
+    if (this.hasPlacedGov('forum') && this.requests.length < 3) {
+      const placed = GOV_BUILDINGS.map((g) => g.id).filter((id) => this.hasPlacedGov(id));
+      const picked = pickRequest(this.seed, this.tickCount, this.getPopulation(), placed);
+      if (picked) {
+        this.requests.push({
+          id: `${picked.id}@${this.tickCount}`,
+          requestId: picked.id,
+          arrivalTick: this.tickCount,
+          delivered: 0,
+        });
+      }
+    }
+    // Completion / expiry, checked on the same month cadence.
+    const population = this.getPopulation();
+    for (const req of [...this.requests]) {
+      const def = this.requestDefOf(req.id);
+      if (!def) { this.requests = this.requests.filter((r) => r !== req); continue; }
+      const monthsElapsed = (this.tickCount - req.arrivalTick) / MONTH_TICKS;
+      if (def.type === 'population') req.delivered = population;
+      if (req.delivered >= def.amount) {
+        this.treasuryAccount.addRevenue('other', def.reward);
+        this.settleRequest(req, 'reward');
+      } else if (monthsElapsed > def.deadlineMonths) {
+        this.treasuryAccount.addExpense('other', def.penalty);
+        this.settleRequest(req, 'penalty');
+      }
+    }
+  }
+
+  /** Move a settled request to the history ring (keeps at most 5). */
+  private settleRequest(req: ActiveRequest, outcome: 'reward' | 'penalty'): void {
+    this.requests = this.requests.filter((r) => r !== req);
+    this.requestHistory.push({
+      id: req.id,
+      requestId: req.requestId,
+      arrivalTick: req.arrivalTick,
+      outcome,
+      tick: this.tickCount,
+    });
+    if (this.requestHistory.length > 5) this.requestHistory = this.requestHistory.slice(-5);
+  }
+
+  /**
+   * Deliver a quantity of a good toward an active goods request. Consumes the
+   * stock of the first storage host that holds it (stable iteration). Replayable.
+   */
+  deliverGoods(requestId: string, good: string, qty: number): { ok: boolean; error?: string; delivered?: number } {
+    if (this.paused) {
+      this.enqueue({ kind: 'deliverGoods', requestId, good, qty });
+      return { ok: true };
+    }
+    if (!Number.isFinite(qty) || qty <= 0) return { ok: false, error: 'unknown-amount' };
+    const req = this.requests.find((r) => r.id === requestId);
+    if (!req) return { ok: false, error: 'unknown-request' };
+    const def = this.requestDefOf(requestId);
+    if (!def || def.type !== 'goods' || def.good !== good) return { ok: false, error: 'wrong-good' };
+    const source = this.requestSourceFor(good);
+    if (!source) return { ok: false, error: 'no-stock' };
+    const take = Math.min(qty, (source.stock as Record<string, number | undefined>)[good] ?? 0);
+    if (take <= 0) return { ok: false, error: 'no-stock' };
+    (source.stock as Record<string, number | undefined>)[good] = ((source.stock as Record<string, number | undefined>)[good] ?? 0) - take;
+    req.delivered += take;
+    this.commandLog.push({ tick: this.tickCount, command: `deliverGoods ${requestId} ${take}`, result: 'ok' });
+    this.saveCommands.push({ kind: 'deliverGoods', requestId, good, qty: take });
+    return { ok: true, delivered: req.delivered };
+  }
+
+  /**
+   * Pay denarii toward an active denarii / grand send-off request. Treasury
+   * funded only; deducts from the treasury and credits `delivered`. Replayable.
+   */
+  payRequest(requestId: string, amount: number): { ok: boolean; error?: string; delivered?: number } {
+    if (this.paused) {
+      this.enqueue({ kind: 'payRequest', requestId, amount });
+      return { ok: true };
+    }
+    if (!Number.isFinite(amount) || amount <= 0) return { ok: false, error: 'unknown-amount' };
+    const req = this.requests.find((r) => r.id === requestId);
+    if (!req) return { ok: false, error: 'unknown-request' };
+    const def = this.requestDefOf(requestId);
+    if (!def || (def.type !== 'denarii' && def.type !== 'send_off')) return { ok: false, error: 'wrong-request-type' };
+    const paid = Math.min(amount, this.treasuryAccount.balance);
+    if (paid <= 0) return { ok: false, error: 'not-enough-money' };
+    this.treasuryAccount.addExpense('other', paid);
+    req.delivered += paid;
+    if (req.delivered > def.amount) req.delivered = def.amount;
+    this.commandLog.push({ tick: this.tickCount, command: `payRequest ${requestId} ${paid}`, result: 'ok' });
+    this.saveCommands.push({ kind: 'payRequest', requestId, amount: paid });
+    return { ok: true, delivered: req.delivered };
+  }
+
+  /** Live administrative requests (active + the last few settled), read-only. */
+  getRequests(): {
+    active: Array<{
+      id: string; requestId: string; title: string; description: string; type: string;
+      arrivalTick: number; amount: number; delivered: number;
+      deadlineMonths: number; monthsLeft: number;
+    }>;
+    history: Array<{ requestId: string; title: string; outcome: 'reward' | 'penalty'; tick: number }>;
+  } {
+    return {
+      active: this.requests.map((req) => {
+        const def = this.requestDefOf(req.id);
+        const monthsElapsed = (this.tickCount - req.arrivalTick) / MONTH_TICKS;
+        return {
+          id: req.id,
+          requestId: req.requestId,
+          title: def?.title ?? req.requestId,
+          description: def?.description ?? '',
+          type: def?.type ?? 'goods',
+          arrivalTick: req.arrivalTick,
+          amount: def?.amount ?? 0,
+          delivered: def?.type === 'population' ? this.getPopulation() : req.delivered,
+          deadlineMonths: def?.deadlineMonths ?? 0,
+          monthsLeft: Math.max(0, (def?.deadlineMonths ?? 0) - Math.floor(monthsElapsed)),
+        };
+      }),
+      history: this.requestHistory.map((h) => ({
+        requestId: h.requestId,
+        title: entryById(h.requestId)?.title ?? h.requestId,
+        outcome: h.outcome,
+        tick: h.tick,
+      })),
+    };
+  }
+
   getEmployment(): { employed: number; unemployed: number; totalJobs: number } {
     const state = this.getState();
     return {
@@ -2170,6 +2328,10 @@ function applyCommand(runner: SimRunner, cmd: SaveCommand): void {
     runner.setGovernorSalaryLevel(cmd.level);
   } else if (cmd.kind === 'donateToGovernor') {
     runner.donateToGovernor(cmd.amount);
+  } else if (cmd.kind === 'deliverGoods') {
+    runner.deliverGoods(cmd.requestId, cmd.good, cmd.qty);
+  } else if (cmd.kind === 'payRequest') {
+    runner.payRequest(cmd.requestId, cmd.amount);
   } else {
     const exhaustive: never = cmd;
     throw new Error(`unknown command kind: ${(exhaustive as { kind: string }).kind}`);

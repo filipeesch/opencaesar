@@ -81,7 +81,9 @@ export type SaveCommand =
   | { kind: 'repayLoan'; amount: number }
   | { kind: 'holdFestival'; tierId: string }
   | { kind: 'setGovernorSalaryLevel'; level: number }
-  | { kind: 'donateToGovernor'; amount: number };
+  | { kind: 'donateToGovernor'; amount: number }
+  | { kind: 'deliverGoods'; requestId: string; good: string; qty: number }
+  | { kind: 'payRequest'; requestId: string; amount: number };
 
 /** Serializable save payload capturing everything needed to resume a sim deterministically. */
 export interface SaveData {
@@ -208,6 +210,28 @@ export interface MissionState {
   failed: boolean;
   year: number;
   objective: string;
+}
+
+/** An active administrative request in the running sim (GOV-02). */
+export interface ActiveRequest {
+  /** Instance id `${catalogId}@${arrivalTick}` so two arrivals coexist. */
+  id: string;
+  /** Catalog entry id (see data/requests.ts). */
+  requestId: string;
+  /** Tick at which the request arrived (the month boundary). */
+  arrivalTick: number;
+  /** Quantity/denarii delivered so far (auto-set for population type). */
+  delivered: number;
+}
+
+/** A settled (completed or expired) request kept for the advisor view. */
+export interface RequestHistoryEntry {
+  id: string;
+  requestId: string;
+  arrivalTick: number;
+  /** Whether it was fulfilled (reward) or expired (penalty). */
+  outcome: 'reward' | 'penalty';
+  tick: number;
 }
 
 export interface SimState {

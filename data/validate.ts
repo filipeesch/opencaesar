@@ -12,6 +12,7 @@ import { EVENTS } from './events';
 import { MISSIONS } from './missions';
 import { STRINGS } from './localization';
 import { BALANCE } from './balance';
+import { REQUEST_CATALOG } from './requests';
 
 export interface CatalogIssue {
   catalog: string;
@@ -128,6 +129,15 @@ export function validateCatalogs(tradeCatalog: Record<string, TradeCityDef> = TR
   for (const m of Object.values(MISSIONS)) {
     if (m.targetPopulation <= 0) {
       issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: missing positive population target` });
+    }
+  }
+
+  for (const r of REQUEST_CATALOG) {
+    if (r.amount <= 0 || r.deadlineMonths <= 0 || r.weight <= 0) {
+      issues.push({ catalog: 'requests', message: `${r.id}: non-positive amount/deadline/weight` });
+    }
+    if (r.type === 'goods' && !COMMODITIES[r.good ?? '']) {
+      issues.push({ catalog: 'requests', message: `${r.id}: good '${r.good ?? ''}' missing from COMMODITIES` });
     }
   }
 
