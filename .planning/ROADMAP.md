@@ -197,6 +197,7 @@ Plans:
   1. Health walkers raise house health; education walkers raise literacy.
   2. Entertainment venues deliver show-based coverage advancing housing.
 - [x] 12-PLAN: live civic stats + decaying service flags, TIER_CIVIC_GATES on Domus/Villa, hospital/amphitheatre/colosseum catalog, real advisor coverage, getCivicStats, determinism (HEAL-01/EDUC-01/ENTR-01)
+- [ ] 13-PLAN: per-god temples + grand temples + live coverage-driven worship/favor + replayable festivals, determinism (RELI-01)
 
 ### Phase 13: Religion
 **Goal**: Five gods' temples, grand temples, festivals, and favor.
@@ -205,7 +206,7 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Temple/walker coverage raises the respective god's worship level.
   2. Festivals spend denarii to raise favor; grand temples boost coverage.
-**Plans**: TBD
+**Plans**: 13-PLAN
 
 ### Phase 14: Governance & Requests
 **Goal**: Forum/senate/governor residences and administrative requests.
