@@ -19,7 +19,7 @@ export type BuildingType =
   | 'fountain' | 'orchard' | 'engineer_post' | 'fire_station' | 'clinic'
   | 'hospital' | 'school' | 'library' | 'temple' | 'theatre'
   | 'amphitheatre' | 'colosseum' | 'forum' | 'garden'
-  | 'clay_pit' | 'timber_yard' | 'iron_mine' | 'quarry'
+  | 'temple' | 'grand_temple' | 'clay_pit' | 'timber_yard' | 'iron_mine' | 'quarry'
   | 'olive_farm' | 'grape_farm'
   | 'pottery_workshop' | 'furniture_workshop' | 'oil_press' | 'winery' | 'tool_workshop'
   | 'warehouse' | 'prefecture';
@@ -43,7 +43,8 @@ export type PlacementError =
   | 'occupied'
   | 'terrain'
   | 'road-access'
-  | 'not-enough-money';
+  | 'not-enough-money'
+  | 'invalid-god';
 
 export type PlacementResult = { ok: true } | { ok: false; error: PlacementError };
 
@@ -70,7 +71,7 @@ export interface CommandLogEntry {
 
 /** A replayable command (structured form of a CommandLogEntry for save/load). */
 export type SaveCommand =
-  | { kind: 'place'; type: BuildingType; x: number; y: number }
+  | { kind: 'place'; type: BuildingType; x: number; y: number; god?: string }
   | { kind: 'setPolicy'; taxRate: number; wageRate: number }
   | { kind: 'demolish'; x: number; y: number }
   | { kind: 'requestRoyalSubsidy' }
@@ -103,6 +104,8 @@ export interface BuildingState {
   active: boolean;
   laborConnected: boolean;
   stock: Partial<Record<Good, number>>;
+  /** God a temple/grand_temple worships (undefined for other buildings). */
+  god?: string;
   /** House-only fields (undefined for other building types). */
   house?: {
     tier: number;
@@ -113,6 +116,8 @@ export interface BuildingState {
     laborCooldown: number;
     /** Service access delivered by walkers (health/literacy/religion/entertainment). */
     services?: Partial<Record<string, number>>;
+    /** Per-god temple access (fresh TTL per god; drives worship, Phase 13). */
+    godAccess?: Record<string, number>;
     /** Current desirability of the house tile (same value the evolution logic uses). */
     desirability: number;
     /** Resident happiness 0..100, derived from coverage, desirability, and wages. */

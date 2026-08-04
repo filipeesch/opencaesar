@@ -29,7 +29,8 @@ import { COMMODITIES } from '../../data/commodities';
 import { TRADE_CITIES, type TradeCityDef } from '../../data/trade';
 import { CARAVAN_CAPACITY, SHIP_CAPACITY } from './transport';
 import { tickMission } from './missions';
-import { computeServiceCoverage } from './services';
+import { computeServiceCoverage, GODS, computeFavor } from './services';
+import { TEMPLE_COVERAGE_FACTOR, GRAND_TEMPLE_COVERAGE_FACTOR } from '../../data/religion';
 import { computeRisks, tickFire } from './safety';
 import { taxCollected } from './taxation';
 import { unlockedGov } from './governance';
@@ -126,6 +127,8 @@ export interface DerivedSnapshot {
   favor: number;
   employment: { jobs: number; employed: number };
   services: { health: number; literacy: number; entertainment: number; religion: number };
+  /** Per-god live worship (Phase 13, RELI-01) — empty without temples. */
+  godWorship: Record<string, number>;
   water: { coveredTiles: number; totalTiles: number };
   fireRisk: number;
   collapseRisk: number;
@@ -745,6 +748,34 @@ export class SimRunner {
     return { ok: true };
   }
 
+  /**
+   * Live per-god worship (Phase 13): the share of houses with fresh temple
+   * access for a god, scaled by the serving temple's coverage factor (grand
+   * temples count double). Empty when the city has no temples — the legacy
+   * derived state had no religion beyond the hardcoded jupiter stub, which
+   * this replaces with real coverage. Purely deterministic.
+   */
+  private liveGodWorship(): Record<string, number> {
+    const temples = this.buildings.filter((b) => (b.type === 'temple' || b.type === 'grand_temple') && b.god);
+    if (temples.length === 0) return {};
+    const houses = this.buildings.filter((b) => b.house);
+    const total = houses.length;
+    const factorOf = (type: BuildingType) =>
+      type === 'grand_temple' ? GRAND_TEMPLE_COVERAGE_FACTOR : TEMPLE_COVERAGE_FACTOR;
+    const worship: Record<string, number> = {};
+    for (const t of temples) {
+      const god = t.god as string;
+      let served = 0;
+      for (const h of houses) {
+        if ((h.house!.godAccess?.[god] ?? 0) > 0) served += 1;
+      }
+      const covered = total === 0 ? 0 : served / total;
+      const boosted = Math.min(1, covered * factorOf(t.type));
+      worship[god] = Math.max(worship[god] ?? 0, boosted);
+    }
+    return worship;
+  }
+
   private derivedSnapshot(): DerivedSnapshot {
     const population = this.getPopulation();
     const employment = this.getEmployment();
@@ -754,11 +785,12 @@ export class SimRunner {
       hasReligion: has('religion'), hasEntertainment: has('entertainment'), hasEducation: has('education'),
       hasHealth: has('health'), hasWater: has('water'), hasFood: has('food'),
     });
+    const godWorship = this.liveGodWorship();
     const serviceCoverage = computeServiceCoverage({
       doctorCoverage: this.civicCoverage('health'),
       educationCoverage: this.civicCoverage('literacy'),
       entertainmentCoverage: this.civicCoverage('entertainment'),
-      godWorship: this.buildings.some((b) => b.type === 'temple') ? { jupiter: 0.8 } : {},
+      godWorship,
     });
     const water = new WaterSystem();
     const well = this.buildings.find((b) => b.type === 'well' || b.type === 'fountain');
@@ -782,9 +814,11 @@ export class SimRunner {
     const wages = employment.employed * CONFIG.wagePerWorkerPerTick * this.policy.wageRate;
     const codex = buildCodex();
     return {
-      population, culture: targets.culture, prosperity: targets.prosperity, stability: targets.stability, favor: targets.favor,
+      population, culture: targets.culture, prosperity: targets.prosperity, stability: targets.stability,
+      favor: Math.min(100, targets.favor + computeFavor(godWorship)),
       employment: { jobs: employment.totalJobs, employed: employment.employed },
       services: serviceCoverage,
+      godWorship,
       water: { coveredTiles, totalTiles: this.width * this.height },
       fireRisk, collapseRisk, crime, treasury: this.getTreasury(), taxes, wages,
       codex: { buildings: codex.filter((e) => e.kind === 'building').length, goods: codex.filter((e) => e.kind === 'commodity').length, services: codex.filter((e) => e.kind === 'service').length, gods: codex.filter((e) => e.kind === 'god').length },
@@ -977,11 +1011,17 @@ export class SimRunner {
     });
   }
 
-  /** Place a building at footprint anchor (x, y). Rejected commands leave state unchanged. */
-  placeBuilding(type: BuildingType, x: number, y: number): PlacementResult {
+  /** Place a building at footprint anchor (x, y). Rejected commands leave state unchanged.
+   *  Temples/grand temples take an optional `god` (defaults to 'jupiter'). */
+  placeBuilding(type: BuildingType, x: number, y: number, options?: { god?: string }): PlacementResult {
     if (this.paused) {
-      this.enqueue({ kind: 'place', type, x, y });
+      this.enqueue({ kind: 'place', type, x, y, god: options?.god });
       return { ok: true };
+    }
+    const def = BUILDINGS[type];
+    if (def.category === 'religion' && options?.god && !(GODS as readonly string[]).includes(options.god)) {
+      this.commandLog.push({ tick: this.tickCount, command: `place ${type}@${x},${y}`, result: 'invalid-god' });
+      return { ok: false, error: 'invalid-god' };
     }
     const result = checkPlacement(
       this.map,
@@ -996,7 +1036,6 @@ export class SimRunner {
       return result;
     }
 
-    const def = BUILDINGS[type];
     this.treasuryAccount.addExpense('other', def.cost);
 
     const id = this.nextBuildingId++;
@@ -1023,6 +1062,9 @@ export class SimRunner {
     if (type === 'road') {
       this.map.setRect(x, y, x + def.footprint - 1, y + def.footprint - 1, 'road');
     }
+    if (def.category === 'religion') {
+      building.god = options?.god ?? 'jupiter';
+    }
 
     this.buildings.push(building);
     this.buildingById.set(id, building);
@@ -1033,7 +1075,7 @@ export class SimRunner {
     }
 
     this.commandLog.push({ tick: this.tickCount, command: `place ${type}@${x},${y}`, result: 'ok' });
-    this.saveCommands.push({ kind: 'place', type, x, y });
+    this.saveCommands.push({ kind: 'place', type, x, y, god: building.god });
     return { ok: true };
   }
 
@@ -1408,6 +1450,7 @@ export class SimRunner {
 
       const w = createWalker(walkerType, start.x, start.y, this.nextWalkerId++);
       this.walkers.push(w);
+      if ((b.type === 'temple' || b.type === 'grand_temple') && b.god) w.god = b.god;
       if (b.type === 'house' && b.house) b.house.laborCooldown = CONFIG.serviceCooldownTicks;
     }
   }
@@ -1892,6 +1935,9 @@ export class SimRunner {
               happiness: houseHappiness(input),
             };
             if (b.house!.foodInventory) h.foodInventory = { ...b.house!.foodInventory };
+            if (b.house!.godAccess && Object.keys(b.house!.godAccess).length > 0) {
+              h.godAccess = { ...b.house!.godAccess };
+            }
             return h;
           })()
         : undefined;
@@ -1906,6 +1952,7 @@ export class SimRunner {
       active: b.active,
       laborConnected: b.laborConnected,
       stock: { ...b.stock },
+      ...(b.god !== undefined ? { god: b.god } : {}),
       house,
     };
   }
@@ -1922,6 +1969,7 @@ export class SimRunner {
       lifetime: w.lifetime,
       targetBuildingId: w.targetBuildingId,
       carryingGood: w.carryingGood,
+      ...(w.god !== undefined ? { god: w.god } : {}),
     };
   }
 

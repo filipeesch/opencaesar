@@ -7,7 +7,7 @@ import type { BuildingType } from '../../src/sim/types';
 const ALL_TYPES: BuildingType[] = [
   'road', 'house', 'garden', 'well', 'fountain', 'farm', 'orchard', 'granary',
   'market', 'engineer_post', 'fire_station', 'clinic', 'school', 'library',
-  'temple', 'theatre', 'forum',
+  'temple', 'grand_temple', 'theatre', 'forum',
 ];
 
 function flatRunner(): SimRunner {
@@ -20,7 +20,7 @@ function flatRunner(): SimRunner {
 const SPOTS: Record<string, [number, number]> = {
   garden: [4, 21], well: [5, 21], fountain: [6, 21], engineer_post: [7, 21],
   fire_station: [9, 21], clinic: [11, 21], school: [13, 21], library: [15, 21],
-  temple: [17, 21], theatre: [19, 21], forum: [21, 21], market: [24, 21],
+  temple: [17, 21], grand_temple: [22, 16], theatre: [19, 21], forum: [21, 21], market: [24, 21],
   farm: [9, 18], orchard: [14, 18], granary: [30, 21],
 };
 

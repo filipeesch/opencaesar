@@ -39,6 +39,13 @@ export function tickCivic(house: NonNullable<BuildingInstance['house']>): void {
       else house.services[service] = next;
     }
   }
+  if (house.godAccess) {
+    for (const [god, ttl] of Object.entries(house.godAccess)) {
+      const next = (ttl ?? 0) - 1;
+      if (next <= 0) delete house.godAccess[god];
+      else house.godAccess[god] = next;
+    }
+  }
   const civic = (house.civic ??= { health: 0, literacy: 0, entertainment: 0 });
   const fresh = (key: string) => (house.services?.[key] ?? 0) > 0;
   civic.health = clampCivic(civic.health + (fresh('health') ? CONFIG.civicRisePerTick : -CONFIG.civicDecayPerTick));

@@ -51,6 +51,8 @@ export interface WalkerInstance {
   stepsTaken: number;
   /** Market building a buyer/seller belongs to (deposit/reload/coverage target). */
   marketId?: number;
+  /** God a temple/grand_temple walker worships (per-god coverage, Phase 13). */
+  god?: string;
   /** Buyer: granary whose stock the in-trip units were reserved from (restored on failure). */
   reservedGranaryId?: number;
   /** Seller: the multi-food load currently being carried to houses (units per food). */
@@ -92,6 +94,10 @@ export interface HouseInstance {
   devolveCounter: number;
   /** Service access delivered by walkers (health/literacy/religion/entertainment). */
   services?: Partial<Record<string, number>>;
+  /** Per-god temple access: fresh walker TTL per god (worship driver, Phase 13).
+   *  Internal only — never serialized to BuildingState, so goldens/SimState
+   *  stay byte-identical. */
+  godAccess?: Record<string, number>;
   /** Per-food physical units a house has received from sellers (live food state, §13). */
   foodInventory?: Record<string, number>;
   /** Per-house market coverage bookkeeping (§12.13). */
@@ -153,6 +159,8 @@ export interface BuildingInstance {
    *  only — never serialized to BuildingState, so goldens/SimState stay
    *  byte-identical. Consumed by the derived risk overlay and advisors. */
   safety?: BuildingSafetyState;
+  /** God this temple/grand_temple worships (Phase 13, per-god coverage). */
+  god?: string;
 }
 
 /** Civil-safety per-building state (Phase 11). Internal to the sim run. */
@@ -285,8 +293,24 @@ function applyCoverage(sim: SimInternals, w: WalkerInstance, profile: WalkerProf
       const b = sim.buildingAt(w.x + d.x, w.y + d.y);
       if (b?.safety) sim.patrolCrime?.(b.id);
     }
+  } else if (w.god) {
+    // Temple/grand_temple walker: per-god worship access (Phase 13) plus the
+    // legacy generic religion flag so advisor religion coverage stays.
+    serviceGodAround(sim, w, w.god, profile);
+    serviceHousesAround(sim, w, 'religion', profile);
   } else if (SERVICE_BY_WALKER[w.type]) {
     serviceHousesAround(sim, w, SERVICE_BY_WALKER[w.type], profile);
+  }
+}
+
+/** Per-god temple access (Phase 13): fresh TTL per god on adjacent houses. */
+function serviceGodAround(sim: SimInternals, w: WalkerInstance, god: string, profile: WalkerProfile): void {
+  for (const d of DIRS) {
+    const b = sim.buildingAt(w.x + d.x, w.y + d.y);
+    if (b && b.house) {
+      b.house.godAccess = b.house.godAccess ?? {};
+      b.house.godAccess[god] = profile.serviceTTL;
+    }
   }
 }
 

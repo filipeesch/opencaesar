@@ -160,6 +160,11 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     footprint: 2, cost: 160, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 2,
     spawnEveryTicks: CONFIG.marketSpawnEveryTicks,
   },
+  grand_temple: {
+    type: 'grand_temple', name: 'Grand Temple', category: 'religion',
+    footprint: 4, cost: 900, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 10,
+    spawnEveryTicks: CONFIG.marketSpawnEveryTicks,
+  },
   theatre: {
     type: 'theatre', name: 'Theatre', category: 'entertainment',
     footprint: 2, cost: 180, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 2,
