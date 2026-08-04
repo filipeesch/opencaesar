@@ -15,6 +15,10 @@ import {
   EXTRACTION_BUILDING_TYPES, WORKSHOP_BUILDING_TYPES, RAW_OLIVE_GRAPE,
 } from './production';
 import type { LogisticsAdvisorView } from './logistics';
+import { TRADE_CITIES, tradeCityName } from '../../data/trade';
+import { quotaFor } from './trade';
+import type { TradeOrderMode } from './trade';
+import type { TradeRoute } from './types';
 
 export interface SimSnapshot {
   population: number;
@@ -686,4 +690,97 @@ export function logisticsAdvisorFromState(
   }
 
   return { stock, production, consumption, inTransit, bottlenecks, stopped };
+}
+
+/**
+ * === Trade advisor (TRAD-01..05, decision 7) ===
+ *
+ * A pure projection of runner trade state — never fabricated. Every number is
+ * derived from the injected per-route trade state (orders, quota counters,
+ * proceeds/spend) and the injected per-good price snapshot (base/current/trend).
+ * Cities iterate in stable catalog order; goods in catalog buys-then-sells
+ * order, so the view is fully deterministic.
+ */
+
+/** Serializable per-good price projection produced by the runner. */
+export interface TradePriceSnapshotGood {
+  base: number;
+  current: number;
+  trend: 'rising' | 'steady' | 'falling';
+}
+
+/** cityId → good → price projection. */
+export type TradePriceSnapshot = Record<string, Record<string, TradePriceSnapshotGood>>;
+
+export interface TradeAdvisorCity {
+  cityId: string;
+  name: string;
+  landOrSea: 'land' | 'sea';
+  opened: boolean;
+  relationship: string;
+  orders: Record<string, TradeOrderMode>;
+  quota: Record<string, { used: number; cap: number; suspended: boolean }>;
+  prices: Record<string, { base: number; current: number; trend: string }>;
+}
+
+export interface TradeAdvisorView {
+  cities: TradeAdvisorCity[];
+  totals: { exportProceeds: number; importSpend: number; activeRoutes: number };
+}
+
+export function tradeAdvisorFromState(
+  routes: Record<string, TradeRoute>,
+  prices: TradePriceSnapshot,
+): TradeAdvisorView {
+  const cities: TradeAdvisorCity[] = [];
+  for (const city of Object.values(TRADE_CITIES)) {
+    const route = routes[city.id];
+    const opened = !!route?.enabled;
+    const orders: Record<string, TradeOrderMode> = {};
+    const quotaGoods: string[] = [];
+    if (route?.orders) {
+      for (const [g, m] of Object.entries(route.orders)) {
+        if (m) {
+          orders[g] = m as TradeOrderMode;
+          quotaGoods.push(g);
+        }
+      }
+    }
+    if (route?.usedPerGood) {
+      for (const g of Object.keys(route.usedPerGood)) if (!quotaGoods.includes(g)) quotaGoods.push(g);
+    }
+    const quota: Record<string, { used: number; cap: number; suspended: boolean }> = {};
+    for (const g of quotaGoods) {
+      const used = route?.usedPerGood?.[g] ?? 0;
+      const cap = quotaFor(route ?? {}, g);
+      quota[g] = { used, cap, suspended: cap > 0 && used >= cap };
+    }
+    const pricesRec: Record<string, { base: number; current: number; trend: string }> = {};
+    const cityPrices = prices[city.id];
+    if (cityPrices) {
+      for (const [g, p] of Object.entries(cityPrices)) {
+        pricesRec[g] = { base: p.base, current: p.current, trend: p.trend };
+      }
+    }
+    cities.push({
+      cityId: city.id,
+      name: tradeCityName(city.id) ?? city.name,
+      landOrSea: city.landOrSea,
+      opened,
+      relationship: city.relationship,
+      orders,
+      quota,
+      prices: pricesRec,
+    });
+  }
+
+  let exportProceeds = 0;
+  let importSpend = 0;
+  let activeRoutes = 0;
+  for (const route of Object.values(routes)) {
+    exportProceeds += route.exportProceeds ?? 0;
+    importSpend += route.importSpend ?? 0;
+    if (route.enabled) activeRoutes += 1;
+  }
+  return { cities, totals: { exportProceeds, importSpend, activeRoutes } };
 }

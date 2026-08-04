@@ -4,6 +4,7 @@
 
 import { COMMODITIES } from '../../data/commodities';
 import { TRADE_CITIES } from '../../data/trade';
+import { CONFIG } from './config';
 
 export interface TradeRouteState {
   cityId: string;
@@ -16,7 +17,254 @@ export interface TradeRouteState {
   usedQuota?: number;
   /** Last year the quota was reset. */
   lastYear?: number;
+  // --- Additive Phase 9 surfaces (TRAD-02/04/05). All optional so
+  // createTradeRoutes() output and every legacy read stay unchanged. ---
+  /** Per-good §19.6 order modes. Absent = legacy abstract-ledger route. */
+  orders?: Partial<Record<string, TradeOrderMode>>;
+  /** export_above_reserve threshold per good (loads kept in the city). */
+  exportReserve?: Partial<Record<string, number>>;
+  /** import_upto_target target stock per good (loads). */
+  importTargets?: Partial<Record<string, number>>;
+  /** Per-good annual quota override (TRAD-04). */
+  perGoodQuota?: Partial<Record<string, number>>;
+  /** Per-good quota used so far this year (TRAD-04). */
+  usedPerGood?: Partial<Record<string, number>>;
+  /** Catalog annualQuotaPerGood carried onto the route (TRAD-04). */
+  catalogQuota?: number;
+  /** Year the route was opened (Math.floor(tick/360) convention). */
+  openYear?: number;
+  /** Denarii earned by exports on this route (live runner accounting; advisor). */
+  exportProceeds?: number;
+  /** Denarii spent on imports on this route (live runner accounting; advisor). */
+  importSpend?: number;
 }
+
+/**
+ * §19.6 order mode per commodity. The classic Caesar-3 order-mode model — there
+ * is no "priority" mode here; that requirement is explicitly out of scope for
+ * TRAD-02 (documented to avoid silent requirements drift).
+ */
+export type TradeOrderMode =
+  | 'no_trade'
+  | 'export_all'
+  | 'export_above_reserve'
+  | 'import_upto_target'
+  | 'stockpile';
+
+/** Effective order for a good: the configured mode, else 'no_trade'. */
+export function resolveTradeOrder(route: TradeRouteState, good: string): TradeOrderMode {
+  return route.orders?.[good] ?? 'no_trade';
+}
+
+/**
+ * §19.6 export predicate (pure): whether the city may export `stock` of a good
+ * under the given order. `reserve` is the export_above_reserve threshold in
+ * loads, `reserved` the amount reserved for domestic use (never exportable).
+ */
+export function exportAllowed(order: TradeOrderMode, reserve: number, stock: number, reserved: number): boolean {
+  if (order === 'no_trade' || order === 'stockpile') return false;
+  if (order === 'export_all') return stock > reserved;
+  // export_above_reserve: the surplus must strictly exceed the threshold, else
+  // there is nothing to export above the retained reserve.
+  if (order === 'export_above_reserve') return stock - reserved > reserve;
+  return false;
+}
+
+/** Exportable load count under an order (surplus above reserve/threshold). */
+export function exportableAmount(order: TradeOrderMode, reserve: number, stock: number, reserved: number): number {
+  if (!exportAllowed(order, reserve, stock, reserved)) return 0;
+  if (order === 'export_all') return Math.max(0, stock - reserved);
+  if (order === 'export_above_reserve') return Math.max(0, stock - reserved - reserve);
+  return 0;
+}
+
+/**
+ * §19.9 export transaction gate (pure, deterministic). Every export requires
+ * the good to exist, not be reserved, meet its threshold (export_above_reserve),
+ * and still have quoted quota. Reasons: 'not_ordered' / 'no_stock' / 'reserved'
+ * / 'below_threshold' / 'quota_exhausted' / 'ok'.
+ */
+export interface TradeExportGateInput {
+  order: TradeOrderMode;
+  stock: number;
+  reserved: number;
+  quotaLeft: number;
+  /** export_above_reserve threshold in loads (default 0 = export any surplus). */
+  reserve?: number;
+}
+
+export function tradeExportGate(g: TradeExportGateInput): { allowed: boolean; reason: string | null } {
+  if (g.order !== 'export_all' && g.order !== 'export_above_reserve') {
+    return { allowed: false, reason: 'not_ordered' };
+  }
+  if (g.stock <= 0) return { allowed: false, reason: 'no_stock' };
+  if (g.stock <= g.reserved) return { allowed: false, reason: 'reserved' };
+  if (g.order === 'export_above_reserve' && (g.stock - g.reserved <= (g.reserve ?? 0))) {
+    return { allowed: false, reason: 'below_threshold' };
+  }
+  if (g.quotaLeft <= 0) return { allowed: false, reason: 'quota_exhausted' };
+  return { allowed: true, reason: 'ok' };
+}
+
+/**
+ * §19.9 import transaction gate (pure, deterministic). An import happens only
+ * when the good is below its target, quota remains, and the treasury can cover
+ * the price of one load. Storage acceptance is asserted at the runner.
+ * Reasons: 'not_ordered' / 'at_target' / 'quota_exhausted' / 'unaffordable' /
+ * 'ok'.
+ */
+export interface ImportGateInput {
+  order: TradeOrderMode;
+  stock: number;
+  target: number;
+  quotaLeft: number;
+  treasury: number;
+  price: number;
+}
+
+export function importGatedBy(g: ImportGateInput): { allowed: boolean; reason: string | null } {
+  if (g.order !== 'import_upto_target') return { allowed: false, reason: 'not_ordered' };
+  if (g.stock >= g.target) return { allowed: false, reason: 'at_target' };
+  if (g.quotaLeft <= 0) return { allowed: false, reason: 'quota_exhausted' };
+  if (g.price > g.treasury) return { allowed: false, reason: 'unaffordable' };
+  return { allowed: true, reason: 'ok' };
+}
+
+/**
+ * === Per-route per-good annual quotas (§19.7, TRAD-04) ===
+ *
+ * Resolution order: a per-good override (`route.perGoodQuota[good]`) wins, then
+ * the catalog default carried onto the route (`route.catalogQuota`), then the
+ * legacy per-route `route.annualQuota`. A cap of 0 (or absent, after the chain)
+ * means unlimited. A capped good suspends ONLY itself — other goods on the same
+ * route keep trading. Reset is tick-based on the runner year clock
+ * (`Math.floor(tick / 360)` via `resetAnnualQuotas`), never wall-clock.
+ */
+
+/** The annual quota cap for a good on a route; 0 = unlimited. */
+export function quotaFor(route: TradeRouteState, good: string): number {
+  const per = route.perGoodQuota?.[good];
+  if (per !== undefined && per > 0) return per;
+  if (route.catalogQuota !== undefined && route.catalogQuota > 0) return route.catalogQuota;
+  return route.annualQuota ?? 0;
+}
+
+/** Loads of `good` still within quota this year (Infinity when uncapped). */
+export function quotaRemaining(route: TradeRouteState, good: string): number {
+  const cap = quotaFor(route, good);
+  if (cap <= 0) return Infinity;
+  return Math.max(0, cap - (route.usedPerGood?.[good] ?? 0));
+}
+
+/** True exactly when a capped good has consumed its full quota (per-good only). */
+export function quotaSuspended(route: TradeRouteState, good: string): boolean {
+  const cap = quotaFor(route, good);
+  if (cap <= 0) return false;
+  return (route.usedPerGood?.[good] ?? 0) >= cap;
+}
+
+/** Account `amount` loads of `good` against the route's per-good quota. */
+export function consumeQuota(route: TradeRouteState, good: string, amount: number): void {
+  route.usedPerGood = route.usedPerGood ?? {};
+  route.usedPerGood[good] = (route.usedPerGood[good] ?? 0) + amount;
+  route.usedQuota = (route.usedQuota ?? 0) + amount;
+}
+
+/**
+ * Reset every route's per-good (and legacy per-route) quota when the tick-based
+ * year changes. Deterministic: iterates Object.values(routes) in stable
+ * insertion order; a no-op (returns 0) when called again within the same year.
+ * Returns how many routes were reset.
+ */
+export function resetAnnualQuotas(routes: Record<string, TradeRouteState>, year: number): number {
+  let reset = 0;
+  for (const route of Object.values(routes)) {
+    if (route.lastYear === year) continue;
+    route.usedPerGood = {};
+    route.usedQuota = 0;
+    route.lastYear = year;
+    reset += 1;
+  }
+  return reset;
+}
+
+/**
+ * === Trade price state (§19.5, TRAD-05) ===
+ *
+ * Per good/city: a base price (mirroring the commodities catalog, so the import
+ * price always exceeds the export price for the same good), an injected-tick
+ * history ring (deterministic — no wall clock), a rising/steady/falling trend,
+ * and a multiplicative modifier (event/relationship premium >0 or discount).
+ * All functions are pure and deterministic.
+ */
+
+export interface TradePriceState {
+  /** Base price for the good (import or export orientation per use). */
+  base: number;
+  /** Ring of recently sampled prices, newest last (max historySize). */
+  history: number[];
+  trend: 'rising' | 'steady' | 'falling';
+  /** Multiplicative event/relationship modifier (>0 premium, <0 discount). */
+  modifier: number;
+  /** Ring depth for `history`. */
+  historySize: number;
+  /** Monotonic tick the history was last sampled at (duplicate suppression). */
+  lastSampledAt?: number;
+}
+
+export function createTradePriceState(base: number, historySize = CONFIG.tradePriceHistoryWindow): TradePriceState {
+  return { base, history: [], trend: 'steady', modifier: 1, historySize };
+}
+
+/** Push `price` into the history ring keyed by the injected monotonic `at`;
+ *  a repeat at the same `at` does not duplicate the ring. */
+export function sampleTradePrice(state: TradePriceState, price: number, at: number): void {
+  if (state.lastSampledAt === at) return;
+  state.lastSampledAt = at;
+  state.history.push(price);
+  if (state.history.length > state.historySize) state.history.shift();
+}
+
+/** Trend from the latest history entry vs the entry `window` steps earlier;
+ *  steady within the catalog tolerance (in denarii). Deterministic on history. */
+export function priceTrend(state: TradePriceState, at: number): 'rising' | 'steady' | 'falling' {
+  void at;
+  const hist = state.history;
+  const window = CONFIG.tradePriceHistoryWindow;
+  const tol = CONFIG.tradePriceSteadyTolerance;
+  const latest = hist[hist.length - 1];
+  const earlier = hist[Math.max(0, hist.length - 1 - window)];
+  if (hist.length < 2 || earlier === undefined) {
+    state.trend = 'steady';
+    return state.trend;
+  }
+  if (latest - earlier > tol) state.trend = 'rising';
+  else if (earlier - latest > tol) state.trend = 'falling';
+  else state.trend = 'steady';
+  return state.trend;
+}
+
+/** Effective transactable price: the last sampled price (or base when never
+ *  sampled) scaled by the modifier, clamped to >= CONFIG.tradePriceFloor. */
+export function effectivePrice(state: TradePriceState, at: number): number {
+  void at;
+  const last = state.history.length > 0 ? state.history[state.history.length - 1] : state.base;
+  const price = Math.round(last * state.modifier);
+  return Math.max(CONFIG.tradePriceFloor, price);
+}
+
+/** Deterministic event/shortage modifier entry: shifts the modifier by `delta`
+ *  and does NOT write into the history. Positive delta ⇒ higher effective price;
+ *  negative ⇒ lower. */
+export function applyPriceEvent(state: TradePriceState, delta: number, at: number): void {
+  void at;
+  state.modifier = Math.max(0.01, state.modifier + delta);
+}
+
+/** Ticks a trade merchant (caravan/ship) waits for a road/berth before leaving
+ *  without trading (§19.3). Consumed here to keep the balance-parity invariant;
+ *  used by the transport walkers in 09-W3. */
+export const MERCHANT_WAIT_TICKS = CONFIG.merchantWaitTicks;
 
 export function createTradeRoutes(): Record<string, TradeRouteState> {
   const routes: Record<string, TradeRouteState> = {};

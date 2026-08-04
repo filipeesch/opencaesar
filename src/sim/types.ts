@@ -32,7 +32,8 @@ export type BuildingCategory =
 export type WalkerType =
   | 'market' | 'well' | 'labor'
   | 'buyer' | 'seller'
-  | 'clinic' | 'school' | 'library' | 'temple' | 'theatre';
+  | 'clinic' | 'school' | 'library' | 'temple' | 'theatre'
+  | 'caravan' | 'ship';
 
 export type PlacementError =
   | 'invalid-type'
@@ -154,6 +155,26 @@ export interface TradeRoute {
   usedQuota?: number;
   /** Last year the quota was reset. */
   lastYear?: number;
+  // --- Additive Phase 9 surfaces (TRAD-02/04/05). Optional so existing
+  // construction sites compile unchanged and getState() is untouched. ---
+  /** Per-good §19.6 order modes. Absent = legacy abstract-ledger route. */
+  orders?: Partial<Record<string, import('./trade').TradeOrderMode>>;
+  /** export_above_reserve threshold per good (loads kept in the city). */
+  exportReserve?: Partial<Record<string, number>>;
+  /** import_upto_target target stock per good (loads). */
+  importTargets?: Partial<Record<string, number>>;
+  /** Per-good annual quota override (TRAD-04). */
+  perGoodQuota?: Partial<Record<string, number>>;
+  /** Per-good quota used so far this year (TRAD-04). */
+  usedPerGood?: Partial<Record<string, number>>;
+  /** Catalog annualQuotaPerGood carried onto the route. */
+  catalogQuota?: number;
+  /** Year the route was opened (Math.floor(tick/360) convention). */
+  openYear?: number;
+  /** Denarii earned by exports on this route (live runner accounting; advisor). */
+  exportProceeds?: number;
+  /** Denarii spent on imports on this route (live runner accounting; advisor). */
+  importSpend?: number;
 }
 
 export interface EventRecord {

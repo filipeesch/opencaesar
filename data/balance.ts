@@ -77,4 +77,14 @@ export const BALANCE = {
   messageLogCapacity: 50,
   /** Re-emit the low-food warning at most this often (in ticks). */
   lowFoodWarnCooldownTicks: 100,
+
+  // Trade (TRAD-05 / Phase 9) -------------------------------------------------
+  /** History ring depth for the per-good trade price model (§19.5). */
+  tradePriceHistoryWindow: 8,
+  /** Denarii within which the trend reads "steady". */
+  tradePriceSteadyTolerance: 1,
+  /** Floor for an effective trade price (never ≤ 0). */
+  tradePriceFloor: 1,
+  /** Ticks a merchant without a road/berth waits before leaving without trading (§19.3). */
+  merchantWaitTicks: 120,
 } as const;

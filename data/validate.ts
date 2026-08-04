@@ -7,7 +7,7 @@ import { COMMODITIES, FOOD_TYPES } from './commodities';
 import { BUILDINGS } from './buildings';
 import { HOUSING_LEVELS } from './housing';
 import { WALKERS } from './walkers';
-import { TRADE_CITIES } from './trade';
+import { TRADE_CITIES, type TradeCityDef } from './trade';
 import { EVENTS } from './events';
 import { MISSIONS } from './missions';
 import { STRINGS } from './localization';
@@ -46,7 +46,7 @@ export function throwCatalogIssues(issues: CatalogIssue[]): void {
   }
 }
 
-export function validateCatalogs(): CatalogIssue[] {
+export function validateCatalogs(tradeCatalog: Record<string, TradeCityDef> = TRADE_CITIES): CatalogIssue[] {
   const issues: CatalogIssue[] = [];
 
   for (const [id, def] of Object.entries(BUILDINGS)) {
@@ -87,9 +87,37 @@ export function validateCatalogs(): CatalogIssue[] {
     }
   }
 
-  for (const city of Object.values(TRADE_CITIES)) {
-    if (city.distance <= 0 || city.buys.length === 0) {
-      issues.push({ catalog: 'trade', message: `${city.id}: invalid distance or empty buys` });
+  for (const city of Object.values(tradeCatalog)) {
+    if (city.distance <= 0 || city.buys.length === 0 || city.sells.length === 0) {
+      issues.push({ catalog: 'trade', message: `${city.id}: invalid distance or empty buys/sells` });
+    }
+    if (city.routeOpeningCost <= 0) {
+      issues.push({ catalog: 'trade', message: `${city.id}: route opening cost must be positive` });
+    }
+    if (city.merchantFrequency <= 0) {
+      issues.push({ catalog: 'trade', message: `${city.id}: merchant frequency must be positive` });
+    }
+    if (city.annualQuotaPerGood !== undefined && city.annualQuotaPerGood <= 0) {
+      issues.push({ catalog: 'trade', message: `${city.id}: annual quota per good must be positive` });
+    }
+    if (city.landOrSea !== 'land' && city.landOrSea !== 'sea') {
+      issues.push({ catalog: 'trade', message: `${city.id}: landOrSea must be 'land' or 'sea'` });
+    }
+    if (city.relationship !== 'neutral' && city.relationship !== 'friendly' && city.relationship !== 'hostile') {
+      issues.push({ catalog: 'trade', message: `${city.id}: relationship must be neutral/friendly/hostile` });
+    }
+    for (const good of [...city.buys, ...city.sells]) {
+      if (!COMMODITIES[good]) {
+        issues.push({ catalog: 'trade', message: `${city.id}: good '${good}' missing from COMMODITIES` });
+      }
+    }
+    if (city.priceModifiers !== undefined) {
+      for (const good of [...city.buys, ...city.sells]) {
+        const m = city.priceModifiers[good];
+        if (typeof m !== 'number' || !Number.isFinite(m) || m <= 0) {
+          issues.push({ catalog: 'trade', message: `${city.id}: priceModifiers missing/invalid for '${good}'` });
+        }
+      }
     }
   }
 

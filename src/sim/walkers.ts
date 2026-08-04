@@ -54,6 +54,31 @@ export interface WalkerInstance {
   reservedGranaryId?: number;
   /** Seller: the multi-food load currently being carried to houses (units per food). */
   carryingLoad?: Record<string, number>;
+  /** Trade transport (caravan/ship) payload (TRAD-03, additive). Drives the
+   *  physical load/unload between a source storage and a destination. */
+  trade?: TradeCarrierPayload;
+}
+
+/** Physical trade-transport trip (TRAD-03). `loaded` flips once the walker has
+ *  its cargo: exports load at the source storage and leave the region (dest null
+ *  in the runner); imports arrive already carrying and deposit at the dest. */
+export interface TradeCarrierPayload {
+  good: string;
+  /** Maximum loads the merchant was dispatched to move. */
+  amount: number;
+  isExport: boolean;
+  /** Load ceiling (CARAVAN_CAPACITY 8 / SHIP_CAPACITY 16). */
+  capacity: number;
+  /** Sea transport (berth/wharf rules via transport.ts). */
+  ship?: boolean;
+  /** Storage the export load is collected from / an import would return to. */
+  sourceBuildingId?: number | null;
+  /** Storage an import is deposited into (or an export's destination in tests). */
+  destBuildingId?: number | null;
+  /** Ticks the merchant has been waiting for a road/berth (§19.3). */
+  waitTicks: number;
+  /** True once the walker holds its cargo. */
+  loaded: boolean;
 }
 
 /** House-only simulation state (undefined on non-house buildings). */
@@ -130,6 +155,10 @@ export interface SimInternals {
   /** Per-market config lookup (MARK-02, decision 4): returns the explicitly-set
    *  config for a market, or undefined when unconfigured (legacy path). */
   marketConfig?: (id: number) => MarketConfig | undefined;
+  /** TRAD-03 additive: regional trade entry tile resolver. */
+  tradeEntry?: () => Vec2 | null;
+  /** TRAD-03 additive: free storage room for a good at a building id. */
+  tradeStorageRoom?: (good: string, buildingId: number) => number;
 }
 
 const DIRS: readonly Vec2[] = [
@@ -262,6 +291,51 @@ function decide(sim: SimInternals, w: WalkerInstance, profile: WalkerProfile): v
   else if (w.type === 'labor') decideLabor(sim, w, profile);
   else if (w.type === 'buyer') decideBuyer(sim, w, profile);
   else if (w.type === 'seller') decideSeller(sim, w);
+  else if (w.type === 'caravan' || w.type === 'ship') decideTrade(sim, w, profile);
+}
+
+/**
+ * TRAD-03 trade-transport decision (caravan/ship): empty exports seek their
+ * source storage to collect; loaded transports head to their destination storage
+ * (or leave the region when the export has no destination building). A transport
+ * with no reachable road/berth waits a limited window (§19.3) then leaves
+ * without trading — releaseWalkerLoad returns any held product first.
+ */
+function decideTrade(sim: SimInternals, w: WalkerInstance, profile: WalkerProfile): void {
+  const tr = w.trade;
+  if (!tr) {
+    // A bare caravan/ship with no payload has nothing to trade — leave quietly.
+    sim.despawn(w);
+    return;
+  }
+  if (tr.loaded) {
+    const dest = tr.destBuildingId != null ? sim.buildingById(tr.destBuildingId) : null;
+    if (dest && startSeeking(sim, w, dest, profile)) return;
+    if (tr.isExport && tr.destBuildingId == null) {
+      // Export leaving the region: cargo already credited where collected.
+      w.carryingGood = null;
+      w.carriedAmount = 0;
+      sim.despawn(w);
+      return;
+    }
+    waitThenLeave(sim, w, tr);
+    return;
+  }
+  // Not loaded yet — exports must first collect from the source storage.
+  if (tr.isExport) {
+    const src = tr.sourceBuildingId != null ? sim.buildingById(tr.sourceBuildingId) : null;
+    if (src && startSeeking(sim, w, src, profile)) return;
+  }
+  waitThenLeave(sim, w, tr);
+}
+
+/** Wait a limited §19.3 window for a road/berth, then leave without trading. */
+function waitThenLeave(sim: SimInternals, w: WalkerInstance, tr: TradeCarrierPayload): void {
+  tr.waitTicks += 1;
+  if (tr.waitTicks > CONFIG.merchantWaitTicks) {
+    releaseWalkerLoad(sim, w);
+    sim.despawn(w);
+  }
 }
 
 function decideMarket(sim: SimInternals, w: WalkerInstance, profile: WalkerProfile): void {
@@ -479,6 +553,18 @@ function releaseWalkerLoad(sim: SimInternals, w: WalkerInstance): void {
     }
     w.carryingLoad = {};
   }
+  if ((w.type === 'caravan' || w.type === 'ship') && w.trade && w.carryingGood && w.carriedAmount > 0) {
+    // TRAD-03 no-loss: an export trip that fails/expires returns its held cargo
+    // to the source storage. An import's held cargo came from the region entry
+    // (never city storage), so there is nothing to restore — it leaves with the
+    // merchant rather than vanishing from anywhere.
+    if (w.trade.isExport && w.trade.sourceBuildingId != null) {
+      const src = sim.buildingById(w.trade.sourceBuildingId);
+      if (src && src.stock) writeFood(src, w.carryingGood, readFood(src, w.carryingGood) + w.carriedAmount);
+    }
+    w.carryingGood = null;
+    w.carriedAmount = 0;
+  }
 }
 
 /** Turn the walker toward a building. Returns false when unreachable. */
@@ -543,6 +629,40 @@ function handleArrival(sim: SimInternals, w: WalkerInstance, profile: WalkerProf
     target.laborCooldown = profile.serviceTTL;
     sim.despawn(w);
     return false;
+  } else if (w.type === 'caravan' || w.type === 'ship') {
+    const tr = w.trade;
+    if (!tr) {
+      sim.despawn(w);
+      return false;
+    }
+    if (tr.loaded && w.carryingGood && w.carriedAmount > 0) {
+      // Arrived at the destination storage — deposit the carried load.
+      if (target.stock) {
+        writeFood(target, w.carryingGood, readFood(target, w.carryingGood) + w.carriedAmount);
+      }
+      w.carryingGood = null;
+      w.carriedAmount = 0;
+      sim.despawn(w);
+      return false;
+    }
+    if (!tr.loaded && tr.isExport) {
+      // Arrived at the source storage — collect what exists up to capacity.
+      const avail = readFood(target, tr.good);
+      const take = Math.min(tr.amount, avail, tr.capacity);
+      if (take > 0) {
+        writeFood(target, tr.good, avail - take);
+        w.carryingGood = tr.good as Good;
+        w.carriedAmount = take;
+      }
+      tr.loaded = true;
+      // A stock-poor source may collect nothing — the caravan leaves empty.
+      if (tr.destBuildingId == null) {
+        sim.despawn(w);
+        return false;
+      }
+      return true;
+    }
+    return true;
   }
   return true;
 }

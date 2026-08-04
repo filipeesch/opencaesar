@@ -51,6 +51,12 @@ const CATEGORY_BY_ID: Record<string, WalkerCategory> = {
   priest: 'wandering',
   official: 'recruiter',
   senator: 'recruiter',
+  // TRAD-03: trade transports are destination walkers — they follow the road
+  // graph to a building (warehouse/granary), not wander. They are added to the
+  // profile map only (NOT to the data/walkers.ts catalog: they are dispatch-only,
+  // never building-spawned, so the catalog-count contract stays unchanged).
+  caravan: 'destination',
+  ship: 'destination',
 };
 
 const DEFAULT_PROFILE: Omit<WalkerProfile, 'id'> = {
@@ -98,13 +104,17 @@ export function mayTraverse(profile: WalkerProfile, type: string): boolean {
 export function walkerProfile(id: string): WalkerProfile {
   const defined = WALKERS[id];
   const category = walkerCategory(id);
-  return {
+  const profile: WalkerProfile = {
     ...DEFAULT_PROFILE,
     category,
     spawnInterval: category === 'recruiter' ? 60 : DEFAULT_PROFILE.spawnInterval,
     roadblockPolicy: ROADBLOCK_POLICY_BY_CATEGORY[category] ?? 'stop',
     ...(defined ? { id: defined.id } : { id }),
   };
+  // TRAD-03: trade transports leave the map after trading — no return-policy
+  // wandering home.
+  if (id === 'caravan' || id === 'ship') profile.returnPolicy = false;
+  return profile;
 }
 
 export function allWalkerProfiles(): WalkerProfile[] {

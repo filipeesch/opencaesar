@@ -18,6 +18,15 @@ import { assignedWorkers, computeRatings, tickEconomy, totalJobs, workerPool } f
 import { cityHappiness, houseHappiness } from './happiness';
 import { computeTargets, tickRatings } from './ratings';
 import { tickTrade } from './trade';
+import {
+  resolveTradeOrder, tradeExportGate, importGatedBy, quotaRemaining,
+  quotaSuspended, consumeQuota, resetAnnualQuotas, createTradePriceState,
+  sampleTradePrice, priceTrend, effectivePrice,
+  type TradePriceState, type TradeOrderMode,
+} from './trade';
+import { COMMODITIES } from '../../data/commodities';
+import { TRADE_CITIES, type TradeCityDef } from '../../data/trade';
+import { CARAVAN_CAPACITY, SHIP_CAPACITY } from './transport';
 import { tickMission } from './missions';
 import { computeServiceCoverage } from './services';
 import { computeRisks } from './safety';
@@ -67,6 +76,8 @@ import type { LoadDestination } from './production';
 import { workshopStatus, workshopBottleneck } from './production';
 import { productionAdvisorRows, productionAdvisorSummary, logisticsAdvisorFromState } from './advisors';
 import type { ProductionAdvisorRow, ProductionAdvisorSummary, ProductionInternalNote } from './advisors';
+import { tradeAdvisorFromState } from './advisors';
+import type { TradeAdvisorView, TradePriceSnapshot, TradePriceSnapshotGood } from './advisors';
 
 /** Deferred commands. These share the exact shape of the replayable
  *  `SaveCommand` type, so a paused queue can be serialized verbatim into a save
@@ -253,35 +264,365 @@ export class SimRunner {
   }
 
   private tickTradeSystem(): void {
-    const stock: Record<string, number> = { wheat: 0 };
-    for (const b of this.buildings) {
-      if ((b.type === 'granary' || b.type === 'farm') && b.stock) {
-        stock.wheat = (stock.wheat ?? 0) + (b.stock.wheat ?? 0);
-      }
-    }
     const year = Math.floor(this.tickCount / 360);
-    const result = tickTrade(this.treasury, stock, this.tradeRoutes as never, year);
-    this.treasury = result.treasury;
-    // Apply physical export/import stock changes across granaries/farms.
-    const exportedWheat = result.exports.wheat ?? 0;
-    if (exportedWheat > 0) {
-      let remaining = exportedWheat;
+    // Per-good quotas reset on the tick-based year clock (TRAD-04).
+    resetAnnualQuotas(this.tradeRoutes, year);
+
+    // Legacy abstract ledger: enabled routes WITHOUT per-good orders keep the
+    // original wheat ledger behavior (enableTrade + setImportOrder), so the
+    // existing wheat-trade tests and goldens are byte-identical.
+    const legacyRoutes: Record<string, import('./trade').TradeRouteState> = {};
+    for (const route of Object.values(this.tradeRoutes)) {
+      if (route.orders === undefined) legacyRoutes[route.cityId] = route;
+    }
+    if (Object.keys(legacyRoutes).length > 0) {
+      const stock: Record<string, number> = { wheat: 0 };
       for (const b of this.buildings) {
-        if (remaining <= 0) break;
-        if ((b.type === 'granary' || b.type === 'farm') && b.stock && (b.stock.wheat ?? 0) > 0) {
-          const take = Math.min(remaining, b.stock.wheat ?? 0);
-          b.stock.wheat = (b.stock.wheat ?? 0) - take;
-          remaining -= take;
+        if ((b.type === 'granary' || b.type === 'farm') && b.stock) {
+          stock.wheat = (stock.wheat ?? 0) + (b.stock.wheat ?? 0);
+        }
+      }
+      const result = tickTrade(this.treasury, stock, legacyRoutes, year);
+      this.treasury = result.treasury;
+      // Apply physical export/import stock changes across granaries/farms.
+      const exportedWheat = result.exports.wheat ?? 0;
+      if (exportedWheat > 0) {
+        let remaining = exportedWheat;
+        for (const b of this.buildings) {
+          if (remaining <= 0) break;
+          if ((b.type === 'granary' || b.type === 'farm') && b.stock && (b.stock.wheat ?? 0) > 0) {
+            const take = Math.min(remaining, b.stock.wheat ?? 0);
+            b.stock.wheat = (b.stock.wheat ?? 0) - take;
+            remaining -= take;
+          }
+        }
+      }
+      const importedWheat = result.imports.wheat ?? 0;
+      if (importedWheat > 0) {
+        const granary = this.buildings.find((b) => b.type === 'granary');
+        if (granary && granary.stock) {
+          granary.stock.wheat = (granary.stock.wheat ?? 0) + importedWheat;
         }
       }
     }
-    const importedWheat = result.imports.wheat ?? 0;
-    if (importedWheat > 0) {
-      const granary = this.buildings.find((b) => b.type === 'granary');
-      if (granary && granary.stock) {
-        granary.stock.wheat = (granary.stock.wheat ?? 0) + importedWheat;
+
+    // Physical path (TRAD-02/04/05 runtime): routes with per-good orders dispatch
+    // real caravan/ship walkers against live warehouse/granary stock.
+    this.tickTradeRoutes(year);
+  }
+
+  /** Per-good price states per city (cityId → good → TradePriceState). */
+  private readonly tradePrices = new Map<string, Map<string, TradePriceState>>();
+  /** Merchant arrival countdown per (city, good): `cityId:good` → ticks left. */
+  private readonly tradeCooldowns = new Map<string, number>();
+
+  /** Primary-orientation base for a good/city trade price (export base when the
+   *  city buys the good, else import base) — the advisor's displayed base. */
+  private ensureTradePriceState(city: TradeCityDef, good: string): TradePriceState {
+    let byGood = this.tradePrices.get(city.id);
+    if (!byGood) {
+      byGood = new Map();
+      this.tradePrices.set(city.id, byGood);
+    }
+    let state = byGood.get(good);
+    if (!state) {
+      const isBuy = city.buys.includes(good);
+      const base = this.tradeBasePrice(city, good, isBuy || !city.sells.includes(good));
+      state = createTradePriceState(base);
+      byGood.set(good, state);
+    }
+    return state;
+  }
+
+  /** Base price for a good in a direction, scaled by whole-city and per-good
+   *  modifiers (import base always exceeds export base — catalog invariant). */
+  private tradeBasePrice(city: TradeCityDef, good: string, isExport: boolean): number {
+    const def = COMMODITIES[good];
+    if (!def) return 0;
+    const base = isExport ? def.baseExportPrice : def.baseImportPrice;
+    const whole = city.priceModifier ?? 1;
+    const per = city.priceModifiers?.[good] ?? 1;
+    return base * whole * per;
+  }
+
+  /** Effective transactable price for a good in a direction (modifier applied,
+   *  clamped to the balance floor). */
+  private tradePriceFor(city: TradeCityDef, good: string, isExport: boolean): number {
+    const state = this.ensureTradePriceState(city, good);
+    const price = Math.round(this.tradeBasePrice(city, good, isExport) * state.modifier);
+    return Math.max(CONFIG.tradePriceFloor, price);
+  }
+
+  /** Sample the deterministic per-good price state every tick (injected tick). */
+  private sampleRoutePrices(city: TradeCityDef, route: TradeRoute): void {
+    for (const good of this.routeGoods(city)) {
+      if (resolveTradeOrder(route, good) === 'no_trade') continue;
+      const state = this.ensureTradePriceState(city, good);
+      const isBuy = city.buys.includes(good);
+      const price = this.tradePriceFor(city, good, !isBuy ? false : true);
+      sampleTradePrice(state, price, this.tickCount);
+      priceTrend(state, this.tickCount);
+    }
+  }
+
+  /** Stable per-city good iteration: buys first, then sells, in catalog order. */
+  private routeGoods(city: TradeCityDef): string[] {
+    const goods: string[] = [];
+    for (const g of city.buys) if (!goods.includes(g)) goods.push(g);
+    for (const g of city.sells) if (!goods.includes(g)) goods.push(g);
+    return goods;
+  }
+
+  /** Deterministic road tile on the map border acting as the regional entry
+   *  (caravans); ships share the marker (no sea graph — maritime leg is
+   *  tick-duration + berth/entrepot state). */
+  private tradeEntryTile(): Vec2 | null {
+    for (let x = 0; x < this.width; x++) {
+      if (this.map.get(x, 0) === 'road') return { x, y: 0 };
+      if (this.map.get(x, this.height - 1) === 'road') return { x, y: this.height - 1 };
+    }
+    for (let y = 0; y < this.height; y++) {
+      if (this.map.get(0, y) === 'road') return { x: 0, y };
+      if (this.map.get(this.width - 1, y) === 'road') return { x: this.width - 1, y };
+    }
+    return null;
+  }
+
+  /** Storage building types that can hold `good` (granary for food, warehouse
+   *  otherwise — catalog `storage`). */
+  private tradeStorageHosts(good: string): BuildingType[] {
+    const def = COMMODITIES[good];
+    return def?.storage === 'granary' ? ['granary', 'farm'] : ['warehouse'];
+  }
+
+  private totalTradeStock(good: string): number {
+    let t = 0;
+    for (const b of this.buildings) {
+      if (!this.tradeStorageHosts(good).includes(b.type)) continue;
+      t += (b.stock as Record<string, number | undefined>)[good] ?? 0;
+    }
+    return t;
+  }
+
+  private storageRoom(b: BuildingInstance, good: string): number {
+    const def = COMMODITIES[good];
+    if (!def) return 0;
+    if (def.storage === 'granary') return Math.max(0, CONFIG.granaryCapacity - this.usedUnits(b.stock));
+    const room = Math.max(0, WAREHOUSE_CAPACITY - this.usedUnits(b.stock));
+    const usedSlots = Object.keys(b.stock).filter((k) => ((b.stock as Record<string, number | undefined>)[k] ?? 0) > 0).length;
+    if (usedSlots >= PRODUCTION_WAREHOUSE_SLOTS) return 0;
+    if (!warehouseAccepts(defaultWarehousePolicy(), good, usedSlots)) return 0;
+    return room;
+  }
+
+  /** Nearest road-reachable storage with stock of `good` (export source). */
+  private exportSourceFor(good: string, entry: Vec2): BuildingInstance | null {
+    let best: BuildingInstance | null = null;
+    let bestDist = Infinity;
+    for (const b of this.buildings) {
+      if (!this.tradeStorageHosts(good).includes(b.type)) continue;
+      if (((b.stock as Record<string, number | undefined>)[good] ?? 0) <= 0) continue;
+      const road = this.adjacentRoadTile(b);
+      if (!road) continue;
+      const path = findRoadPath(this.map, entry, road);
+      if (path === null) continue;
+      if (path.length < bestDist) {
+        bestDist = path.length;
+        best = b;
       }
     }
+    return best;
+  }
+
+  /** Nearest road-reachable storage with room for `good` (import dest). */
+  private importStorageFor(good: string, entry: Vec2): BuildingInstance | null {
+    let best: BuildingInstance | null = null;
+    let bestDist = Infinity;
+    for (const b of this.buildings) {
+      if (!this.tradeStorageHosts(good).includes(b.type)) continue;
+      const room = this.storageRoom(b, good);
+      if (room <= 0) continue;
+      const road = this.adjacentRoadTile(b);
+      if (!road) continue;
+      const path = findRoadPath(this.map, entry, road);
+      if (path === null) continue;
+      if (path.length < bestDist) {
+        bestDist = path.length;
+        best = b;
+      }
+    }
+    return best;
+  }
+
+  private tickTradeRoutes(year: number): void {
+    for (const city of Object.values(TRADE_CITIES)) {
+      const route = this.tradeRoutes[city.id];
+      if (!route || route.orders === undefined || !route.enabled) continue;
+      this.sampleRoutePrices(city, route);
+      const entry = this.tradeEntryTile();
+      if (!entry) continue;
+      for (const good of this.routeGoods(city)) {
+        this.dispatchTradeGood(city, route, good, year, entry);
+      }
+    }
+  }
+
+  /**
+   * Authorize one merchant arrival for a good (per city, good), tick-gated by
+   * merchantFrequency. Deterministic: cooldown counts ticks, iteration is in
+   * stable catalog order, and no clock/RNG is involved.
+   */
+  private dispatchTradeGood(city: TradeCityDef, route: TradeRoute, good: string, _year: number, entry: Vec2): void {
+    const order = resolveTradeOrder(route, good);
+    if (order === 'no_trade' || order === 'stockpile') return; // never move
+    const key = `${city.id}:${good}`;
+    const cd = this.tradeCooldowns.get(key) ?? 0;
+    if (cd > 0) {
+      this.tradeCooldowns.set(key, cd - 1);
+      return;
+    }
+    const schedule = (): void => { this.tradeCooldowns.set(key, Math.max(1, city.merchantFrequency)); };
+    if (quotaSuspended(route, good)) return;
+
+    const ship = city.landOrSea === 'sea';
+    const capacity = ship ? SHIP_CAPACITY : CARAVAN_CAPACITY;
+
+    if (order === 'export_all' || order === 'export_above_reserve') {
+      const stockTotal = this.totalTradeStock(good);
+      const reserve = order === 'export_above_reserve' ? (route.exportReserve?.[good] ?? 0) : 0;
+      const gate = tradeExportGate({ order, stock: stockTotal, reserved: 0, quotaLeft: quotaRemaining(route, good), reserve });
+      if (!gate.allowed) {
+        schedule();
+        return;
+      }
+      const source = this.exportSourceFor(good, entry);
+      if (!source) {
+        schedule();
+        return;
+      }
+      const sourceStock = (source.stock as Record<string, number | undefined>)[good] ?? 0;
+      const qty = Math.min(
+        Math.max(0, order === 'export_above_reserve' ? stockTotal - reserve : stockTotal),
+        capacity,
+        quotaRemaining(route, good),
+        sourceStock,
+      );
+      if (qty <= 0) {
+        schedule();
+        return;
+      }
+      const price = this.tradePriceFor(city, good, true);
+      this.treasury += price * qty;
+      route.exportProceeds = (route.exportProceeds ?? 0) + price * qty;
+      consumeQuota(route, good, qty);
+      this.spawnTradeCarrier(city, good, qty, true, source.id, null);
+      schedule();
+      return;
+    }
+
+    if (order === 'import_upto_target') {
+      const target = route.importTargets?.[good] ?? 0;
+      if (target <= 0) {
+        schedule();
+        return;
+      }
+      const stockTotal = this.totalTradeStock(good);
+      const gate = importGatedBy({ order, stock: stockTotal, target, quotaLeft: quotaRemaining(route, good), treasury: this.treasury, price: this.tradePriceFor(city, good, false) });
+      if (!gate.allowed) {
+        schedule();
+        return;
+      }
+      const dest = this.importStorageFor(good, entry);
+      if (!dest) {
+        schedule();
+        return;
+      }
+      const price = this.tradePriceFor(city, good, false);
+      const affordable = Math.floor(this.treasury / price);
+      const qty = Math.min(target - stockTotal, capacity, quotaRemaining(route, good), affordable, this.storageRoom(dest, good));
+      if (qty <= 0) {
+        schedule();
+        return;
+      }
+      this.treasury -= price * qty;
+      route.importSpend = (route.importSpend ?? 0) + price * qty;
+      consumeQuota(route, good, qty);
+      this.spawnTradeCarrier(city, good, qty, false, null, dest.id);
+      schedule();
+      return;
+    }
+    schedule();
+  }
+
+  /** Spawn a caravan/ship at the regional entry; exports collect at the source
+   *  (load as they arrive), imports arrive already carrying and deposit at the
+   *  destination storage. */
+  private spawnTradeCarrier(city: TradeCityDef, good: string, qty: number, isExport: boolean, sourceId: number | null, destId: number | null): void {
+    const entry = this.tradeEntryTile();
+    if (!entry) return;
+    const ship = city.landOrSea === 'sea';
+    const type: WalkerType = ship ? 'ship' : 'caravan';
+    const w = createWalker(type, entry.x, entry.y, this.nextWalkerId++);
+    w.trade = {
+      good,
+      amount: qty,
+      isExport,
+      capacity: ship ? SHIP_CAPACITY : CARAVAN_CAPACITY,
+      ship,
+      sourceBuildingId: sourceId,
+      destBuildingId: destId,
+      waitTicks: 0,
+      loaded: !isExport,
+    };
+    if (!isExport) {
+      w.carryingGood = good as Good;
+      w.carriedAmount = qty;
+    }
+    this.walkers.push(w);
+  }
+
+  /** Open a trade route with a partner city (§19.1 TRAD-02): charges the
+   *  catalog routeOpeningCost and defaults every good to no_trade (opening never
+   *  forces a transaction). */
+  openTradeRoute(cityId: string): { ok: boolean; cost: number; error?: string } {
+    const city = TRADE_CITIES[cityId];
+    if (!city) return { ok: false, cost: 0, error: 'unknown city' };
+    const cost = Math.round(city.routeOpeningCost);
+    let route = this.tradeRoutes[cityId];
+    if (route?.enabled) return { ok: true, cost: 0, error: 'already open' };
+    if (this.treasury < cost) return { ok: false, cost, error: 'insufficient funds' };
+    if (!route) {
+      route = { cityId, enabled: false, imports: {}, exports: {} };
+      this.tradeRoutes[cityId] = route;
+    }
+    this.treasury -= cost;
+    route.enabled = true;
+    route.orders = route.orders ?? {};
+    route.openYear = Math.floor(this.tickCount / 360);
+    route.catalogQuota = city.annualQuotaPerGood;
+    route.lastYear = Math.floor(this.tickCount / 360);
+    return { ok: true, cost };
+  }
+
+  /** Set a per-good §19.6 order mode (validates the good is traded by the
+   *  city). Additive API — never used by the legacy enableTrade path. */
+  setTradeOrder(cityId: string, good: string, mode: TradeOrderMode, opts?: { reserve?: number; target?: number }): { ok: boolean; error?: string } {
+    const city = TRADE_CITIES[cityId];
+    if (!city) return { ok: false, error: 'unknown city' };
+    if (!city.buys.includes(good) && !city.sells.includes(good)) {
+      return { ok: false, error: `${good} is not traded by ${city.name}` };
+    }
+    let route = this.tradeRoutes[cityId];
+    if (!route) {
+      route = { cityId, enabled: false, imports: {}, exports: {} };
+      this.tradeRoutes[cityId] = route;
+    }
+    route.orders = route.orders ?? {};
+    route.orders[good] = mode;
+    if (opts?.reserve !== undefined) route.exportReserve = { ...route.exportReserve, [good]: opts.reserve };
+    if (opts?.target !== undefined) route.importTargets = { ...route.importTargets, [good]: opts.target };
+    if (mode !== 'no_trade' && !route.enabled) route.enabled = true;
+    return { ok: true };
   }
 
   private derivedSnapshot(): DerivedSnapshot {
@@ -357,6 +698,36 @@ export class SimRunner {
    *  and the production advisor rows; does not mutate or restructure SimState. */
   getLogisticsAdvisor(): LogisticsAdvisorView {
     return logisticsAdvisorFromState(this.getState(), this.getProductionAdvisorRows());
+  }
+
+  /** Serializable per-good trade price projection (cityId → good →
+   *  { base, current, trend }) for the trade advisor. Live-derived, never
+   *  fabricated; SimState stays untouched. */
+  tradePriceSnapshot(): TradePriceSnapshot {
+    const out: TradePriceSnapshot = {};
+    for (const city of Object.values(TRADE_CITIES)) {
+      const byGood = this.tradePrices.get(city.id);
+      if (!byGood) continue;
+      const rec: Record<string, TradePriceSnapshotGood> = {};
+      for (const good of this.routeGoods(city)) {
+        const st = byGood.get(good);
+        if (!st) continue;
+        rec[good] = {
+          base: st.base,
+          current: effectivePrice(st, this.tickCount),
+          trend: priceTrend(st, this.tickCount),
+        };
+      }
+      if (Object.keys(rec).length > 0) out[city.id] = rec;
+    }
+    return out;
+  }
+
+  /** Live trade advisor (TRAD-01..05, decision 7): every number — routes,
+   *  orders, per-good quota used/cap/suspension, prices base/current/trend,
+   *  proceeds/spend — is derived from the runner trade state, never fabricated. */
+  getTradeAdvisor(): TradeAdvisorView {
+    return tradeAdvisorFromState(this.tradeRoutes, this.tradePriceSnapshot());
   }
 
   /** Hydrate the per-building internal notes from live BuildingInstances. */
@@ -1194,6 +1565,13 @@ export class SimRunner {
       tick: this.tickCount,
       walkers: this.walkers,
       marketConfig: (id: number) => this.marketConfigs.get(id),
+      // TRAD-03 additive hooks: regional entry resolver + storage acceptance.
+      tradeEntry: () => this.tradeEntryTile(),
+      tradeStorageRoom: (good: string, id: number) => {
+        const b = this.buildingById.get(id);
+        if (!b) return 0;
+        return this.storageRoom(b, good);
+      },
     };
   }
 
