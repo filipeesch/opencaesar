@@ -6,24 +6,34 @@
  * reward and penalty, and may be satisfied in full or partially.
  * Self-contained, additive.
  */
+import { CONFIG } from './config';
+
 export interface GovBuilding {
   id: string;
   name: string;
-  /** Minimum population to unlock. */
-  threshold: number;
   /** Effect granted while active. */
   effect: string;
 }
 
 export const GOV_BUILDINGS: GovBuilding[] = [
-  { id: 'forum', name: 'Forum', threshold: 1000, effect: 'unlocks administration' },
-  { id: 'senate', name: 'Senate', threshold: 2000, effect: 'governor salary' },
-  { id: 'palatine', name: 'Governor Palace', threshold: 5000, effect: 'grand send-off' },
+  { id: 'forum', name: 'Forum', effect: 'unlocks administration' },
+  { id: 'senate', name: 'Senate', effect: 'governor salary' },
+  { id: 'palatine', name: 'Governor Palace', effect: 'grand send-off' },
 ];
+
+/** Population threshold unlocking each government building (CONFIG-driven). */
+export function govThreshold(id: string): number {
+  switch (id) {
+    case 'forum': return CONFIG.govForumThreshold;
+    case 'senate': return CONFIG.govSenateThreshold;
+    case 'palatine': return CONFIG.govPalatineThreshold;
+    default: return Number.POSITIVE_INFINITY;
+  }
+}
 
 /** Which government buildings are unlocked at a given population. */
 export function unlockedGov(population: number): GovBuilding[] {
-  return GOV_BUILDINGS.filter((g) => population >= g.threshold);
+  return GOV_BUILDINGS.filter((g) => population >= govThreshold(g.id));
 }
 
 export type RequestType = 'goods' | 'denarii' | 'population';

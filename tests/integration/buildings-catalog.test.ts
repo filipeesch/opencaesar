@@ -7,7 +7,7 @@ import type { BuildingType } from '../../src/sim/types';
 const ALL_TYPES: BuildingType[] = [
   'road', 'house', 'garden', 'well', 'fountain', 'farm', 'orchard', 'granary',
   'market', 'engineer_post', 'fire_station', 'clinic', 'school', 'library',
-  'temple', 'grand_temple', 'theatre', 'forum',
+  'temple', 'grand_temple', 'theatre',
 ];
 
 function flatRunner(): SimRunner {
@@ -15,6 +15,29 @@ function flatRunner(): SimRunner {
   for (let x = 0; x < 40; x++) m.set(x, 20, 'road');
   for (let y = 18; y <= 19; y++) for (let x = 8; x <= 18; x++) m.set(x, y, 'fertile');
   return new SimRunner(1, m);
+}
+
+/** Government skeleton: roads, venues, wells — no houses, population 0. */
+function govSkeleton(): SimRunner {
+  const W = 34;
+  const m = SimMap.fromLayout(W, W, () => 'fertile');
+  const r = new SimRunner(7, m);
+  for (const y of [0, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29]) {
+    const maxX = y === 3 || y === 5 ? 17 : W;
+    for (let x = 0; x < maxX; x++) r.placeBuilding('road', x, y);
+  }
+  for (const y of [1, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28]) r.placeBuilding('road', 7, y);
+  for (const y of [5, 9, 13, 17, 21, 25, 29]) for (let x = 0; x < 18; x++) r['map'].setRoadType(x, y, 'plaza');
+  r.requestRoyalSubsidy();
+  r.takeLoan(2000);
+  r.takeLoan(2000);
+  r.takeLoan(2000);
+  for (const [type, x, y] of [['farm', 0, 1], ['granary', 2, 1], ['market', 4, 1], ['clinic', 9, 1], ['school', 11, 1], ['theatre', 13, 1], ['temple', 15, 1]] as const) {
+    const res = r.placeBuilding(type, x, y);
+    if (!res.ok) throw new Error(`place ${type}@(${x},${y}): ${JSON.stringify(res)}`);
+  }
+  for (const y of [6, 10, 14, 18, 22, 26]) for (const x of [11, 19, 27]) r.placeBuilding('well', x, y);
+  return r;
 }
 
 const SPOTS: Record<string, [number, number]> = {
@@ -35,6 +58,26 @@ describe('building catalog is placeable (issue: HUD showed only 6 types)', () =>
       if (t === 'road' || t === 'house') continue;
       const r = flatRunner();
       const [x, y] = SPOTS[t];
+      const result = r.placeBuilding(t, x, y);
+      expect(result.ok, `${t} at (${x},${y}): ${JSON.stringify(result)}`).toBe(true);
+    }
+  });
+
+  it('government buildings place only once their population threshold is met (GOV-01)', () => {
+    const r = govSkeleton();
+    expect(r.getPopulation()).toBe(0);
+    for (const [t, x, y] of [['forum', 18, 1], ['senate', 22, 1], ['palatine', 26, 1]] as const) {
+      const blocked = r.placeBuilding(t, x, y);
+      expect(blocked.ok).toBe(false);
+      expect((blocked as { error: string }).error).toBe('not-unlocked');
+    }
+    for (const y of [4, 8, 12, 16, 20, 24, 28]) {
+      for (let x = 0; x < (y === 4 ? 17 : 34); x++) r.placeBuilding('house', x, y);
+    }
+    r.setPolicy(0.10, 0.135);
+    for (let i = 0; i < 700; i++) r.tick();
+    expect(r.getPopulation()).toBeGreaterThanOrEqual(900);
+    for (const [t, x, y] of [['forum', 18, 1], ['senate', 22, 1], ['palatine', 26, 1]] as const) {
       const result = r.placeBuilding(t, x, y);
       expect(result.ok, `${t} at (${x},${y}): ${JSON.stringify(result)}`).toBe(true);
     }

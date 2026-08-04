@@ -5,7 +5,7 @@
  * tracking, a projection/balance model, royal subsidy requests, and debt with
  * interest + favor reduction. Self-contained, additive to the live sim.
  */
-export type FinCategory = 'taxes' | 'wages' | 'trade' | 'subsidy' | 'festival' | 'loan' | 'other' | 'overflow';
+export type FinCategory = 'taxes' | 'wages' | 'trade' | 'subsidy' | 'festival' | 'governor' | 'loan' | 'other' | 'overflow';
 
 export interface FinanceLedger {
   revenue: Partial<Record<FinCategory, number>>;

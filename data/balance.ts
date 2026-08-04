@@ -86,6 +86,16 @@ export const BALANCE = {
   /** Treasury above this limit loses the excess (anti-hoarding). */
   treasuryOverflowLimit: 5000,
 
+  // Governance (GOV-01 / Phase 14) --------------------------------------------
+  /** Maximum denarii the governor may accept in donations per year. */
+  governorDonationCap: 500,
+  /** Population threshold unlocking the Forum (administration). */
+  govForumThreshold: 250,
+  /** Population threshold unlocking the Senate (governor salary). */
+  govSenateThreshold: 500,
+  /** Population threshold unlocking the Governor Palace (grand send-off). */
+  govPalatineThreshold: 900,
+
   // Happiness -----------------------------------------------------------------
   /** Weight of food coverage toward a house's happiness (out of 100). */
   happinessFoodWeight: 25,

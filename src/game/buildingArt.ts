@@ -25,6 +25,7 @@ const RISE: Record<Exclude<BuildingType, 'road'>, number> = {
   clinic: 12, hospital: 18, school: 16, library: 14, temple: 18, theatre: 18,
   amphitheatre: 22, colosseum: 30, grand_temple: 22,
   forum: 20, garden: 6,
+  senate: 24, palatine: 30,
   clay_pit: 12, timber_yard: 12, iron_mine: 14, quarry: 16,
   olive_farm: 12, grape_farm: 12,
   pottery_workshop: 14, furniture_workshop: 14, oil_press: 14, winery: 14, tool_workshop: 14,

@@ -184,6 +184,14 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     type: 'forum', name: 'Forum', category: 'government',
     footprint: 2, cost: 220, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 2,
   },
+  senate: {
+    type: 'senate', name: 'Senate', category: 'government',
+    footprint: 3, cost: 1000, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 12,
+  },
+  palatine: {
+    type: 'palatine', name: 'Governor Palace', category: 'government',
+    footprint: 5, cost: 3000, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 40,
+  },
   garden: {
     type: 'garden', name: 'Garden', category: 'ornament',
     footprint: 1, cost: 30, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: false, workers: 0,

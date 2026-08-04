@@ -19,6 +19,7 @@ export type BuildingType =
   | 'fountain' | 'orchard' | 'engineer_post' | 'fire_station' | 'clinic'
   | 'hospital' | 'school' | 'library' | 'temple' | 'theatre'
   | 'amphitheatre' | 'colosseum' | 'forum' | 'garden'
+  | 'senate' | 'palatine'
   | 'temple' | 'grand_temple' | 'clay_pit' | 'timber_yard' | 'iron_mine' | 'quarry'
   | 'olive_farm' | 'grape_farm'
   | 'pottery_workshop' | 'furniture_workshop' | 'oil_press' | 'winery' | 'tool_workshop'
@@ -44,7 +45,8 @@ export type PlacementError =
   | 'terrain'
   | 'road-access'
   | 'not-enough-money'
-  | 'invalid-god';
+  | 'invalid-god'
+  | 'not-unlocked';
 
 export type PlacementResult = { ok: true } | { ok: false; error: PlacementError };
 
@@ -77,7 +79,9 @@ export type SaveCommand =
   | { kind: 'requestRoyalSubsidy' }
   | { kind: 'takeLoan'; amount: number }
   | { kind: 'repayLoan'; amount: number }
-  | { kind: 'holdFestival'; tierId: string };
+  | { kind: 'holdFestival'; tierId: string }
+  | { kind: 'setGovernorSalaryLevel'; level: number }
+  | { kind: 'donateToGovernor'; amount: number };
 
 /** Serializable save payload capturing everything needed to resume a sim deterministically. */
 export interface SaveData {

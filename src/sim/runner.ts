@@ -18,6 +18,8 @@ import { validateCatalogs, throwCatalogIssues } from '../../data/validate';
 import { assignedWorkers, computeRatings, tickEconomy, totalJobs, workerPool } from './economy';
 import { cityHappiness, houseHappiness } from './happiness';
 import { computeTargets, tickRatings } from './ratings';
+import { createGovernor, donate, payGovernor, GOVERNOR_SALARY_LEVELS } from './governor';
+import type { GovernorState } from './governor';
 import { tickTrade } from './trade';
 import {
   resolveTradeOrder, tradeExportGate, importGatedBy, quotaRemaining,
@@ -34,7 +36,7 @@ import type { FestivalPlan, FestivalTier } from './services';
 import { TEMPLE_COVERAGE_FACTOR, GRAND_TEMPLE_COVERAGE_FACTOR, FESTIVAL_BOOST_WINDOW_TICKS, MONTH_TICKS } from '../../data/religion';
 import { computeRisks, tickFire } from './safety';
 import { taxCollected } from './taxation';
-import { unlockedGov } from './governance';
+import { unlockedGov, GOV_BUILDINGS, govThreshold } from './governance';
 import { ObjectiveTracker } from './objectives';
 import { WaterSystem } from './water';
 import { buildCodex } from './campaign';
@@ -180,10 +182,18 @@ export class SimRunner {
   private festivalPlan: FestivalPlan | null = null;
   /** Active festival worship/favor boost window, or null. */
   private festivalBoost: { tierId: FestivalTier['id']; remaining: number } | null = null;
+  /** Governor finances (Phase 14, GOV-01): salary + personal account + donations. */
+  private governor: GovernorState = createGovernor();
+  /** Favor granted by governor donations (applied in derivedSnapshot, clamped 100). */
+  private governorFavorBonus = 0;
   private lowFoodWarnCooldown = 0;
   private paused = false;
   private pendingCommands: PendingCommand[] = [];
   private derived: DerivedSnapshot | null = null;
+  /** True while recorded commands are being replayed (save load, paused-command
+   *  drain) so state-dependent placement gates — already enforced when the
+   *  command was first issued — do not reject the recorded placement. */
+  private replaying = false;
   private objective: ObjectiveTracker | null = null;
 
   constructor(seed: number, map?: SimMap, mapSize?: number) {
@@ -230,7 +240,9 @@ export class SimRunner {
     if (this.pendingCommands.length === 0) return;
     const batch = this.pendingCommands;
     this.pendingCommands = [];
+    this.replaying = true;
     for (const cmd of batch) applyCommand(this, cmd);
+    this.replaying = false;
   }
 
   private enqueue(cmd: PendingCommand): void {
@@ -292,6 +304,13 @@ export class SimRunner {
         this.festivalBoost.remaining -= MONTH_TICKS;
         if (this.festivalBoost.remaining <= 0) this.festivalBoost = null;
       }
+    }
+
+    // Governor (Phase 14, GOV-01): with a placed senate, the monthly salary
+    // is paid from the treasury into the governor's personal account.
+    if (this.tickCount % 40 === 0 && this.hasPlacedGov('senate')) {
+      const paid = payGovernor(this.governor, this.treasuryAccount.balance);
+      if (paid.salary > 0) this.treasuryAccount.addExpense('governor', paid.salary);
     }
 
     // Missions / campaign win conditions.
@@ -845,7 +864,7 @@ export class SimRunner {
     const codex = buildCodex();
     return {
       population, culture: targets.culture, prosperity: targets.prosperity, stability: targets.stability,
-      favor: Math.min(100, targets.favor + computeFavor(godWorship) + festivalFavorBoost),
+      favor: Math.min(100, targets.favor + computeFavor(godWorship) + festivalFavorBoost + this.governorFavorBonus),
       employment: { jobs: employment.totalJobs, employed: employment.employed },
       services: serviceCoverage,
       godWorship,
@@ -1052,6 +1071,13 @@ export class SimRunner {
     if (def.category === 'religion' && options?.god && !(GODS as readonly string[]).includes(options.god)) {
       this.commandLog.push({ tick: this.tickCount, command: `place ${type}@${x},${y}`, result: 'invalid-god' });
       return { ok: false, error: 'invalid-god' };
+    }
+    if (def.category === 'government') {
+      const gov = GOV_BUILDINGS.find((g) => g.id === type);
+      if (!this.replaying && gov && this.getPopulation() < govThreshold(gov.id)) {
+        this.commandLog.push({ tick: this.tickCount, command: `place ${type}@${x},${y}`, result: 'not-unlocked' });
+        return { ok: false, error: 'not-unlocked' };
+      }
     }
     const result = checkPlacement(
       this.map,
@@ -1339,6 +1365,84 @@ export class SimRunner {
     };
   }
 
+  /** Whether a government building of the given id is placed and active. */
+  private hasPlacedGov(id: string): boolean {
+    return this.buildings.some((b) => b.type === id);
+  }
+
+  /**
+   * Set the governor's salary level (0..4, Senate required). Replayable.
+   * Paid monthly from the treasury while the Senate stands.
+   */
+  setGovernorSalaryLevel(level: number): { ok: boolean; error?: string } {
+    if (this.paused) {
+      this.enqueue({ kind: 'setGovernorSalaryLevel', level });
+      return { ok: true };
+    }
+    if (!Number.isInteger(level) || level < 0 || level > GOVERNOR_SALARY_LEVELS.length - 1) {
+      return { ok: false, error: 'unknown-level' };
+    }
+    if (!this.hasPlacedGov('senate')) return { ok: false, error: 'senate-required' };
+    this.governor.salaryLevel = level;
+    this.commandLog.push({ tick: this.tickCount, command: `setGovernorSalaryLevel ${level}`, result: 'ok' });
+    this.saveCommands.push({ kind: 'setGovernorSalaryLevel', level });
+    return { ok: true };
+  }
+
+  /**
+   * Donate denarii to the governor: 1 denarius = 1 favor, capped per year
+   * (Senate required). Replayable.
+   */
+  donateToGovernor(amount: number): { ok: boolean; granted?: number; error?: string } {
+    if (this.paused) {
+      this.enqueue({ kind: 'donateToGovernor', amount });
+      return { ok: true };
+    }
+    if (!Number.isFinite(amount) || amount <= 0) return { ok: false, error: 'unknown-amount' };
+    if (!this.hasPlacedGov('senate')) return { ok: false, error: 'senate-required' };
+    if (this.governor.donationsThisYear >= CONFIG.governorDonationCap) return { ok: false, error: 'cap-reached' };
+    const result = donate(this.governor, Math.floor(amount), {
+      treasury: this.treasuryAccount.balance,
+      favor: 0,
+      yearlyCap: CONFIG.governorDonationCap,
+    });
+    if (!result.ok) return { ok: false, error: 'not-enough-money' };
+    const granted = this.treasuryAccount.balance - result.treasury;
+    this.treasuryAccount.addExpense('governor', granted);
+    this.governorFavorBonus = Math.min(100, this.governorFavorBonus + result.favor);
+    this.derived = null;
+    this.commandLog.push({ tick: this.tickCount, command: `donateToGovernor ${amount}`, result: 'ok' });
+    this.saveCommands.push({ kind: 'donateToGovernor', amount });
+    return { ok: true, granted };
+  }
+
+  /** Governance view for the advisor: unlock state, placed buildings, live
+   *  effects, and the governor's finances. Read-only. */
+  getGovernance(): {
+    unlocked: string[];
+    placed: string[];
+    effects: { requestsEnabled: boolean; salaryLevel: number; grandSendOffEnabled: boolean };
+    governor: { salaryLevel: number; personalAccount: number; donationsThisYear: number };
+  } {
+    const pop = this.getPopulation();
+    const unlocked = unlockedGov(pop).map((g) => g.id);
+    const placed = GOV_BUILDINGS.map((g) => g.id).filter((id) => this.hasPlacedGov(id));
+    return {
+      unlocked,
+      placed,
+      effects: {
+        requestsEnabled: this.hasPlacedGov('forum'),
+        salaryLevel: this.governor.salaryLevel,
+        grandSendOffEnabled: this.hasPlacedGov('palatine'),
+      },
+      governor: {
+        salaryLevel: this.governor.salaryLevel,
+        personalAccount: this.governor.personalAccount,
+        donationsThisYear: this.governor.donationsThisYear,
+      },
+    };
+  }
+
   /** Total residents across all houses. */
   getPopulation(): number {
     return this.getState().ratings.population;
@@ -1463,7 +1567,9 @@ export class SimRunner {
     // Reconstruct through the no-map path so map generation and the sim body
     // share the same RNG stream, exactly as the original run did.
     const runner = new SimRunner(save.seed, undefined, save.mapSize);
+    runner.replaying = true;
     for (const c of save.commands) applyCommand(runner, c);
+    runner.replaying = false;
     while (runner.tickCount < save.tickCount) runner.tick();
     // Re-queue commands that were deferred (paused) at save time, preserving
     // order, and restore the paused state so the next resume tick drains them
@@ -1588,6 +1694,7 @@ export class SimRunner {
     if (year === this.financeYear) return;
     this.financeYear = year;
     rollYear(this.treasuryAccount);
+    this.governor.donationsThisYear = 0;
     this.loanFavorPenalty = this.treasuryAccount.accrue(CONFIG.loanInterestRate).favorPenalty;
   }
 
@@ -2059,6 +2166,10 @@ function applyCommand(runner: SimRunner, cmd: SaveCommand): void {
     runner.repayLoan(cmd.amount);
   } else if (cmd.kind === 'holdFestival') {
     runner.holdFestival(cmd.tierId);
+  } else if (cmd.kind === 'setGovernorSalaryLevel') {
+    runner.setGovernorSalaryLevel(cmd.level);
+  } else if (cmd.kind === 'donateToGovernor') {
+    runner.donateToGovernor(cmd.amount);
   } else {
     const exhaustive: never = cmd;
     throw new Error(`unknown command kind: ${(exhaustive as { kind: string }).kind}`);

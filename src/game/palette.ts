@@ -15,6 +15,7 @@ export const BUILDING_COLORS: Record<Exclude<BuildingType, 'house'>, number> = {
   clinic: 0xef7f6a, hospital: 0xd94f4f, school: 0x6aa5d6, library: 0x8a7fd1, temple: 0xe0c96a, grand_temple: 0x8a5a2b,
   theatre: 0xcf6fd1, amphitheatre: 0xb06ad1, colosseum: 0x9a4fd1,
   forum: 0xc2b088, garden: 0x4f9d4f,
+  senate: 0xd9c0a3, palatine: 0xe8d8b8,
   clay_pit: 0xba8a5c, timber_yard: 0x6b8e23, iron_mine: 0x7a7a7a, quarry: 0xb0a89a,
   olive_farm: 0x9caf4f, grape_farm: 0x8e5ea8,
   pottery_workshop: 0xc98a3f, furniture_workshop: 0x8b5a2b, oil_press: 0xd9c565, winery: 0x8e2f4f, tool_workshop: 0x5f6d7a,

@@ -1,12 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { GOV_BUILDINGS, unlockedGov, createRequest, deliverRequest } from '../../src/sim/governance';
+import { GOV_BUILDINGS, unlockedGov, govThreshold, createRequest, deliverRequest } from '../../src/sim/governance';
 import { ObjectiveTracker } from '../../src/sim/objectives';
 
 describe('governance (Phase 14)', () => {
   it('unlocks government buildings at population thresholds', () => {
-    expect(unlockedGov(500).map((g) => g.id)).not.toContain('forum');
-    expect(unlockedGov(1500).map((g) => g.id)).toContain('forum');
-    expect(unlockedGov(6000).map((g) => g.id)).toEqual(['forum', 'senate', 'palatine']);
+    expect(govThreshold('forum')).toBe(250);
+    expect(govThreshold('senate')).toBe(500);
+    expect(govThreshold('palatine')).toBe(900);
+    expect(unlockedGov(200).map((g) => g.id)).toEqual([]);
+    expect(unlockedGov(400).map((g) => g.id)).toEqual(['forum']);
+    expect(unlockedGov(700).map((g) => g.id)).toEqual(['forum', 'senate']);
+    expect(unlockedGov(1000).map((g) => g.id)).toEqual(['forum', 'senate', 'palatine']);
     expect(GOV_BUILDINGS.length).toBe(3);
   });
 
