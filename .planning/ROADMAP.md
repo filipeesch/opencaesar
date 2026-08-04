@@ -25,7 +25,7 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
 - [x] **Phase 9: External Trade** - regional map, routes/orders, land caravans + merchant ships, quotas, prices
 - [x] **Phase 10: Finance** - full treasury model, royal subsidy, loans, wage/tax balance
 - [x] **Phase 11: Civil Safety** - fire, collapse/danger, security/crime, civilization overlay
-- [ ] **Phase 12: Health, Education, Entertainment** - doctors/infirmaries, schools/libraries, shows
+- [x] **Phase 12: Health, Education, Entertainment** - doctors/infirmaries, schools/libraries, shows
 - [ ] **Phase 13: Religion** - temples, grand temples, festivals, favor
 - [ ] **Phase 14: Governance & Requests** - forum/senate/governor; administrative requests
 - [ ] **Phase 15: Ratings, Objectives, Events** - four ratings, win conditions, event responses
@@ -196,7 +196,7 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Health walkers raise house health; education walkers raise literacy.
   2. Entertainment venues deliver show-based coverage advancing housing.
-**Plans**: TBD
+- [x] 12-PLAN: live civic stats + decaying service flags, TIER_CIVIC_GATES on Domus/Villa, hospital/amphitheatre/colosseum catalog, real advisor coverage, getCivicStats, determinism (HEAL-01/EDUC-01/ENTR-01)
 
 ### Phase 13: Religion
 **Goal**: Five gods' temples, grand temples, festivals, and favor.
