@@ -1,3 +1,59 @@
+---
+phase: 10-finance
+plan: 10-plan
+type: feature (multi-wave: 10-W1..10-W3)
+wave: 0
+depends_on: [09-W4]
+files_modified:
+  - src/sim/runner.ts
+  - src/sim/types.ts
+  - src/sim/finance.ts
+  - src/sim/config.ts
+  - src/sim/housing.ts
+  - src/sim/advisors.ts
+  - tests/unit/finance-runner.test.ts
+  - tests/unit/finance-advisor.test.ts
+  - tests/integration/bankruptcy.test.ts
+  - tests/determinism/finance-determinism.test.ts
+autonomous: true
+requirements: [FIN-01]
+must_haves:
+  truths:
+    - "FIN-01 wages/taxes: tickEconomy already collects taxes and pays wages with the treasury never below zero and wagesUnpaid tracked; the swap to the Treasury class preserves this arithmetic byte-for-byte (regression: same values as the bare-number implementation)."
+    - "FIN-01 trade revenue: existing runner trade wiring (export proceeds, import spend) is preserved and lands in the 'trade' ledger category through addRevenue/addExpense."
+    - "FIN-01 royal subsidy: requestRoyalSubsidy grants a bounded amount once per year (Treasury.subsidyUsedThisYear guard + rollYear reset at the tick-based year); a second request in the same year is refused (T-10-01)."
+    - "FIN-01 loans/interest: takeLoan/repayLoan wire Treasury loan state; interest accrues on a tick-based schedule only (no clock/RNG), deterministically (T-10-02); the favor penalty is surfaced via the finance advisor."
+    - "Treasury overflow: balance never exceeds CONFIG.treasuryOverflowLimit — excess is dropped and ledgered as 'overflow', discouraging hoarding (T-10-05)."
+    - "SC2 visible consequence: persistent unpaid wages produce arrears (finance advisor flag) and a housing tier downgrade via the existing desirabilityUnpaidWagesPenalty; recovery clears the penalty and the house can re-evolve — proven end-to-end by bankruptcy.test.ts."
+    - "Finance advisor is a pure live-derived projection of runner/Treasury state (balance, category revenue/expenses, debt, interest, subsidyUsedThisYear, arrears, deficit, overflow) — never fabricated; SimState stays frozen so goldens never regenerate."
+    - "Determinism & no military: finance chain is tick-based/seeded only (chunked 1/7/50 identity); the no-RNG/clock source audit is green for finance/economy; check:military stays clean."
+  artifacts:
+    - path: src/sim/runner.ts
+      provides: "Treasury instance replacing the bare treasury number (behavior-preserving), requestRoyalSubsidy/takeLoan/repayLoan APIs with command enqueue, tick-based interest accrual, overflow cap, getFinanceAdvisor accessor"
+      min_lines: 30
+    - path: src/sim/advisors.ts
+      provides: "financeAdvisorFromState pure projection + FinanceAdvisorView type"
+      min_lines: 40
+    - path: src/sim/config.ts
+      provides: "royalSubsidyCap, loanInterestRate, loanMaxAmount, treasuryOverflowLimit constants"
+      min_lines: 4
+    - path: src/sim/housing.ts
+      provides: "additive arrears-depth desirability penalty (existing wagesUnpaid penalty preserved)"
+      min_lines: 5
+    - path: tests/unit/finance-runner.test.ts
+      provides: "runner treasury wiring, subsidy once-per-year, loan interest, overflow cap, save/replay parity"
+      min_lines: 100
+    - path: tests/unit/finance-advisor.test.ts
+      provides: "pure projection + live accessor reconciliation tests"
+      min_lines: 40
+    - path: tests/integration/bankruptcy.test.ts
+      provides: "SC2 end-to-end: arrears flag + housing downgrade + recovery"
+      min_lines: 40
+    - path: tests/determinism/finance-determinism.test.ts
+      provides: "chunked 1/7/50 identity across seeds {1,7,1337} + no-RNG/clock source audit"
+      min_lines: 40
+---
+
 # Phase 10 Plan: Finance
 
 **Goal**: Complete treasury model with wages, taxes, trade revenue, subsidy, loans.
