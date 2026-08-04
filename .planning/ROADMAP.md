@@ -27,12 +27,13 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
 - [x] **Phase 11: Civil Safety** - fire, collapse/danger, security/crime, civilization overlay
 - [x] **Phase 12: Health, Education, Entertainment** - doctors/infirmaries, schools/libraries, shows
 - [x] **Phase 13: Religion** - temples, grand temples, festivals, favor
-- [ ] **Phase 14: Governance & Requests** - forum/senate/governor; administrative requests
+- [x] **Phase 14: Governance & Requests** - forum/senate/governor; administrative requests
 - [ ] **Phase 15: Ratings, Objectives, Events** - four ratings, win conditions, event responses
 - [ ] **Phase 16: Full Housing Evolution** - 21 levels, hysteresis, house merging
 - [ ] **Phase 17: Campaign, Tutorial & Codex** - 10 missions, contextual tutorial, codex
 - [ ] **Phase 18: Management UI** - HUD, 13 advisors, overlays, inspectors
 - [ ] **Phase 19: Persistence & Options** - versioned save/load, options/accessibility
+- [ ] **Phase 20: UI Redesign — Caesar III Sidebar & Advisors** — Replace current HUD with Caesar III-style sidebar, 13 advisor panels with live sim data, overlay system (fire/danger/collapse/crime/food), building inspector, redesigned build panel. (INSERTED — ui-redesign)
 
 ## Phase Details
 
@@ -198,7 +199,7 @@ Plans:
   2. Entertainment venues deliver show-based coverage advancing housing.
 - [x] 12-PLAN: live civic stats + decaying service flags, TIER_CIVIC_GATES on Domus/Villa, hospital/amphitheatre/colosseum catalog, real advisor coverage, getCivicStats, determinism (HEAL-01/EDUC-01/ENTR-01)
 - [x] 13-PLAN: per-god temples + grand temples + live coverage-driven worship/favor + replayable festivals, determinism (RELI-01)
-- [ ] 14-PLAN: population-gated government buildings with live effects (forum/senate/palatine) + deterministic admin requests with partial fulfillment, rewards/penalties by deadline (GOV-01/GOV-02)
+- [x] 14-PLAN: population-gated government buildings with live effects (forum/senate/palatine) + deterministic admin requests with partial fulfillment, rewards/penalties by deadline (GOV-01/GOV-02)
 
 ### Phase 13: Religion
 **Goal**: Five gods' temples, grand temples, festivals, and favor.
@@ -216,7 +217,7 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Government buildings unlock at population thresholds with effects.
   2. Requests can be accepted, satisfied (full or partial), and rewarded/penalized by deadline.
-**Plans**: 14-PLAN
+**Plans**: ~~14-PLAN~~ (executed — see Phase 14 W1/W2 cuts in 14-PLAN.md)
 
 ### Phase 15: Ratings, Objectives, Events
 **Goal**: Four ratings, objectives/win conditions, and event responses.
