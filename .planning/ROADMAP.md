@@ -23,7 +23,7 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
 - [x] **Phase 7: Warehouses & Logistics** - warehouses, per-commodity orders, commercial center, logistics advisor data
 - [x] **Phase 8: Markets & Home Distribution** - buyer/seller walkers, reservation, per-market config
 - [x] **Phase 9: External Trade** - regional map, routes/orders, land caravans + merchant ships, quotas, prices
-- [ ] **Phase 10: Finance** - full treasury model, royal subsidy, loans, wage/tax balance
+- [x] **Phase 10: Finance** - full treasury model, royal subsidy, loans, wage/tax balance
 - [ ] **Phase 11: Civil Safety** - fire, collapse/danger, security/crime, civilization overlay
 - [ ] **Phase 12: Health, Education, Entertainment** - doctors/infirmaries, schools/libraries, shows
 - [ ] **Phase 13: Religion** - temples, grand temples, festivals, favor
@@ -174,7 +174,10 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Treasury reflects wages, taxes, trade, subsidy requests, and loan interest.
   2. Running out of money has a visible consequence (e.g., housing downgrade, wage arrears).
-**Plans**: TBD
+**Plans**: 3 waves (single PLAN.md, 5 tasks)
+
+Plans:
+- [x] 10-PLAN: Treasury wiring, subsidy/loans/overflow, bankruptcy consequence, advisor + determinism (FIN-01)
 
 ### Phase 11: Civil Safety
 **Goal**: Fire, collapse/danger, security/crime, and the civilization overlay.
