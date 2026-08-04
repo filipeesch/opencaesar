@@ -32,6 +32,12 @@ export const BALANCE = {
   /** How much wheat a market walker fetches from a granary per trip. */
   marketFetchAmount: 5,
 
+  // Civic wellness (HEAL-01/EDUC-01/ENTR-01, Phase 12) ------------------------
+  /** Health/literacy/entertainment gained per tick while the service access is fresh. */
+  civicRisePerTick: 1,
+  /** Health/literacy/entertainment lost per tick while the service access is stale. */
+  civicDecayPerTick: 0.5,
+
   // Service coverage ----------------------------------------------------------
   /** Cooldown in ticks before a received service expires. */
   serviceCooldownTicks: 120,

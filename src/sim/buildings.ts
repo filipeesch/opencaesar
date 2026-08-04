@@ -140,6 +140,11 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     footprint: 1, cost: 110, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 1,
     spawnEveryTicks: CONFIG.marketSpawnEveryTicks,
   },
+  hospital: {
+    type: 'hospital', name: 'Hospital', category: 'health',
+    footprint: 2, cost: 300, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 10,
+    spawnEveryTicks: CONFIG.marketSpawnEveryTicks,
+  },
   school: {
     type: 'school', name: 'School', category: 'education',
     footprint: 2, cost: 150, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 2,
@@ -158,6 +163,16 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   theatre: {
     type: 'theatre', name: 'Theatre', category: 'entertainment',
     footprint: 2, cost: 180, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 2,
+    spawnEveryTicks: CONFIG.marketSpawnEveryTicks,
+  },
+  amphitheatre: {
+    type: 'amphitheatre', name: 'Amphitheatre', category: 'entertainment',
+    footprint: 4, cost: 900, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 20,
+    spawnEveryTicks: CONFIG.marketSpawnEveryTicks,
+  },
+  colosseum: {
+    type: 'colosseum', name: 'Colosseum', category: 'entertainment',
+    footprint: 5, cost: 4000, allowedTerrains: ['earth', 'fertile', 'trees', 'rock'], requiresRoad: true, workers: 60,
     spawnEveryTicks: CONFIG.marketSpawnEveryTicks,
   },
   forum: {

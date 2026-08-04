@@ -96,14 +96,31 @@ export interface HouseInstance {
   foodInventory?: Record<string, number>;
   /** Per-house market coverage bookkeeping (§12.13). */
   marketCoverage?: MarketCoverage;
+  /** Civic wellness (Phase 12): health/literacy/entertainment 0..100 stats
+   *  driven by walker-delivered service access. Internal only — never
+   *  serialized, so goldens/SimState stay byte-identical. */
+  civic?: HouseCivicState;
+}
+
+/** Civic wellness per house (Phase 12). Internal to the sim run. */
+export interface HouseCivicState {
+  /** 0..100, rises while health service access is fresh, decays otherwise. */
+  health: number;
+  /** 0..100, rises while literacy service access is fresh (school/library). */
+  literacy: number;
+  /** 0..100, rises while entertainment access is fresh (theatre/amphitheatre). */
+  entertainment: number;
 }
 
 const SERVICE_BY_WALKER: Record<string, string> = {
   clinic: 'health',
+  hospital: 'health',
   school: 'literacy',
   library: 'literacy',
   temple: 'religion',
   theatre: 'entertainment',
+  amphitheatre: 'entertainment',
+  colosseum: 'entertainment',
 };
 
 export interface BuildingInstance {

@@ -52,3 +52,19 @@ export function housingCapacity(level: number): number {
   const lvl = HOUSING_LEVELS.find((l) => l.level === level);
   return lvl ? lvl.capacity : 0;
 }
+
+/**
+ * Civic service gates for the live 5-tier house model (Phase 12): service
+ * access a house must have fresh (walker-delivered) to evolve INTO the given
+ * tier index — the live-sim counterpart of the HOUSING_LEVELS service
+ * requirements above. Domus (index 3) needs health, Villa (index 4) needs
+ * literacy; the entertainment key mirrors the 21-level model's highest
+ * requirement and is unreachable in the 5-tier live model. Legacy tiers
+ * (Shack/Hovel/Insula) need no services, so scenarios without civic buildings
+ * are behaviorally unchanged.
+ */
+export const TIER_CIVIC_GATES: Readonly<Record<number, readonly string[]>> = {
+  3: ['health'],
+  4: ['literacy'],
+  5: ['entertainment'],
+};

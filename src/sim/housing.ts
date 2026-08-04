@@ -5,10 +5,52 @@
  */
 
 import { CONFIG, HOUSE_TIERS } from './config';
+import { TIER_CIVIC_GATES } from '../../data/housing';
 import type { Map } from './map';
 import { roadDesirability } from './roadTypes';
 import type { MessageType, Policy } from './types';
 import type { BuildingInstance } from './walkers';
+
+/**
+ * Civic service gates (Phase 12, ENTR-01/HEAL-01/EDUC-01): a house needs the
+ * listed service access fresh (walker-delivered, see `tickCivic`) to evolve
+ * INTO the given 1-indexed tier (TIER_CIVIC_GATES from data/housing.ts).
+ * Additive: scenarios without civic buildings have no fresh access, so the
+ * gates simply block tiers the house could not satisfy anyway — legacy
+ * evolution paths are unchanged.
+ */
+function civicGateSatisfied(house: NonNullable<BuildingInstance['house']>, tier: number): boolean {
+  const requires = TIER_CIVIC_GATES[tier];
+  if (!requires) return true;
+  return requires.every((s) => (house.services?.[s] ?? 0) > 0);
+}
+
+/**
+ * Phase 12 civic wellness: decay the walker-delivered service access flags
+ * (previously dead state — never decremented), then move the house's
+ * health/literacy/entertainment stats toward their covered ceiling while the
+ * matching access is fresh. Purely deterministic.
+ */
+export function tickCivic(house: NonNullable<BuildingInstance['house']>): void {
+  if (house.services) {
+    for (const [service, ttl] of Object.entries(house.services)) {
+      const next = (ttl ?? 0) - 1;
+      if (next <= 0) delete house.services[service];
+      else house.services[service] = next;
+    }
+  }
+  const civic = (house.civic ??= { health: 0, literacy: 0, entertainment: 0 });
+  const fresh = (key: string) => (house.services?.[key] ?? 0) > 0;
+  civic.health = clampCivic(civic.health + (fresh('health') ? CONFIG.civicRisePerTick : -CONFIG.civicDecayPerTick));
+  civic.literacy = clampCivic(civic.literacy + (fresh('literacy') ? CONFIG.civicRisePerTick : -CONFIG.civicDecayPerTick));
+  civic.entertainment = clampCivic(civic.entertainment + (fresh('entertainment') ? CONFIG.civicRisePerTick : -CONFIG.civicDecayPerTick));
+}
+
+function clampCivic(v: number): number {
+  if (v < 0) return 0;
+  if (v > 100) return 100;
+  return v;
+}
 
 /**
  * Desirability of a house tile: base terrain value plus the wage/tax policy
@@ -98,6 +140,7 @@ export function tickHousing(
     house.foodCooldown = Math.max(0, house.foodCooldown - 1);
     house.waterCooldown = Math.max(0, house.waterCooldown - 1);
     house.laborCooldown = Math.max(0, house.laborCooldown - 1);
+    tickCivic(house);
 
     const hasFood = house.foodCooldown > 0;
     const hasWater = house.waterCooldown > 0;
@@ -123,12 +166,18 @@ export function tickHousing(
       } else {
         house.devolveCounter = 0;
         if (hasLabor && desirability >= tierThreshold(house.tier + 2)) {
-          house.evolveCounter += 1;
-          if (house.evolveCounter >= CONFIG.evolveWindowTicks && house.tier < HOUSE_TIERS.length - 1) {
-            house.tier += 1;
+          if (civicGateSatisfied(house, house.tier + 1)) {
+            house.evolveCounter += 1;
+            if (house.evolveCounter >= CONFIG.evolveWindowTicks && house.tier < HOUSE_TIERS.length - 1) {
+              house.tier += 1;
+              house.evolveCounter = 0;
+              evolved += 1;
+              emit('house-evolved', `House evolved to ${HOUSE_TIERS[house.tier].name}`);
+            }
+          } else {
+            // Civic gate unmet: the tier requires service access the house
+            // lacks (health/literacy/entertainment) — keep the counter pinned.
             house.evolveCounter = 0;
-            evolved += 1;
-            emit('house-evolved', `House evolved to ${HOUSE_TIERS[house.tier].name}`);
           }
         } else {
           house.evolveCounter = 0;

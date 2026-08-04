@@ -17,7 +17,8 @@ export type Good = 'wheat' | 'pottery' | 'vegetables' | 'fruit' | 'fish' | 'meat
 export type BuildingType =
   | 'road' | 'house' | 'farm' | 'granary' | 'market' | 'well'
   | 'fountain' | 'orchard' | 'engineer_post' | 'fire_station' | 'clinic'
-  | 'school' | 'library' | 'temple' | 'theatre' | 'forum' | 'garden'
+  | 'hospital' | 'school' | 'library' | 'temple' | 'theatre'
+  | 'amphitheatre' | 'colosseum' | 'forum' | 'garden'
   | 'clay_pit' | 'timber_yard' | 'iron_mine' | 'quarry'
   | 'olive_farm' | 'grape_farm'
   | 'pottery_workshop' | 'furniture_workshop' | 'oil_press' | 'winery' | 'tool_workshop'

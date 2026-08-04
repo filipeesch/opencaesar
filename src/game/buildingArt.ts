@@ -22,7 +22,8 @@ interface Pt {
 const RISE: Record<Exclude<BuildingType, 'road'>, number> = {
   house: 10, farm: 9, granary: 20, market: 16, well: 7,
   fountain: 9, orchard: 9, engineer_post: 12, fire_station: 16,
-  clinic: 12, school: 16, library: 14, temple: 18, theatre: 18,
+  clinic: 12, hospital: 18, school: 16, library: 14, temple: 18, theatre: 18,
+  amphitheatre: 22, colosseum: 30,
   forum: 20, garden: 6,
   clay_pit: 12, timber_yard: 12, iron_mine: 14, quarry: 16,
   olive_farm: 12, grape_farm: 12,

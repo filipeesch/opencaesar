@@ -351,6 +351,19 @@ export class SimRunner {
     return 0;
   }
 
+  /** Fraction of houses with fresh walker-delivered access to a civic service
+   *  (Phase 12): the live coverage feeding the advisor service dataset. */
+  private civicCoverage(service: string): number {
+    let houses = 0;
+    let covered = 0;
+    for (const b of this.buildings) {
+      if (!b.house) continue;
+      houses += 1;
+      if ((b.house.services?.[service] ?? 0) > 0) covered += 1;
+    }
+    return houses === 0 ? 0 : covered / houses;
+  }
+
   /** Any fireman walker within manhattan patrol radius of the building. */
   private firemanNear(b: BuildingInstance, firemen: WalkerInstance[]): boolean {
     for (const w of firemen) {
@@ -742,9 +755,9 @@ export class SimRunner {
       hasHealth: has('health'), hasWater: has('water'), hasFood: has('food'),
     });
     const serviceCoverage = computeServiceCoverage({
-      doctorCoverage: this.buildings.some((b) => b.type === 'clinic' || b.type === 'fire_station') ? 0.8 : 0,
-      educationCoverage: this.buildings.some((b) => b.type === 'school' || b.type === 'library') ? 0.8 : 0,
-      entertainmentCoverage: this.buildings.some((b) => b.type === 'theatre') ? 0.8 : 0,
+      doctorCoverage: this.civicCoverage('health'),
+      educationCoverage: this.civicCoverage('literacy'),
+      entertainmentCoverage: this.civicCoverage('entertainment'),
       godWorship: this.buildings.some((b) => b.type === 'temple') ? { jupiter: 0.8 } : {},
     });
     const water = new WaterSystem();
@@ -795,6 +808,30 @@ export class SimRunner {
         return { x: b.x, y: b.y, w: fp, h: fp, safety: b.safety };
       }),
     );
+  }
+
+  /** Civic wellness (Phase 12): live per-house health/literacy/entertainment
+   *  stats plus the aggregate advisor coverage. Pure projection — additive,
+   *  never serialized. */
+  getCivicStats(): {
+    coverage: { health: number; literacy: number; entertainment: number };
+    houses: { id: number; health: number; literacy: number; entertainment: number }[];
+  } {
+    return {
+      coverage: {
+        health: this.civicCoverage('health'),
+        literacy: this.civicCoverage('literacy'),
+        entertainment: this.civicCoverage('entertainment'),
+      },
+      houses: this.buildings
+        .filter((b) => b.house)
+        .map((b) => ({
+          id: b.id,
+          health: b.house!.civic?.health ?? 0,
+          literacy: b.house!.civic?.literacy ?? 0,
+          entertainment: b.house!.civic?.entertainment ?? 0,
+        })),
+    };
   }
 
   /** Production advisor rows derived from live sim state (PROD-02). Reads the

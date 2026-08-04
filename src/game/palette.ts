@@ -12,7 +12,8 @@ export const TILE_H = 30;
 export const BUILDING_COLORS: Record<Exclude<BuildingType, 'house'>, number> = {
   road: 0xc2b088, farm: 0x79b044, granary: 0xd8a963, market: 0x9d7bd1, well: 0x59c4ee,
   fountain: 0x59c4ee, orchard: 0x79b044, engineer_post: 0x9aa0a6, fire_station: 0xd05b4a,
-  clinic: 0xef7f6a, school: 0x6aa5d6, library: 0x8a7fd1, temple: 0xe0c96a, theatre: 0xcf6fd1,
+  clinic: 0xef7f6a, hospital: 0xd94f4f, school: 0x6aa5d6, library: 0x8a7fd1, temple: 0xe0c96a,
+  theatre: 0xcf6fd1, amphitheatre: 0xb06ad1, colosseum: 0x9a4fd1,
   forum: 0xc2b088, garden: 0x4f9d4f,
   clay_pit: 0xba8a5c, timber_yard: 0x6b8e23, iron_mine: 0x7a7a7a, quarry: 0xb0a89a,
   olive_farm: 0x9caf4f, grape_farm: 0x8e5ea8,
