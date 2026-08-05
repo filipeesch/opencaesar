@@ -124,6 +124,32 @@ export function validateCatalogs(tradeCatalog: Record<string, TradeCityDef> = TR
 
   for (const ev of Object.values(EVENTS)) {
     if (!ev.message) issues.push({ catalog: 'events', message: `${(ev as { id: string }).id}: missing message` });
+    // RATE-03: responses must have unique ids per event, non-empty labels, and
+    // finite numeric effects; treasuryCost must be non-negative.
+    if (ev.responses) {
+      const seen = new Set<string>();
+      for (const resp of ev.responses) {
+        if (!resp.id || seen.has(resp.id)) {
+          issues.push({ catalog: 'events', message: `${(ev as { id: string }).id}: duplicate/missing response id '${resp.id ?? ''}'` });
+        }
+        seen.add(resp.id);
+        if (!resp.label || resp.label.trim().length === 0) {
+          issues.push({ catalog: 'events', message: `${(ev as { id: string }).id}: response '${resp.id}' has an empty label` });
+        }
+        for (const key of ['culture', 'prosperity', 'stability', 'favor'] as const) {
+          const v = resp.effect[key];
+          if (v !== undefined && (typeof v !== 'number' || !Number.isFinite(v))) {
+            issues.push({ catalog: 'events', message: `${(ev as { id: string }).id}: response '${resp.id}' effect.${key} must be a finite number` });
+          }
+        }
+        if (resp.effect.treasuryCost !== undefined && (typeof resp.effect.treasuryCost !== 'number' || !Number.isFinite(resp.effect.treasuryCost) || resp.effect.treasuryCost < 0)) {
+          issues.push({ catalog: 'events', message: `${(ev as { id: string }).id}: response '${resp.id}' effect.treasuryCost must be a finite non-negative number` });
+        }
+      }
+    }
+    if (ev.priceModify !== undefined && (typeof ev.priceModify.delta !== 'number' || !Number.isFinite(ev.priceModify.delta))) {
+      issues.push({ catalog: 'events', message: `${(ev as { id: string }).id}: priceModify.delta must be a finite number` });
+    }
   }
 
   for (const m of Object.values(MISSIONS)) {

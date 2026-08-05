@@ -57,7 +57,10 @@ describe('civilization overlay', () => {
   });
 
   it('destroyed buildings read fire=1 and danger=1 on their footprint', () => {
-    const r = new SimRunner(1, denseMap());
+    // Seed 2: the Phase-15 expanded pickEvent schedule starts a fire on the
+    // dense map within ~40 ticks (seed 1 changed schedule after the catalog
+    // expansion; the new schedule is pinned by tests/events.test.ts).
+    const r = new SimRunner(2, denseMap());
     buildDenseCity(r);
     let sawDestroyed = false;
     for (let i = 0; i < 200; i++) {

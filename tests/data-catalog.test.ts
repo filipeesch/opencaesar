@@ -39,6 +39,33 @@ describe('data catalog', () => {
     expect(Object.keys(EVENTS).length).toBeGreaterThan(0);
     expect(Object.keys(MISSIONS).length).toBeGreaterThan(0);
   });
+
+  it('event catalog expands to the full non-military ~25-event spec set, preserving the original 8 (RATE-03)', () => {
+    const keys = Object.keys(EVENTS);
+    expect(keys.length).toBeGreaterThanOrEqual(25);
+    // Original 8 preserved byte-identical.
+    const original = ['fire', 'collapse', 'earthquake', 'flood', 'pestilence', 'riot', 'good_harvest', 'festival'];
+    for (const id of original) expect(EVENTS[id]).toBeDefined();
+    expect(EVENTS['fire'].severity).toBe('serious');
+    expect(EVENTS['fire'].durationTicks).toBe(60);
+    expect(EVENTS['good_harvest'].effect.prosperity).toBe(2);
+    // New spec events present.
+    for (const id of ['drought', 'epidemic', 'price_rise', 'price_fall', 'strike', 'heat_wave', 'severe_winter']) {
+      expect(EVENTS[id]).toBeDefined();
+    }
+  });
+
+  it('event responses carry non-empty labels and unique ids per event (RATE-03)', () => {
+    for (const ev of Object.values(EVENTS)) {
+      if (!ev.responses) continue;
+      const seen = new Set<string>();
+      for (const resp of ev.responses) {
+        expect(resp.label.trim().length).toBeGreaterThan(0);
+        expect(seen.has(resp.id)).toBe(false);
+        seen.add(resp.id);
+      }
+    }
+  });
 });
 
 import { validateCatalogs } from '../data/validate';

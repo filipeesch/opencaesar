@@ -3,6 +3,7 @@
  */
 
 import { EVENTS } from '../../data/events';
+import type { EventResponse } from '../../data/events';
 
 export interface EventResult {
   id: string;
@@ -72,4 +73,13 @@ export function eventSustainMsg(id: string): string | null {
 export function eventFinalMsg(id: string): string {
   const ev = EVENTS[id];
   return ev?.finalMsg ?? `The ${ev?.name ?? id} has concluded.`;
+}
+
+/**
+ * RATE-03: pure response resolver — indexes EVENTS[eventId].responses by its
+ * choice id (mirrors data/requests.ts entryById). No mutation, so the runner
+ * owns replay. Returns undefined for an unknown event or unknown choice.
+ */
+export function resolveResponse(eventId: string, choiceId: string): EventResponse | undefined {
+  return EVENTS[eventId]?.responses?.find((r) => r.id === choiceId);
 }

@@ -6,9 +6,11 @@ import { computeRisks } from '../../src/sim/safety';
 /**
  * Structural collapse (SAFE-02): aging buildings risk collapse, earthquakes
  * push old dense buildings into a persistent danger state, and engineer
- * walkers repair dangerous buildings. Seed 777 fires an earthquake at ~tick
+ * walkers repair dangerous buildings. Seed 13 fires an earthquake at ~tick
  * 799 (age ~20 months) while a covering fire station keeps fire damage out of
- * the picture.
+ * the picture. (The seed changed from 777 after the Phase-15 event-catalog
+ * expansion shifted the deterministic pickEvent schedule — the new expanded
+ * schedule is pinned by tests/events.test.ts.)
  */
 
 const W = 40;
@@ -68,7 +70,7 @@ describe('collapse risk model (SAFE-02)', () => {
   });
 
   it('an earthquake pushes aged dense housing into a persistent danger state', () => {
-    const h = dangerHistory(777, false, 1600);
+    const h = dangerHistory(13, false, 1600);
     // Danger appears with the earthquake (~tick 799) and persists un-repaired.
     expect(h.firstDangerTick).toBeGreaterThan(700);
     expect(h.firstDangerTick).toBeLessThan(900);
@@ -77,8 +79,8 @@ describe('collapse risk model (SAFE-02)', () => {
   });
 
   it('engineers walking the roads repair dangerous buildings', () => {
-    const repaired = dangerHistory(777, true, 1600);
-    const bare = dangerHistory(777, false, 1600);
+    const repaired = dangerHistory(13, true, 1600);
+    const bare = dangerHistory(13, false, 1600);
     // At least one dangerous building was repaired (danger 1 → 0)…
     expect(repaired.cleared).toBeGreaterThanOrEqual(1);
     // …and the city ends up with fewer dangerous buildings than unprotected.
