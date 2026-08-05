@@ -43,10 +43,11 @@ import { pickRequest, entryById } from '../../data/requests';
 import type { RequestDef } from '../../data/requests';
 import { ObjectiveTracker } from './objectives';
 import { WaterSystem } from './water';
-import { buildCodex } from './campaign';
+import { buildCodex, TUTORIAL_ELIGIBILITY, TUTORIAL_STEP_ORDER, tutorialText, TUTORIAL_EXPANDED, TUTORIAL_CODEX_REF, nextTutorialCurrent } from './campaign';
+import type { HouseView, CityView, TutorialStepId, TutorialPrompt, TutorialView } from './campaign';
 import { desirabilityOf, tickHousing } from './housing';
 import { housingLevelName } from '../../data/housing';
-import { effectivePopulation } from './housingLive';
+import { effectivePopulation, effectiveWorkers } from './housingLive';
 import { findMergePartner, mergeProposal, targetFootprint } from './housingMerge';
 import { Treasury, rollYear } from './finance';
 import type { FinanceLedger } from './finance';
@@ -1380,6 +1381,103 @@ export class SimRunner {
     };
   }
 
+  /** CAMPAIGN-02: the pure per-house predicate input — the runner's live
+   *  BuildingInstance/ HouseInstance state mapped into the campaign.ts shape.
+   *  A house `workersRequired` is its live workforce contribution (a roof house
+   *  contributes its level's workers), so `!laborConnected && workersRequired >
+   *  0` reads "occupied but road/network-isolated". Deterministic — read-only,
+   *  never mutates state, no wall-clock. */
+  private houseViews(): HouseView[] {
+    return this.buildings.filter((b) => b.house).map((b) => ({
+      id: b.id,
+      level: b.house!.level ?? 0,
+      laborConnected: b.laborConnected,
+      workersRequired: effectiveWorkers(b),
+      desirability: desirabilityOf(this.map, b.x, b.y, this.policy, this.lastWagesUnpaid > 0, {
+        food: b.house!.foodCooldown > 0,
+        water: b.house!.waterCooldown > 0,
+        labor: b.house!.laborCooldown > 0,
+      }, this.arrearsDepth()),
+      foodCooldown: b.house!.foodCooldown,
+      waterCooldown: b.house!.waterCooldown,
+      laborCooldown: b.house!.laborCooldown,
+      services: b.house!.services ? ({ ...b.house!.services } as Record<string, number>) : undefined,
+      godAccess: b.house!.godAccess ? ({ ...b.house!.godAccess } as Record<string, number>) : undefined,
+      foodInventory: b.house!.foodInventory ? ({ ...b.house!.foodInventory } as Record<string, number>) : undefined,
+    }));
+  }
+
+  /** CAMPAIGN-02: city-wide predicate inputs (storage stock, exports, mission
+   *  targets, food producers) — built from live state, deterministic. */
+  private cityView(): CityView {
+    const d = this.derived ?? this.derivedSnapshot();
+    const hasStorageStock = this.buildings.some((b) => {
+      for (const v of Object.values(b.stock)) if ((v ?? 0) > 0) return true;
+      return false;
+    });
+    const hasFoodProducer = this.buildings.some((b) => BUILDINGS[b.type]?.production != null);
+    let missionTargets: CityView['missionTargets'];
+    if (this.mission) {
+      const def = MISSIONS[this.mission.id] ?? EXTRA_MISSIONS[this.mission.id];
+      if (def) {
+        missionTargets = {
+          population: def.targetPopulation,
+          culture: def.targetCulture,
+          prosperity: def.targetProsperity,
+          stability: def.targetStability,
+          favor: def.targetFavor,
+          treasury: def.targetTreasury,
+          annualExports: def.targetAnnualExports,
+        };
+      }
+    }
+    return {
+      hasStorageStock,
+      annualExports: d.annualExports,
+      missionActive: !!this.mission,
+      missionTargets,
+      hasFoodProducer,
+    };
+  }
+
+  /** CAMPAIGN-02: the catalog-order steps whose pure predicate is true over
+   *  current state. Deterministic from state — never wall-clock. */
+  private tutorialEligibleSteps(): TutorialStepId[] {
+    const d = this.derived ?? this.derivedSnapshot();
+    const houses = this.houseViews();
+    const city = this.cityView();
+    return TUTORIAL_STEP_ORDER.filter((s) => TUTORIAL_ELIGIBILITY[s].eligible(d, houses, city));
+  }
+
+  /** CAMPAIGN-02: the tutorial state the UI reads — a PURE derived accessor
+   *  (never serialized, computed on read from state + the dismissed set). Each
+   *  eligible-cause step carries the house ids that triggered it (the 'show
+   *  where' highlight; introduction steps ring empty). `current` is the first
+   *  catalog-order eligible step not dismissed. */
+  getTutorial(): TutorialView {
+    const eligibleSteps = this.tutorialEligibleSteps();
+    const houses = this.houseViews();
+    const prompts: TutorialPrompt[] = eligibleSteps.map((step) => {
+      const highlight = TUTORIAL_ELIGIBILITY[step].highlight
+        ? TUTORIAL_ELIGIBILITY[step].highlight!(houses)
+        : [];
+      return {
+        step,
+        shortText: tutorialText(step),
+        expandedText: TUTORIAL_EXPANDED[step],
+        codexRef: TUTORIAL_CODEX_REF[step],
+        highlight,
+      };
+    });
+    const eligible = prompts.filter((p) => !this.dismissedTutorialSteps.has(p.step));
+    const currentId = nextTutorialCurrent(new Set(), this.dismissedTutorialSteps, eligibleSteps);
+    return {
+      current: eligible.find((p) => p.step === currentId) ?? null,
+      eligible,
+      dismissed: [...this.dismissedTutorialSteps],
+    };
+  }
+
   /** Production advisor rows derived from live sim state (PROD-02). Reads the
    *  internal per-building production state recorded by tickProduction. */
   getProductionAdvisorRows(): ProductionAdvisorRow[] {
@@ -2250,6 +2348,9 @@ export class SimRunner {
    *  SaveCommand whose dismissed set reconstructs from replayed commands — never
    *  serialized into SaveData. getTutorial() (17-02-01) reads the set. */
   dismissTutorialStep(step: string): { ok: boolean; error?: string } {
+    if (!TUTORIAL_STEP_ORDER.includes(step as TutorialStepId)) {
+      return { ok: false, error: 'unknown-step' };
+    }
     this.commandLog.push({ tick: this.tickCount, command: `dismissTutorialStep ${step}`, result: 'ok' });
     this.dismissedTutorialSteps.add(step);
     if (!this.replaying) this.saveCommands.push({ kind: 'dismissTutorialStep', step });

@@ -75,6 +75,19 @@ describe('campaign determinism (Phase 17, CAMPAIGN-01)', () => {
   });
 
   // Deferred to 17-03-02 (needs winnability probe): per-mission target ceilings.
+
+  it('a dismissed tutorial step stays dismissed through save → load (reconstructed from replay)', () => {
+    const r = new SimRunner(11, foodChainMap());
+    buildFoodCity(r);
+    expect(r.dismissTutorialStep('roads').ok).toBe(true);
+    r.tick();
+
+    const loaded = SimRunner.fromSaveData(r.getSaveData(), foodChainMap());
+    expect(loaded.getTutorial().dismissed).toContain('roads');
+    expect(loaded.getTutorial().current?.step).toBe('housing'); // no re-eligibilize
+    // The whole tutorial view is deterministic from state + replayed commands.
+    expect(loaded.getTutorial()).toEqual(r.getTutorial());
+  });
   // Deferred to 17-02-01 (needs dismissTutorialStep + getTutorial()): a dismissed
   //   step stays dismissed through save → load (reconstructed from replay).
 
