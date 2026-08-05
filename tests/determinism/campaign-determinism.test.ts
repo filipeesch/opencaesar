@@ -74,6 +74,31 @@ describe('campaign determinism (Phase 17, CAMPAIGN-01)', () => {
     expect(loaded.getMission()!.id).toBe('tutorial');
   });
 
+  it('a mission started mid-run on a ticked runner survives save → load with its true start year (CR-01)', () => {
+    const r = new SimRunner(3, foodChainMap());
+    buildFoodCity(r);
+    for (let i = 0; i < 4800; i++) r.tick(); // tick 4800 → year 13
+    expect(Math.floor(r.getState().tick / 360)).toBe(13);
+
+    r.startMission('thriving_city'); // timeLimitYears 10 — must count from start
+    for (let i = 0; i < 120; i++) r.tick(); // cross a month gate
+    expect(r.getMission()!.year).toBe(13);
+    expect(r.getMission()!.failed).toBe(false);
+
+    // Load with a FRESH deterministic map (the construction-time contract).
+    const loaded = SimRunner.fromSaveData(r.getSaveData(), foodChainMap());
+    // The replayed command must restore the TRUE start year (not recompute 0).
+    expect(loaded.getMission()!.id).toBe('thriving_city');
+    expect(loaded.getMission()!.year).toBe(13);
+    for (let i = 0; i < 80; i++) loaded.tick(); // past the next month gate
+    expect(loaded.getMission()!.failed).toBe(false); // no instant-fail after load
+
+    // Byte-identical when both continue from the save point.
+    const continued = SimRunner.fromSaveData(r.getSaveData(), foodChainMap());
+    for (let i = 0; i < 100; i++) { r.tick(); continued.tick(); }
+    expect(continued.getStateJson()).toBe(r.getStateJson());
+  });
+
   // Deferred to 17-03-02 (needs winnability probe): per-mission target ceilings.
 
   it('a dismissed tutorial step stays dismissed through save → load (reconstructed from replay)', () => {
@@ -118,7 +143,7 @@ describe('campaign determinism (Phase 17, CAMPAIGN-01)', () => {
 
     const save1 = r.getSaveData();
     // Only the ONE startMission command is the record (sub-effects suppressed).
-    expect(save1.commands).toEqual([{ kind: 'startMission', id: 'grand_city' }]);
+    expect(save1.commands).toEqual([{ kind: 'startMission', id: 'grand_city', year: 0 }]);
 
     const loaded = SimRunner.fromSaveData(save1, missionMap(def) as SimMap);
     const save2 = loaded.getSaveData();

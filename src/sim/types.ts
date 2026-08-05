@@ -91,7 +91,11 @@ export type SaveCommand =
   // save/load keeps getMission() — the mission state round-trips through this
   // command, never a SaveData schema field) and the tutorial "don't show again"
   // preference. Both reconstruct deterministically from the replayed stream.
-  | { kind: 'startMission'; id: string }
+  // `year` is the mission's TRUE start year (floor(start tickCount/360)), so a
+  // replayed start — which happens at tick 0 during fromSaveData — restores the
+  // original start year instead of recomputing 0 (CR-01: a time-limited mission
+  // started on an already-ticked runner must not instantly fail after load).
+  | { kind: 'startMission'; id: string; year: number }
   | { kind: 'dismissTutorialStep'; step: string };
 
 /** Serializable save payload capturing everything needed to resume a sim deterministically. */

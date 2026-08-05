@@ -2252,9 +2252,9 @@ export class SimRunner {
    *    override) are applied by 17-01-03 under a suppressCommandRecording guard
    *    so this ONE command is the complete deterministic record (T-17-03).
    */
-  startMission(id: string): { ok: boolean; error?: string } {
+  startMission(id: string, startingYear?: number): { ok: boolean; error?: string } {
     if (this.paused) {
-      this.enqueue({ kind: 'startMission', id });
+      this.enqueue({ kind: 'startMission', id, year: startingYear ?? Math.floor(this.tickCount / 360) });
       return { ok: true };
     }
     if (!this.replaying) {
@@ -2263,19 +2263,25 @@ export class SimRunner {
     }
     const def = MISSIONS[id] ?? EXTRA_MISSIONS[id];
     if (!def) return { ok: false, error: 'unknown-mission' };
+    // CR-01 start-year fix: mission.year is the TRUE start year (floor of the
+    // start tickCount/360). The SaveCommand carries this year so a replayed
+    // start — which fromSaveData runs at tick 0 — restores it verbatim instead
+    // of recomputing 0, so a time-limited mission started on a long-run runner
+    // never instantly-fails at the first month gate after save → load.
+    const year = startingYear ?? Math.floor(this.tickCount / 360);
     this.mission = {
       id,
       started: true,
       complete: false,
       failed: false,
-      year: Math.floor(this.tickCount / 360),
+      year,
       objective: id,
     };
     this.missionTracker = null;
     this.commandLog.push({ tick: this.tickCount, command: `startMission ${id}`, result: 'ok' });
     // The single deterministic replay record for the whole mission start.
     // Guarded during replay so a save → load → save cycle never duplicates it.
-    if (!this.replaying) this.saveCommands.push({ kind: 'startMission', id });
+    if (!this.replaying) this.saveCommands.push({ kind: 'startMission', id, year });
 
     // Per-mission sub-effects (CAMPAIGN-01): treasury credit, policy override,
     // preplaced starter buildings, and routes are applied deterministically. All
@@ -3126,7 +3132,7 @@ function applyCommand(runner: SimRunner, cmd: SaveCommand): void {
   } else if (cmd.kind === 'respondEvent') {
     runner.respondEvent(cmd.eventId, cmd.choiceId, cmd.tick);
   } else if (cmd.kind === 'startMission') {
-    runner.startMission(cmd.id);
+    runner.startMission(cmd.id, cmd.year);
   } else if (cmd.kind === 'dismissTutorialStep') {
     runner.dismissTutorialStep(cmd.step);
   } else {
