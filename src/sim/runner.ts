@@ -2307,6 +2307,12 @@ export class SimRunner {
     // `new SimRunner(seed, missionMap(def))` and load with
     // `SimRunner.fromSaveData(save, missionMap(def))`.
     this.suppressCommandRecording = true;
+    // WR-04: collect every mandated sub-step failure (preplace / route / order)
+    // instead of swallowing it — a partial start must NOT be reported as a clean
+    // `{ ok: true }`. The mission and its record are still applied (deterministic
+    // and replayable — replay reproduces exactly the same partial state), and the
+    // return surfaces the failing causes so the caller/UI can react.
+    const subErrors: string[] = [];
     try {
       if (def.modifiers) {
         const credit = def.modifiers.startingTreasuryCredit ?? def.startingDenarii;
@@ -2319,14 +2325,17 @@ export class SimRunner {
       }
       if (def.map?.preplace) {
         for (const p of def.map.preplace) {
-          this.placeBuilding(p.type as BuildingType, p.x, p.y, p.god !== undefined ? { god: p.god } : undefined);
+          const res = this.placeBuilding(p.type as BuildingType, p.x, p.y, p.god !== undefined ? { god: p.god } : undefined);
+          if (!res.ok) subErrors.push(`preplace ${p.type}@${p.x},${p.y}: ${res.error}`);
         }
       }
       if (def.routes) {
         for (const route of def.routes) {
-          this.openTradeRoute(route.cityId);
+          const op = this.openTradeRoute(route.cityId);
+          if (!op.ok) subErrors.push(`route ${route.cityId}: ${op.error}`);
           if (route.good && route.order) {
-            this.setTradeOrder(route.cityId, route.good, route.order);
+            const ord = this.setTradeOrder(route.cityId, route.good, route.order);
+            if (!ord.ok) subErrors.push(`order ${route.cityId}/${route.good}: ${ord.error}`);
             if (route.quota !== undefined) {
               const tr = this.tradeRoutes[route.cityId];
               if (tr) tr.perGoodQuota = { ...(tr.perGoodQuota ?? {}), [route.good]: route.quota };
@@ -2337,7 +2346,9 @@ export class SimRunner {
     } finally {
       this.suppressCommandRecording = false;
     }
-    return { ok: true };
+    return subErrors.length > 0
+      ? { ok: false, error: subErrors.join('; ') }
+      : { ok: true };
   }
 
   /** CAMPAIGN-01 progression gate (pure): whether `id` may be started on the

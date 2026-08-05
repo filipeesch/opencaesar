@@ -74,7 +74,17 @@ function placeCluster(r: SimRunner, ox: number): void {
 function probeMission(id: string, seed: number, years: number): Record<string, number> {
   const r = new SimRunner(seed, probeMap());
   const start = r.startMission(id);
-  if (!start.ok) throw new Error(`startMission(${id}) rejected: ${start.error}`);
+  // The probe measures ceilings on a generic resource-rich map, NOT each
+  // mission's tuned starter map, so the mission's PREPLACE sub-effect can be
+  // legitimately out-of-bounds here (starter geometry targets the mission's own
+  // terrain — applied-and-validated in the mission-application tests). The start
+  // still applies the parts the probe relies on (treasury credit + opened
+  // routes); any OTHER failure (locked/unknown-mission on a fresh runner, or a
+  // route/order error) is a real defect and must throw (WR-04 no longer masks
+  // partial starts with ok:true).
+  if (!start.ok && !(start.error ?? '').startsWith('preplace')) {
+    throw new Error(`startMission(${id}) rejected: ${start.error}`);
+  }
   for (const x of [0, 42]) for (let y = 0; y < 20; y++) r.placeBuilding('road', x, y); // network spines
   placeCluster(r, 0);
   placeCluster(r, 14);

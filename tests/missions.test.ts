@@ -186,6 +186,20 @@ describe('campaign progression + start-year (Phase 17, CAMPAIGN-01)', () => {
     }
   });
 
+  it('startMission surfaces a mandated preplace failure instead of a clean start (WR-04)', () => {
+    const def = MISSIONS['grand_city']!;
+    const r = new SimRunner(7, missionMap(def)!);
+    // Occupy the first preplace anchor so the mandated pre-place sub-effect fails.
+    const first = def.map!.preplace![0];
+    expect(r.placeBuilding(first.type as import('../src/sim/types').BuildingType, first.x, first.y).ok).toBe(true);
+    const res = r.startMission('grand_city');
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain('preplace');
+    // The recordable start still applied (mission active), so a replay reconstructs
+    // the same partial state deterministically — the failure is surfaced, not silent.
+    expect(r.getMission()!.id).toBe('grand_city');
+  });
+
   // Deferred to 17-01-02/03 (needs missionMap + mission modifiers data):
   //   - startMission on a mission with modifiers/preplace/routes applies the
   //     treasury credit, preplaces the starter buildings, and opens the routes.
