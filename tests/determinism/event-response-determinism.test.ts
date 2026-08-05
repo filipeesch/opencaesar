@@ -89,6 +89,118 @@ describe('respondEvent save/load replay determinism (Phase 15, RATE-03)', () => 
   });
 });
 
+/**
+ * WR-05 (Phase 15 code-review fix): a recorded event response applies to a
+ * single OCCURRENCE only — it is deleted at conclusion so a SECOND occurrence
+ * of the same event id starts fresh (full base duration, player agency
+ * restored) instead of silently re-applying the stale conclude choice.
+ *
+ * Locates a (seed, firstTick) where the first-responding event (a catalog
+ * entry with both a conclude-capable and a non-conclude response) fires again
+ * later in the same sim. The pure schedule is exercised the way the runner
+ * drives it (month-cadence pickEvent at tickCount % 40 === 0 when no event is
+ * active); the FIRST occurrence is modelled as concluding the next tick
+ * (concluded early by the player's conclude response), every other occurrence
+ * at its full eventDuration. Deterministic — pickEvent/eventDuration are pure.
+ */
+function findRepeatedConcludeEvent(): { seed: number; id: string; firstTick: number; concludeChoice: string; nonConcludeChoice: string } {
+  for (let seed = 1; seed <= 40; seed++) {
+    const fired: { id: string; t: number }[] = [];
+    let activeUntil = 0;
+    for (let t = 40; t <= 2600; t += 40) {
+      if (t >= activeUntil) {
+        const id = pickEvent(seed, t);
+        if (id) {
+          fired.push({ id, t });
+          const def = EVENTS[id];
+          const concludeCapable = def?.responses?.some((r) => r.effect.conclude) ?? false;
+          activeUntil = t + (concludeCapable && fired.length === 1 ? 1 : eventDuration(id));
+        }
+      }
+    }
+    const first = fired[0];
+    if (!first) continue;
+    const def = EVENTS[first.id];
+    if (!def?.responses) continue;
+    const conclude = def.responses.find((r) => r.effect.conclude);
+    const nonConclude = def.responses.find((r) => !r.effect.conclude);
+    if (!conclude || !nonConclude) continue;
+    if (fired.filter((f) => f.id === first.id).length >= 2) {
+      return { seed, id: first.id, firstTick: first.t, concludeChoice: conclude.id, nonConcludeChoice: nonConclude.id };
+    }
+  }
+  throw new Error('no repeated conclude-capable event found for seeds 1..40 within 2600 ticks');
+}
+
+/** Tick of the event's conclusion message after `after` (single occurrence per scan). */
+function finalMsgTick(r: SimRunner, defId: string, after: number): number | undefined {
+  const final = EVENTS[defId].finalMsg;
+  let found: number | undefined;
+  for (const e of r.getEvents()) {
+    if (e.tick > after && e.text === final) found = e.tick;
+  }
+  return found;
+}
+
+/** Tick at which a NEW occurrence of the event fires after `after` (detects the
+ *  record whose text begins with `<Name>: ` — the firing message). */
+function nextFireTick(r: SimRunner, defId: string, after: number): number | undefined {
+  const prefix = `${EVENTS[defId].name}: `;
+  let budget = 2600;
+  while (budget-- > 0) {
+    for (const e of r.getEvents()) {
+      if (e.tick > after && e.text.startsWith(prefix)) return e.tick;
+    }
+    r.tick();
+  }
+  return undefined;
+}
+
+describe('second-occurrence response freshness (Phase 15, WR-05)', () => {
+  it('a recorded conclude response is cleared at conclusion, so a second occurrence of the same event runs its full duration with agency restored', () => {
+    const { seed, id, firstTick, concludeChoice, nonConcludeChoice } = findRepeatedConcludeEvent();
+    const dur = eventDuration(id);
+
+    const r = new SimRunner(seed, productionChainMap());
+    buildProductionCity(r);
+    r.takeLoan(5000); // fund the first occurrence's conclude-response treasury cost
+    for (let i = 0; i < firstTick; i++) r.tick();
+
+    // First occurrence fires at firstTick; answer with a conclude-capable choice.
+    const fire1 = r.getEvents().filter((e) => e.text.startsWith(`${EVENTS[id].name}: `)).at(-1);
+    expect(fire1?.tick).toBe(firstTick);
+    expect(r.respondEvent(id, concludeChoice).ok).toBe(true);
+    // The conclude response ends the occurrence the next tick — and the
+    // conclusion must clear the recorded response (runner.ts:314).
+    r.tick();
+    expect(finalMsgTick(r, id, firstTick)).toBe(firstTick + 1);
+
+    // Drive to the SECOND occurrence of the same event id.
+    const fire2 = nextFireTick(r, id, firstTick + 1);
+    expect(fire2).toBeDefined();
+    expect(fire2!).toBeGreaterThan(firstTick + 1);
+
+    // fire2 + 1: the event must still be ACTIVE and accept a fresh player
+    // response. If the stale conclude choice had leaked (regression), it would
+    // auto-conclude the occurrence the tick it fired and this response would be
+    // rejected as 'no-active-event'.
+    r.tick();
+    expect(r.getEvents().filter((e) => e.text.startsWith(`${EVENTS[id].name}: `)).at(-1)?.tick).toBe(fire2);
+    expect(r.respondEvent(id, nonConcludeChoice).ok).toBe(true);
+
+    // The second occurrence then runs its FULL natural duration — it concludes
+    // exactly `eventDuration` ticks after it fired, never ~1-2 ticks later.
+    let final2: number | undefined;
+    let budget = dur + 20;
+    while (budget-- > 0) {
+      final2 = finalMsgTick(r, id, fire2!);
+      if (final2 !== undefined) break;
+      r.tick();
+    }
+    expect(final2).toBe(fire2! + dur);
+  });
+});
+
 describe('no Math.random / wall-clock in the Phase 15 sim chain (determinism audit)', () => {
   it('ratings/objectives/events/trade/missions/advisors/types introduce no Math.random()/Date.now()/new Date() invocations (runner.ts excluded: its only Date.now is the save-serialization savedAt timestamp)', () => {
     const root = join(__dirname, '..', '..', 'src');

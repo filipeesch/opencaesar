@@ -73,3 +73,39 @@ describe('annualExports trailing-360 window determinism (Phase 15, RATE-02)', ()
     expect(Number.isFinite(late)).toBe(true);
   });
 });
+
+/** An import-only city: the massilia route imports clay up to target but
+ *  exports nothing (every other good stays `no_trade`). */
+function buildImportOnlyCity(r: SimRunner): void {
+  buildProductionCity(r);
+  r.takeLoan(1500); // fund the route open + clay import purchases (replayable)
+  r.openTradeRoute('massilia');
+  r.setTradeOrder('massilia', 'clay', 'import_upto_target', { target: 6 });
+}
+
+describe('annualExports import exclusion (Phase 15, WR-02)', () => {
+  it('an import-only city that receives imports for > 1 year reports annualExports === 0, while the export path increments the ring', () => {
+    for (const seed of [1, 7, 1337]) {
+      const importer = new SimRunner(seed, productionChainMap());
+      buildImportOnlyCity(importer);
+      for (let i = 0; i < 600; i++) importer.tick(); // > one year
+      const route = importer.getTradeRoutes()['massilia'];
+      // Meaningful guard: imports actually occurred (the treasury spent on
+      // imported clay) — so `annualExports === 0` is a real exclusion, not a
+      // trivial "no trade happened" pass.
+      expect(route?.importSpend ?? 0).toBeGreaterThan(0);
+      // This city performs imports ONLY — nothing on the route physically exports.
+      expect(route?.exportProceeds ?? 0).toBe(0);
+      // WR-02: imported loads never feed the trailing-360 export window.
+      expect(importer.getDerived().annualExports).toBe(0);
+
+      // Contrast on the SAME seed: the export city produces real exports and
+      // DOES increment the ring — proving the ring is wired, only the import
+      // branch is excluded from it.
+      const exporter = new SimRunner(seed, productionChainMap());
+      buildExportCity(exporter);
+      for (let i = 0; i < 600; i++) exporter.tick();
+      expect(exporter.getDerived().annualExports).toBeGreaterThan(0);
+    }
+  });
+});
