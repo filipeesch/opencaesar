@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { campaignMissions } from '../../src/sim/missions';
-import { buildCodex, nextTutorialPrompt, tutorialText, TUTORIAL_ELIGIBILITY, lookupEntry } from '../../src/sim/campaign';
+import { buildCodex, nextTutorialPrompt, tutorialText, TUTORIAL_ELIGIBILITY, lookupEntry, TUTORIAL_CODEX_REF } from '../../src/sim/campaign';
 import { BUILDINGS } from '../../data/buildings';
 import { SimRunner } from '../../src/sim/runner';
 import { foodChainMap, buildFoodCity } from '../helpers';
@@ -60,6 +60,28 @@ describe('enriched codex (Phase 17, CAMPAIGN-03)', () => {
     expect(lookupEntry(codex, 'farm', 'commodity')).toBeUndefined();
     expect(lookupEntry(codex, 'no_such_entry', 'building')).toBeUndefined();
     expect(lookupEntry(codex, 'wheat', 'commodity')?.name).toBe('Wheat');
+  });
+
+  it('every TUTORIAL_CODEX_REF and relatedLinks resolves to a real codex entry (no dangling cross-links) (WR-02)', () => {
+    const codex = buildCodex();
+    const ids = new Set(codex.map((e) => e.id));
+    // resolve via lookupEntry too (the Phase-18 UI path)
+    for (const step of Object.keys(TUTORIAL_CODEX_REF) as (keyof typeof TUTORIAL_CODEX_REF)[]) {
+      const ref = TUTORIAL_CODEX_REF[step];
+      if (!ref) continue; // 'dismissed' links nowhere
+      expect(ids.has(ref), `TUTORIAL_CODEX_REF.${step} → '${ref}' resolves`).toBe(true);
+      expect(lookupEntry(codex, ref)).toBeDefined();
+    }
+    for (const e of codex) {
+      for (const link of e.relatedLinks ?? []) {
+        expect(ids.has(link), `${e.kind} entry '${e.id}' relatedLinks → '${link}' resolves`).toBe(true);
+      }
+    }
+    // The specific refs that were dangling (WR-02) now resolve.
+    expect(ids.has('labor')).toBe(true);
+    expect(ids.has('rats-prosperity')).toBe(true);
+    expect(ids.has('grand_temple')).toBe(true);
+    expect(ids.has('temple')).toBe(true);
   });
 });
 

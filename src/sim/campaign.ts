@@ -199,7 +199,8 @@ const ENTRIES: CodexEntry[] = [
       `The treasury funds every build and wage. A royal subsidy of up to ${CONFIG.royalSubsidyCap} denarii is available yearly; loans up to ${CONFIG.loanMaxAmount} denarii accrue ${Math.round(CONFIG.loanInterestRate * 100)}% interest a year; wealth above ${CONFIG.treasuryOverflowLimit} denarii is lost.`,
     howItWorks: 'Keep the balance healthy — wages unpaid for long outweigh every other prosperity factor.',
     hints: [`subsidy ${CONFIG.royalSubsidyCap}/yr`, `loan cap ${CONFIG.loanMaxAmount}`, `interest ${Math.round(CONFIG.loanInterestRate * 100)}%/yr`, `overflow ${CONFIG.treasuryOverflowLimit}`],
-    relatedLinks: ['ratings-prosperity'],
+    // WR-02: was dangling 'ratings-prosperity' — the ratings entries are rats-*.
+    relatedLinks: ['rats-prosperity'],
   },
   // ratings — one per rating, from the live weights.
   ...(['culture', 'prosperity', 'stability', 'favor'] as const).map((r) => ({
@@ -219,7 +220,8 @@ const ENTRIES: CodexEntry[] = [
     kind: 'religion' as const, id: 'festivals', name: 'Festivals', blurb: 'Honor the gods and raise worship',
     description: 'Hold a festival to boost every god\'s worship and Favor for their window.',
     howItWorks: `${FESTIVAL_TIERS.map((t) => `${t.id}: ${t.cost} denarii, +${Math.round(t.worshipBoost * 100)}% worship, +${t.favorBoost} favor`).join('; ')}.`,
-    relatedLinks: [...GODS, 'temples', 'rats-favor'],
+    // WR-02: was dangling 'temples' — the building entries are temple/grand_temple.
+    relatedLinks: [...GODS, 'temple', 'grand_temple', 'rats-favor'],
   },
   // risks — the derived fire/collapse/crime risks plus each event.
   {
@@ -237,6 +239,17 @@ const ENTRIES: CodexEntry[] = [
     howItWorks: `A '${e.severity}' event; it can shift ratings and damage buildings, then concludes.`,
     relatedLinks: ['risks'],
   })),
+  // labor — the workforce underlying every staffed building. Authored overview
+  // (the labor pool spans the walker network + per-building workers — no single
+  // catalog record — same no-hand-roll exception as 'shortcuts', composed from
+  // the live WALKERS/BUILDINGS facts). Exists so the tutorial 'labor' step's
+  // codexRef (WR-02) resolves; before this, 'labor' linked to a nonexistent id.
+  {
+    kind: 'shortcuts' as const, id: 'labor', name: 'Labor & Workers', blurb: 'A connected labor pool staffs every building',
+    description: 'Every staffed building draws its workers from the connected labor pool: a road network lets labor walkers reach workplaces and deliveries.',
+    howItWorks:
+      'A building with road access employs its full staff; an isolated building stays idle no matter how many workers the city holds.',
+  },
   // shortcuts — the one static-text category (documented no-hand-roll exception:
   //   there is no catalog of game controls; the spec requires the category).
   {
@@ -400,7 +413,8 @@ export const TUTORIAL_EXPANDED: Record<TutorialStepId, string> = {
   dismissed: '',
 };
 
-/** The codex entry each step links to (built by buildCodex — Phase 17). */
+/** The codex entry each step links to (built by buildCodex — Phase 17). Every
+ *  ref MUST resolve to a real entry id (WR-02) — the integrity test asserts it. */
 export const TUTORIAL_CODEX_REF: Record<TutorialStepId, string> = {
   roads: 'road',
   housing: 'housing',
@@ -408,7 +422,7 @@ export const TUTORIAL_CODEX_REF: Record<TutorialStepId, string> = {
   food: 'farm',
   labor: 'labor',
   trade: 'trade',
-  rating: 'ratings',
+  rating: 'rats-prosperity', // ratings entries are rats-* (WR-02: was dangling 'ratings')
   'housing-evolution': 'housing',
   'immigration-blocked': 'road',
   dismissed: '',
