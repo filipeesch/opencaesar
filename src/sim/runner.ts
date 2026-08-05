@@ -308,6 +308,10 @@ export class SimRunner {
       if (ev.remaining <= 0) {
         this.logEvent('event', eventFinalMsg(ev.id), EVENTS[ev.id]?.severity ?? 'mild');
         this.activeEvent = null;
+        // WR-05: a recorded response applies to a single OCCURRENCE only —
+        // clear it on conclusion so a later occurrence of the same event type
+        // starts fresh instead of silently re-applying the old choice.
+        delete this.eventResponseByEvent[ev.id];
         this.refreshEventDelta();
       } else if (ev.remaining === Math.floor(ev.total / 2)) {
         const sustain = eventSustainMsg(ev.id);
