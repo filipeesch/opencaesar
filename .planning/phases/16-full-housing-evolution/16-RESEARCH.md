@@ -442,26 +442,33 @@ house.civic // { health, literacy, entertainment } 0..100 (walkers.ts:111-119)
 
 ## Open Questions
 
-1. **Desirability normalization (A2)**
+> All five questions are RESOLVED — the plan (16-PLAN.md) implements the recommendations below, with the desirability normalization updated to `clamp(0,30, round(x/6))` so the full 21-level ladder is satisfiable.
+
+1. **Desirability normalization (A2)** *(RESOLVED — clamped to 0..30 so the full ladder is reachable)*
    - What we know: live scale 0–200 (`desirabilityOf`, housing.ts:68-113); catalog scale 1–20 (`HOUSING_LEVELS.desirability`); `decideEvolution` expects the catalog scale with ±5 padding/tolerance.
    - What's unclear: exact mapping (÷10 vs ÷`desirabilityThresholdPerTier`) and whether a house with zero services should ever evolve on terrain alone.
    - Recommendation: `levelDesirability = clamp(0,20, round(tileDesirability / 10))`; confirm in discuss-phase; unit-test boundaries (0, 200, 30=earth, 75=golden house).
-2. **`satisfied` assembly precedence / requirements-set semantics (A3/A5)**
+   - **Resolution (plan 16-01-01):** `clamp(0,30, round(tileDesirability / 6))` — cap 30 (NOT 20) because `decideEvolution` requires `desirability >= next + 5` (level 20 needs 25); a cap-20 normalizer made levels 16-20 mathematically unreachable. Boundaries 0/5/13/17/30 for raw 0/30/75/101/200.
+2. **`satisfied` assembly precedence / requirements-set semantics (A3/A5)** *(RESOLVED — deriveSatisfied per-house function in 16-01-01)*
    - What we know: `requirementsSatisfied` (housingEvolution.ts:50-55) requires **every** `requires`+`requiresGoods` key to be present in `satisfied`; live keys are wellness-level, catalog keys are building-level.
    - What's unclear: exact per-key derivation and whether `satisfied` should carry the requirement-key vocabulary (recommended: yes — populate only the union of `requires`+`requiresGoods`).
    - Recommendation: implement `deriveSatisfied` as a single pure function with the key map in Pattern 2; gate each mapping behind a line-item confirmation in discuss-phase.
-3. **Non-food goods + foodInventory erosion (A4/A9)**
+   - **Resolution (plan 16-01-01):** `deriveSatisfied(house, buildings)` populates only the `requires`+`requiresGoods` union with the Pattern-2 key map (water→waterCooldown, market→food, wellness→SERVICE_BY_WALKER + city building present, temple→godAccess, civic→city presence, goods→foodInventory ∨ cityGoodsAccess).
+3. **Non-food goods + foodInventory erosion (A4/A9)** *(RESOLVED — cityGoodsAccess proxy; goods devolution out of scope this phase)*
    - What we know: no live per-house non-food delivery; `foodInventory` never decays; `tools` marked `houseGood:false` but required at levels 15+.
    - What's unclear: whether to add `cityGoodsAccess` (proxy) or cap high levels until the distribution/trade phases; whether to wire consumption/memory.
    - Recommendation: proxy goods via deterministic city storage/route stock for this phase (so the ladder is reachable), document that real home delivery arrives with MARK/TRADE phases; flag the `tools` catalog inconsistency to DATA work.
-4. **Multi-god / multi-service count requirements (A5)**
+   - **Resolution (plan 16-01-01/16-03-02):** `cityGoodsAccess` deterministic city-stock proxy (16-01-01); `tools` removed from levels 15-20 `requiresGoods` + validate gate (16-03-02); goods-derived `satisfied` is sticky this phase, so the devolve scenario inverts a service/desirability key, never a goods key (16-00-01/16-02-02).
+4. **Multi-god / multi-service count requirements (A5)** *(RESOLVED — single-key any-god this phase, deferred)*
    - What we know: game.md §11.3 asks e.g. "acesso a dois cultos" and "três cultos"; `HOUSING_LEVELS.requires` has a single `'temple'`/`'grand_temple'` key.
    - What's unclear: whether to extend the catalog with god-count/min-service-count fields or keep single-key templated access.
    - Recommendation: stay single-key (any god) this phase; defer multi-god gating to a catalog extension tracked as a follow-up; note the deviation from game.md explicitly.
-5. **Merge population arithmetic + cadence (A6/A7)**
+   - **Resolution (plan 16-01-01):** single-key `temple`/`grand_temple` satisfied by any active godAccess TTL; multi-god gating deferred to a catalog extension.
+5. **Merge population arithmetic + cadence (A6/A7)** *(RESOLVED — monthly cadence, footprint ladder, combined population)*
    - What we know: CONTEXT says "the merged house producing the combined population"; merge is deterministic, block-fit over `occupiedTiles`; footprint ladder from game.md §11.3; catalog lacks footprint.
    - What's unclear: cadence (every tick vs monthly `% 40`), combined population (target capacity vs sum), whether both partners must be `>=` the level's desirability.
    - Recommendation: add `footprint` (and optionally `workers`) as an additive catalog field; run the merge on the monthly cadence to match the "1–3 month grace" scale and limit churn; population = sum of merged capacities (matches "combined population"); confirm exact block-fit rule (orthogonal-only vs 2×2 corner fill) in discuss-phase.
+   - **Resolution (plan 16-02-01/16-02-02):** `footprint` ladder added to `HOUSING_LEVELS` (1×1:0-10, 2×2:11-14, 3×3:15-18, 4×4:19-20); merge on the `%40` monthly cadence in fixed placement-order scan; block-fit over `occupiedTiles` via `blockFits`/`findMergePartner`; survivor gains footprint + combined population + re-keyed occupancy; never above level 20.
 
 ## Environment Availability
 
