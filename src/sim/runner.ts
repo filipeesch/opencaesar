@@ -217,13 +217,13 @@ export class SimRunner {
    *  re-derives byte-identically from replaying saveCommands. It lands only in
    *  the Prosperity construction bucket, never the operating-balance factor. */
   private constructionSpend = 0;
-  /** RATE-02/D-03: per-year exported-load totals (yearKey → loads) snapshotted
-   *  just before resetAnnualQuotas wipes usedPerGood, so the trailing-360
-   *  annualExports window survives the wipe. Deterministic from tickCount +
-   *  live trade state — no wall-clock, no schema change. */
-  private annualExportBuckets: Record<number, number> = {};
-  /** Last year the annual-export bucket was snapshotted (Math.floor(tick/360)). */
-  private annualExportYear = -1;
+  /** RATE-02/D-03 (WR-01/WR-02 fix): per-tick exported-load ring for the true
+   *  trailing-360-tick annualExports window. Each tick's slot is zeroed before
+   *  the trade system runs and incremented ONLY on the physical EXPORT path
+   *  (never imports — WR-02), so summing the 360 slots always covers exactly
+   *  the last 360 ticks (WR-01). Deterministic from tickCount + live trade
+   *  state — no wall-clock, no schema change, survives the quota reset. */
+  private readonly tickExportCounts = new Array<number>(360).fill(0);
 
   constructor(seed: number, map?: SimMap, mapSize?: number) {
     if (!catalogsValidated) {
@@ -480,16 +480,12 @@ export class SimRunner {
 
   private tickTradeSystem(): void {
     const year = Math.floor(this.tickCount / 360);
-    // RATE-02/D-03: snapshot the just-elapsed year's per-good export loads
-    // BEFORE resetAnnualQuotas wipes the live usedPerGood tally, so the
-    // trailing-360 annualExports window survives the reset deterministically.
-    // The snapshot triggers exactly when the tick-based year changes (a no-op
-    // within a year) and derives purely from live trade state + tickCount, so
-    // it is byte-identical across chunked ticking and a save/load replay.
-    if (year !== this.annualExportYear) {
-      this.annualExportYear = year;
-      if (year - 1 >= 0) this.annualExportBuckets[year - 1] = this.sumUsedPerGood();
-    }
+    // RATE-02/D-03 (WR-01 fix): zero this tick's export ring slot BEFORE the
+    // trade system runs so each slot holds exactly one tick's exports and the
+    // summed window always covers the last 360 ticks. Deterministic from
+    // tickCount + live trade state — byte-identical across chunked ticking and
+    // a save/load replay (the ring re-derives from replaying the same ticks).
+    this.tickExportCounts[this.tickCount % 360] = 0;
     // Per-good quotas reset on the tick-based year clock (TRAD-04).
     resetAnnualQuotas(this.tradeRoutes, year);
 
@@ -743,6 +739,10 @@ export class SimRunner {
       this.treasuryAccount.addRevenue('trade', price * qty);
       route.exportProceeds = (route.exportProceeds ?? 0) + price * qty;
       consumeQuota(route, good, qty);
+      // WR-02: the trailing-360 annualExports window counts EXPORTS only — the
+      // ring is incremented here (physical export path), never on the import
+      // path below.
+      this.tickExportCounts[this.tickCount % 360] += qty;
       this.spawnTradeCarrier(city, good, qty, true, source.id, null);
       schedule();
       return;
@@ -943,25 +943,15 @@ export class SimRunner {
     return rewards / this.requestHistory.length;
   }
 
-  /** RATE-02/D-03: total loads exported so far this year across enabled routes
-   *  (the live usedPerGood tally resetAnnualQuotas will wipe). */
-  private sumUsedPerGood(): number {
-    let total = 0;
-    for (const route of Object.values(this.tradeRoutes)) {
-      if (!route.enabled) continue;
-      for (const v of Object.values(route.usedPerGood ?? {})) {
-        if (typeof v === 'number') total += v;
-      }
-    }
-    return total;
-  }
-
-  /** RATE-02/D-03: the trailing-360-tick annual-export window — the current
-   *  partial year's exports plus the prior full year's snapshot. Deterministic
-   *  (replay-derivable from tickCount + trade state), never wall-clock. */
+  /** RATE-02/D-03 (WR-01/WR-02 fix): the trailing-360-tick annual-export
+   *  window — the sum of each of the last 360 ticks' EXPORTED loads (the
+   *  per-tick ring; imports are excluded). Deterministic (replay-derivable
+   *  from tickCount + trade state), never wall-clock, and never a lifetime
+   *  accumulator. */
   private annualExportsTotal(): number {
-    const year = Math.floor(this.tickCount / 360);
-    return this.sumUsedPerGood() + (this.annualExportBuckets[year - 1] ?? 0);
+    let total = 0;
+    for (let i = 0; i < this.tickExportCounts.length; i++) total += this.tickExportCounts[i];
+    return total;
   }
 
   /** RATE-03: price_rise/price_fall modify EXISTING per-city/good price states
