@@ -88,6 +88,40 @@ describe('campaign progression + start-year (Phase 17, CAMPAIGN-01)', () => {
     expect(r.getMission()!.id).toBe('tutorial'); // gate blocks the switch
   });
 
+  it('a paused queued startMission of a locked/unknown mission is rejected with no queue entry (WR-01)', () => {
+    const r = new SimRunner(1234, foodChainMap());
+    buildFoodCity(r);
+    r.startMission('tutorial'); // in-progress → 'small_town' is locked
+    r.setPaused(true);
+
+    const locked = r.startMission('small_town'); // locked while tutorial runs
+    expect(locked.ok).toBe(false);
+    expect(locked.error).toBe('locked');
+    expect(r.getPendingCommandCount()).toBe(0); // nothing queued
+
+    const unknown = r.startMission('no_such_mission');
+    expect(unknown.ok).toBe(false);
+    expect(unknown.error).toBe('unknown-mission');
+    expect(r.getPendingCommandCount()).toBe(0);
+
+    // Unpause → drain: no startMission was queued, so the mission is unchanged.
+    r.setPaused(false);
+    r.tick();
+    expect(r.getMission()!.id).toBe('tutorial');
+  });
+
+  it('a paused queued startMission of an allowed (fresh/sandbox) mission enqueues and starts on drain (WR-01)', () => {
+    const def = MISSIONS['small_town']!;
+    const r = new SimRunner(5, missionMap(def)!);
+    r.setPaused(true);
+    const res = r.startMission('small_town'); // fresh runner = sandbox, any mission
+    expect(res.ok).toBe(true);
+    expect(r.getPendingCommandCount()).toBe(1);
+    r.setPaused(false);
+    r.tick(); // drain → the queued startMission applies
+    expect(r.getMission()!.id).toBe('small_town');
+  });
+
   it('after tutorial is won, the NEXT mission in campaign order unlocks and skipping ahead stays blocked', () => {
     const r = buildTutorialWinner();
     // Win 'tutorial' (pop100/culture10/prosperity10/stability10 held 3 months).

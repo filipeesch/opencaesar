@@ -2254,6 +2254,15 @@ export class SimRunner {
    */
   startMission(id: string, startingYear?: number): { ok: boolean; error?: string } {
     if (this.paused) {
+      // WR-01: a paused-queued start must clear the same sequential unlock gate
+      // and mission-id check as a direct start. The queue drains with
+      // replaying=true, which would otherwise bypass the live-only gate; the
+      // precedent is the Phase-15 respondEvent paused-path fix (validate before
+      // enqueue). The start YEAR is authored now (tickCount cannot advance while
+      // paused, so it equals the drain-tick year) and carried on the command.
+      const unlock = this.missionUnlocked(id);
+      if (!unlock.ok) return unlock;
+      if (!(MISSIONS[id] ?? EXTRA_MISSIONS[id])) return { ok: false, error: 'unknown-mission' };
       this.enqueue({ kind: 'startMission', id, year: startingYear ?? Math.floor(this.tickCount / 360) });
       return { ok: true };
     }
