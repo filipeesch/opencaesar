@@ -37,7 +37,8 @@
         overflow-y: auto;
       }
       #hud .hud-panel,
-      #hud .hud-toast {
+      #hud .hud-toast,
+      #hud .hud-control-bar {
         pointer-events: auto;
       }
       .hud-panel {
@@ -209,6 +210,74 @@
         border-radius: 4px;
         padding: 4px 8px;
         cursor: pointer;
+      }
+
+      /* ---- Management UI (Phase 18) ---- */
+      .hud-control-bar {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .hud-control-btn {
+        flex: 1;
+        font: inherit;
+        font-size: 12px;
+        color: #f3e9d2;
+        background: #4a3517;
+        border: 1px solid #7a6234;
+        border-radius: 4px;
+        padding: 6px 4px;
+        cursor: pointer;
+      }
+      .hud-control-btn:hover {
+        background: #5d4420;
+      }
+      .hud-control-btn:active {
+        background: #7a5c22;
+      }
+      .hud-build-btn:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .hud-log.active {
+        border-color: #e8c46b;
+      }
+      .advisor-drawer {
+        position: fixed;
+        bottom: 132px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: min(560px, 90vw);
+        max-height: 40vh;
+        overflow-y: auto;
+        z-index: 25;
+        background: rgba(40, 28, 14, 0.95);
+        border: 1px solid #7a6234;
+        border-radius: 6px;
+        padding: 8px 12px;
+        color: #f3e9d2;
+        pointer-events: auto;
+      }
+      .overlay-bar {
+        position: fixed;
+        bottom: 64px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 24;
+        background: rgba(40, 28, 14, 0.95);
+        border: 1px solid #7a6234;
+        border-radius: 6px;
+        padding: 8px 12px;
+        color: #f3e9d2;
+        pointer-events: auto;
+      }
+      .overlay-toggles {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      .overlay-toggles .hud-overlay-title {
+        color: #e8c46b;
       }
       .hud-overlay {
         position: fixed;

@@ -23,6 +23,12 @@ export class HUDScene extends Phaser.Scene {
   private activeCategory: CategoryFilter = 'all';
   /** Building id currently shown in the detail popup, or null when closed. */
   private inspectId: number | null = null;
+  /** Build-palette buttons, tracked for the live unaffordable-disabled state. */
+  private buildBtns: HTMLButtonElement[] = [];
+  /** Whether the advisors drawer is open (control bar → drawer). */
+  private drawerOpen = false;
+  /** Whether the overlay bar is open (control bar → overlay bar). */
+  private overlayBarOpen = false;
 
   constructor() {
     super('HUD');
@@ -71,7 +77,21 @@ export class HUDScene extends Phaser.Scene {
       this.renderLog(state.messages);
     }
 
+    // UI-01: build buttons show a LIVE unaffordable-disabled state — disabled
+    // exactly when state.treasury < BUILDINGS[type].cost, re-evaluated every
+    // tick (only when changed avoids layout thrash).
+    this.updateBuildAffordability(state.treasury);
+
     if (this.inspectId !== null) this.renderPopup(state.buildings.find((b) => b.id === this.inspectId) ?? null);
+  }
+
+  /** Disable each build button when the player cannot afford it. */
+  private updateBuildAffordability(treasury: number): void {
+    for (const btn of this.buildBtns) {
+      const type = btn.dataset.build as BuildingType;
+      const unaffordable = BUILDINGS[type].cost > treasury;
+      if (btn.disabled !== unaffordable) btn.disabled = unaffordable;
+    }
   }
 
   private buildDom(): void {
@@ -147,7 +167,60 @@ export class HUDScene extends Phaser.Scene {
 
     const log = document.createElement('div');
     log.className = 'hud-panel hud-log';
+    log.dataset.testid = 'log-panel';
     log.innerHTML = '<div class="hud-subtitle">Messages</div><ul data-testid="message-log"></ul>';
+
+    // Control bar (UI-01): every central control dispatches a real handler that
+    // visibly toggles its surface. Labels are static — textContent, never
+    // innerHTML interpolation.
+    const controlBar = document.createElement('div');
+    controlBar.className = 'hud-control-bar';
+    controlBar.dataset.testid = 'control-bar';
+    const advisorsBtn = document.createElement('button');
+    advisorsBtn.className = 'hud-control-btn';
+    advisorsBtn.dataset.testid = 'controls-advisors';
+    advisorsBtn.textContent = 'Advisors';
+    advisorsBtn.addEventListener('click', () => this.toggleAdvisorsDrawer());
+    const overlaysBtn = document.createElement('button');
+    overlaysBtn.className = 'hud-control-btn';
+    overlaysBtn.dataset.testid = 'controls-overlays';
+    overlaysBtn.textContent = 'Overlays';
+    overlaysBtn.addEventListener('click', () => this.toggleOverlayBar());
+    const messagesBtn = document.createElement('button');
+    messagesBtn.className = 'hud-control-btn';
+    messagesBtn.dataset.testid = 'controls-messages';
+    messagesBtn.textContent = 'Messages';
+    messagesBtn.addEventListener('click', () => this.toggleMessagesFocus());
+    controlBar.append(advisorsBtn, overlaysBtn, messagesBtn);
+
+    // Advisors drawer frame (filled with tabs + a live panel in 18-02-02).
+    const advisorsDrawer = document.createElement('div');
+    advisorsDrawer.className = 'advisor-drawer';
+    advisorsDrawer.dataset.testid = 'advisor-drawer';
+    advisorsDrawer.style.display = 'none';
+    const drawerHead = document.createElement('div');
+    drawerHead.className = 'hud-subtitle';
+    drawerHead.textContent = 'Advisors';
+    const tabHost = document.createElement('div');
+    tabHost.className = 'advisor-tabs';
+    tabHost.dataset.testid = 'advisor-tabs';
+    const panelHost = document.createElement('div');
+    panelHost.className = 'advisor-panels';
+    panelHost.dataset.testid = 'advisor-panels';
+    advisorsDrawer.append(drawerHead, tabHost, panelHost);
+
+    // Overlay bar frame (filled with the 5 toggles + None in 18-03-02).
+    const overlayBar = document.createElement('div');
+    overlayBar.className = 'overlay-bar';
+    overlayBar.dataset.testid = 'overlay-bar';
+    overlayBar.style.display = 'none';
+    const overlayHead = document.createElement('div');
+    overlayHead.className = 'hud-subtitle';
+    overlayHead.textContent = 'Overlays';
+    const overlayToggles = document.createElement('div');
+    overlayToggles.className = 'overlay-toggles';
+    overlayToggles.dataset.testid = 'overlay-toggles';
+    overlayBar.append(overlayHead, overlayToggles);
 
     const toast = document.createElement('div');
     toast.className = 'hud-toast';
@@ -194,8 +267,12 @@ export class HUDScene extends Phaser.Scene {
     overlay.querySelector('[data-testid="save-button"]')?.addEventListener('click', () => this.saveGame());
     overlay.querySelector('[data-testid="restart-button"]')?.addEventListener('click', () => this.main?.restartToHome());
 
-    root.append(stats, build, policy, log, toast, popup, speedRow, pauseBtn, overlay);
+    root.append(stats, build, policy, log, controlBar, toast, popup, speedRow, pauseBtn, overlay);
     document.getElementById('hud')?.appendChild(root);
+    // Bottom-center overlay surfaces live outside the scrolling right-edge HUD
+    // column so they never clip (fixed-position, same as the toast).
+    document.body.appendChild(advisorsDrawer);
+    document.body.appendChild(overlayBar);
 
     this.els.pop = root.querySelector('[data-testid="stat-population"]') as HTMLElement;
     this.els.prosperity = root.querySelector('[data-testid="stat-prosperity"]') as HTMLElement;
@@ -212,6 +289,7 @@ export class HUDScene extends Phaser.Scene {
     this.els.tax = root.querySelector('[data-testid="policy-tax-value"]') as HTMLElement;
     this.els.wage = root.querySelector('[data-testid="policy-wage-value"]') as HTMLElement;
     this.els.log = root.querySelector('[data-testid="message-log"]') as HTMLElement;
+    this.els.logPanel = root.querySelector('[data-testid="log-panel"]') as HTMLElement;
     this.els.toast = root.querySelector('[data-testid="toast"]') as HTMLElement;
     this.els.popup = popup;
     this.els.overlay = overlay;
@@ -219,6 +297,13 @@ export class HUDScene extends Phaser.Scene {
     this.els.build = grid;
     this.els.taxInput = root.querySelector('[data-testid="policy-tax"]') as HTMLInputElement;
     this.els.wageInput = root.querySelector('[data-testid="policy-wage"]') as HTMLInputElement;
+    this.els.controlBar = controlBar;
+    this.els.advisorsDrawer = advisorsDrawer;
+    this.els.overlayBar = overlayBar;
+    this.els.advisorTabs = tabHost;
+    this.els.advisorPanels = panelHost;
+    this.els.overlayToggles = overlayToggles;
+    this.buildBtns = [...grid.querySelectorAll('.hud-build-btn')] as HTMLButtonElement[];
   }
 
   private wireEvents(): void {
@@ -281,6 +366,34 @@ export class HUDScene extends Phaser.Scene {
       const show = this.activeCategory === 'all' || BUILDINGS[type].category === this.activeCategory;
       (btn as HTMLElement).style.display = show ? '' : 'none';
     });
+  }
+
+  /** Toggle the advisors drawer (control-bar Advisors button → real handler). */
+  private toggleAdvisorsDrawer(force?: boolean): void {
+    this.drawerOpen = force ?? !this.drawerOpen;
+    if (this.els.advisorsDrawer) {
+      this.els.advisorsDrawer.style.display = this.drawerOpen ? 'block' : 'none';
+    }
+    this.game.events.emit('advisor-open', this.drawerOpen);
+  }
+
+  /** Toggle the overlay bar (control-bar Overlays button → real handler). */
+  private toggleOverlayBar(force?: boolean): void {
+    this.overlayBarOpen = force ?? !this.overlayBarOpen;
+    if (this.els.overlayBar) {
+      this.els.overlayBar.style.display = this.overlayBarOpen ? 'block' : 'none';
+    }
+    this.game.events.emit('overlay-toggle', this.overlayBarOpen ? 'bar-open' : 'bar-close');
+  }
+
+  /** Focus the message log (control-bar Messages button → real scene effect). */
+  private toggleMessagesFocus(): void {
+    const panel = this.els.logPanel;
+    if (!panel) return;
+    const on = panel.classList.toggle('active');
+    if (on && this.els.log) {
+      this.els.log.scrollTop = this.els.log.scrollHeight;
+    }
   }
 
   private renderLog(messages: { tick: number; type: string; text: string }[]): void {
