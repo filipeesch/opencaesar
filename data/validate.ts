@@ -80,6 +80,22 @@ export function validateCatalogs(tradeCatalog: Record<string, TradeCityDef> = TR
     if (i > 0 && HOUSING_LEVELS[i - 1].level >= lvl.level) {
       issues.push({ catalog: 'housing', message: `levels not strictly ascending at ${lvl.level}` });
     }
+    // HOUS-02 merge ladder: every level's footprint must be a finite positive
+    // integer, and the ladder must be non-decreasing (1x1 → 2x2 → 3x3 → 4x4).
+    if (!Number.isFinite(lvl.footprint) || lvl.footprint < 1) {
+      issues.push({ catalog: 'housing', message: `level ${lvl.level}: footprint must be a finite positive integer` });
+    }
+    if (i > 0 && HOUSING_LEVELS[i - 1].footprint > lvl.footprint) {
+      issues.push({ catalog: 'housing', message: `level ${lvl.level}: footprint not monotonic (previous ${HOUSING_LEVELS[i - 1].footprint} > ${lvl.footprint})` });
+    }
+    // Catalog-consistency gate: every requiresGoods key must be either a food
+    // type or a house good (has a per-house delivery path). This is what forced
+    // the 'tools' (houseGood:false) resolution on levels 15-20.
+    for (const g of lvl.requiresGoods) {
+      if (!FOOD_TYPES.includes(g as never) && !(COMMODITIES[g]?.houseGood)) {
+        issues.push({ catalog: 'housing', message: `level ${lvl.level}: requiresGoods '${g}' is not a food type nor a house good` });
+      }
+    }
   }
 
   for (const w of Object.values(WALKERS)) {

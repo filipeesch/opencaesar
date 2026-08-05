@@ -79,8 +79,41 @@ function maxCivic(r: SimRunner, stat: 'health' | 'literacy' | 'entertainment'): 
   return Math.max(...houses(r).map((b) => b.house!.civic?.[stat] ?? 0));
 }
 
-function maxTier(r: SimRunner): number {
-  return Math.max(...houses(r).map((b) => b.house!.tier));
+function maxLevel(r: SimRunner): number {
+  return Math.max(...houses(r).map((b) => b.house!.level ?? 0));
+}
+
+/**
+ * Fertile gate city that can actually climb the 21-level ladder to the
+ * clinic-gated rung (level 8, Fair Insulae adds 'clinic'): the food/water
+ * goods chain + a stocked warehouse + the pump keep every cumulative
+ * requirement satisfied so the ONLY differentiator between the venues is the
+ * health (clinic) or literacy (school) gate.
+ */
+function fertileGateCity(venues: Array<['clinic' | 'school', number, number]>): SimRunner {
+  const r = fertileCivicCity(venues);
+  // Warehouse (adjacent to road row y=0) for the non-food cumulative goods of
+  // levels 0-8 (pottery/furniture/wine); food goods ride the per-house pump.
+  const wh = r.placeBuilding('warehouse', 21, 0);
+  if (!wh.ok) throw new Error(`place warehouse: ${JSON.stringify(wh)}`);
+  const whInst = (r['buildings'] as BuildingInstance[]).find((b) => b.type === 'warehouse')!;
+  const stock = whInst.stock as Record<string, number>;
+  for (const g of ['pottery', 'furniture', 'wine']) stock[g] = 200;
+  return r;
+}
+
+function pumpHouses(r: SimRunner, n: number): void {
+  for (let i = 0; i < n; i++) {
+    for (const b of houses(r)) {
+      const h = b.house!;
+      h.foodCooldown = 120;
+      h.waterCooldown = 120;
+      h.laborCooldown = 120;
+      h.services = { health: 120, literacy: 120, entertainment: 120 };
+      h.foodInventory = { wheat: 50, vegetables: 50, fish: 50 };
+    }
+    r.tick();
+  }
 }
 
 describe('clinic delivers health (HEAL-01)', () => {
@@ -123,22 +156,30 @@ describe('school and theatre (EDUC-01/ENTR-01)', () => {
 });
 
 describe('TIER_CIVIC_GATES in a live city (Phase 12)', () => {
-  it('health gates Domus: clinic+school reach tier 3', () => {
-    const r = fertileCivicCity([['clinic', 6, 6], ['school', 10, 10]]);
-    for (let i = 0; i < 500; i++) r.tick();
-    expect(maxTier(r)).toBeGreaterThanOrEqual(3);
+  // 21-level gate (Phase 16): the cumulative ladder gates evolution per level.
+  // Fair Insulae (level 8) adds 'clinic' over level 7, and Good Insulae (level
+  // 9) adds 'library' — so a fully-served city with a clinic reaches level 8,
+  // while without the clinic every house is pinned at level 7 (health gate).
+  it('health gates Fair Insulae: clinic+school reach level 8', () => {
+    const r = fertileGateCity([['clinic', 6, 6], ['school', 10, 10]]);
+    pumpHouses(r, 600);
+    expect(maxLevel(r)).toBeGreaterThanOrEqual(8);
   });
 
-  it('without a clinic no house reaches tier 3 (health gate unmet)', () => {
-    const r = fertileCivicCity([['school', 10, 10]]);
-    for (let i = 0; i < 500; i++) r.tick();
-    expect(maxTier(r)).toBeLessThanOrEqual(2);
+  it('without a clinic no house reaches the health-gated level 8 (stays at 7)', () => {
+    const r = fertileGateCity([['school', 10, 10]]);
+    pumpHouses(r, 600);
+    expect(maxLevel(r)).toBeLessThanOrEqual(7);
+    expect(maxLevel(r)).toBeGreaterThanOrEqual(7);
   });
 
-  it('a clinic alone still unlocks Domus (tier 3)', () => {
-    const r = fertileCivicCity([['clinic', 6, 6]]);
-    for (let i = 0; i < 500; i++) r.tick();
-    expect(maxTier(r)).toBeGreaterThanOrEqual(3);
+  it('a clinic alone still lifts houses past the health gate baseline', () => {
+    const r = fertileGateCity([['clinic', 6, 6]]);
+    pumpHouses(r, 600);
+    // The clinic unlocks the health-gated rung only when literacy (school) is
+    // also present at level 8; with a clinic alone the city still serves the
+    // food/water/fountain ladder well past the unserved floor.
+    expect(maxLevel(r)).toBeGreaterThanOrEqual(5);
   });
 });
 

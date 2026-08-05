@@ -43,10 +43,9 @@ export const BALANCE = {
   serviceCooldownTicks: 120,
 
   // Housing -------------------------------------------------------------------
-  /** Ticks a house must stay satisfied to evolve one tier. */
-  evolveWindowTicks: 60,
-  /** Ticks a house must stay unsatisfied (no food/water) to devolve one tier. */
-  devolveWindowTicks: 240,
+  // (The legacy 5-tier evolveWindowTicks/devolveWindowTicks were retired by the
+  // 21-level hysteresis engine — Phase 16 uses module-local DEFAULT_HYSTERESIS
+  // minSatisfiedTicks/toleranceTicks, so no BALANCE entries remain here.)
   /** Desirability required to reach the next house tier (tier n needs n * this). */
   desirabilityThresholdPerTier: 25,
   /** Desirability bonus/penalty per policy point (wage - tax). */

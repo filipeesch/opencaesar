@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { CONFIG, HOUSE_TIERS } from '../../src/sim/config';
+import { CONFIG } from '../../src/sim/config';
 import { desirabilityOf, tierThreshold, tickHousing } from '../../src/sim/housing';
+import { tierOfLevel } from '../../src/sim/housingLive';
+import { DEFAULT_HYSTERESIS } from '../../src/sim/housingEvolution';
+import { housingLevelName } from '../../data/housing';
 import {
   createHouseFood, dailyFoodConsumption, consumeHouseFood, foodVariety, tickHouseFoodMemory,
   deliverToHouse, homeStorageCapacity, houseFoodState, foodShortageEffects, houseFoodDays,
@@ -26,6 +29,10 @@ function mkHouse(tier: number, overrides: Partial<BuildingInstance['house']> = {
     stock: {},
     house: {
       tier,
+      level: Math.min(20, tier * 4), // consistent with the derived-tier mapping (levels 4T..4T+3 → tier T)
+      satisfiedTicks: 0,
+      unsatisfiedTicks: 0,
+      mergeable: true,
       foodCooldown: 0,
       waterCooldown: 0,
       laborCooldown: 0,
@@ -112,20 +119,25 @@ describe('house snapshot desirability', () => {
 });
 
 describe('housing evolution', () => {
-  it('evolves one tier after a sustained window of full coverage', () => {
+  it('evolves one level after minSatisfiedTicks of full coverage', () => {
     const map = earthMap();
+    // Level 0→1 (Crude Hut) requires only 'well' — satisfied by the fresh
+    // water cooldown, with food+labor as the base precondition holding.
     const house = mkHouse(0, { foodCooldown: 500, waterCooldown: 500, laborCooldown: 500 });
     const { messages, emit } = makeEmitter();
 
-    for (let i = 0; i < CONFIG.evolveWindowTicks - 1; i++) {
+    for (let i = 0; i < DEFAULT_HYSTERESIS.minSatisfiedTicks - 1; i++) {
       tickHousing(map, [house], { taxRate: 0, wageRate: 0.5 }, false, emit);
     }
-    expect(house.house?.tier).toBe(0);
+    expect(house.house?.level).toBe(0);
 
     tickHousing(map, [house], { taxRate: 0, wageRate: 0.5 }, false, emit);
-    expect(house.house?.tier).toBe(1);
-    expect(messages.some((m) => m.startsWith('house-evolved'))).toBe(true);
-    expect(house.house?.evolveCounter).toBe(0);
+    expect(house.house?.level).toBe(1);
+    expect(house.house?.tier).toBe(tierOfLevel(1));
+    expect(messages.some((m) => m.startsWith('house-evolved') && m.includes(housingLevelName(1)))).toBe(true);
+    // a level change zeroes BOTH counters (grace — no oscillation).
+    expect(house.house?.satisfiedTicks).toBe(0);
+    expect(house.house?.unsatisfiedTicks).toBe(0);
   });
 
   it('does not evolve without labor coverage', () => {
@@ -133,42 +145,46 @@ describe('housing evolution', () => {
     const house = mkHouse(0, { foodCooldown: 500, waterCooldown: 500, laborCooldown: 0 });
     const { emit } = makeEmitter();
     tickHousing(map, [house], { taxRate: 0, wageRate: 0.5 }, false, emit);
-    expect(house.house?.tier).toBe(0);
+    expect(house.house?.level).toBe(0);
   });
 
-  it('devolves one tier after a sustained food/water shortfall', () => {
+  it('devolves one level after toleranceTicks of a lost requirement', () => {
     const map = earthMap();
-    const house = mkHouse(2);
+    // Start at level 4 (Hovel) with no service cooldowns — the level 4
+    // requirements (well+market+wheat+pottery) are all lost at once.
+    const house = mkHouse(1, { level: 4, foodCooldown: 0, waterCooldown: 0, laborCooldown: 0 });
     const { messages, emit } = makeEmitter();
 
-    for (let i = 0; i < CONFIG.devolveWindowTicks - 1; i++) {
+    for (let i = 0; i < DEFAULT_HYSTERESIS.toleranceTicks - 1; i++) {
       tickHousing(map, [house], { taxRate: 0.1, wageRate: 0.1 }, false, emit);
     }
-    expect(house.house?.tier).toBe(2);
+    expect(house.house?.level).toBe(4);
 
     tickHousing(map, [house], { taxRate: 0.1, wageRate: 0.1 }, false, emit);
-    expect(house.house?.tier).toBe(1);
-    expect(messages.some((m) => m.startsWith('house-devolved'))).toBe(true);
+    expect(house.house?.level).toBe(3);
+    expect(house.house?.tier).toBe(tierOfLevel(3));
+    expect(messages.some((m) => m.startsWith('house-devolved') && m.includes(housingLevelName(3)))).toBe(true);
   });
 
-  it('never devolves below tier 0', () => {
+  it('never devolves below level 0', () => {
     const map = earthMap();
-    const house = mkHouse(0);
+    const house = mkHouse(0, { level: 0 });
     const { emit } = makeEmitter();
-    for (let i = 0; i < CONFIG.devolveWindowTicks * 3; i++) {
+    for (let i = 0; i < DEFAULT_HYSTERESIS.toleranceTicks * 3; i++) {
       tickHousing(map, [house], { taxRate: 0.1, wageRate: 0.1 }, false, emit);
     }
-    expect(house.house?.tier).toBe(0);
+    expect(house.house?.level).toBe(0);
   });
 
-  it('never evolves above the max tier', () => {
+  it('never evolves above level 20', () => {
     const map = earthMap();
-    const house = mkHouse(HOUSE_TIERS.length - 1, { foodCooldown: 500, waterCooldown: 500, laborCooldown: 500 });
+    const house = mkHouse(4, { level: 20, foodCooldown: 500, waterCooldown: 500, laborCooldown: 500 });
     const { emit } = makeEmitter();
-    for (let i = 0; i < CONFIG.evolveWindowTicks * 3; i++) {
+    for (let i = 0; i < DEFAULT_HYSTERESIS.minSatisfiedTicks * 3; i++) {
       tickHousing(map, [house], { taxRate: 0, wageRate: 0.5 }, false, emit);
     }
-    expect(house.house?.tier).toBe(HOUSE_TIERS.length - 1);
+    expect(house.house?.level).toBe(20);
+    expect(house.house?.tier).toBe(4);
   });
 
   it('decays service cooldowns each tick', () => {
