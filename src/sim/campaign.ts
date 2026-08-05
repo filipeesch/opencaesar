@@ -8,6 +8,8 @@
 import { BUILDINGS } from '../../data/buildings';
 import { COMMODITIES } from '../../data/commodities';
 import { WALKERS } from '../../data/walkers';
+import { HOUSING_LEVELS } from '../../data/housing';
+import { requirementsMet, levelDesirability } from './housingLive';
 import { GODS } from './services';
 
 export interface CodexEntry {
@@ -91,6 +93,9 @@ export interface HouseView {
   services?: Record<string, number>;
   godAccess?: Record<string, number>;
   foodInventory?: Record<string, number>;
+  /** The requirement keys this house currently holds (well/fountain/market/
+   *  service/goods) — drives the housing-evolution predicate. */
+  satisfied?: string[];
 }
 
 /** City-wide inputs the predicates read (built by the runner from live state). */
@@ -175,13 +180,24 @@ export const TUTORIAL_CODEX_REF: Record<TutorialStepId, string> = {
   dismissed: '',
 };
 
+/** Desirability headroom (on the 1-30 normalized scale) a house needs above its
+ *  next level's base to actually evolve (mirrors decideEvolution's padding). */
+const HOUSING_EVOLUTION_PADDING = 5;
+
 /**
- * The cause-detection catalog. Roads/housing are the trivially-eligible
- * introduction (preserving the ordered seed); water observes a real live signal.
- * The remaining cause steps are conservatively inert (`() => false`
- * placeholder) in the Wave-2 tracer and completed with real predicates in
- * 17-02-02 — the predicate chain is the final shape, only the functions are
- * still conservative.
+ * The cause-detection catalog: each step's eligibility is a pure TOTAL function
+ * of (derived, houses, city) — deterministic from state, never wall-clock, never
+ * throwing on empty cities. The ordered introduction (roads/housing) stays
+ * trivially eligible; the cause steps observe real blockers:
+ *   - water: houses that have never received clean water + no well/fountain
+ *   - food: hungry houses + no food producer/stock anywhere
+ *   - labor: staffable workplaces exist but houses are road-isolated
+ *   - trade: surplus stock but no exports yet
+ *   - rating: a mission is active and a target falls short (win explainer)
+ *   - housing-evolution: a house's next level is fully requirements-satisfied
+ *     and desirability is high — the player needs sustained satisfied ticks
+ *   - immigration-blocked: occupied houses with no labor connectivity (the spec
+ *     "houses built but no growth" → real cause: road/network isolation)
  */
 export const TUTORIAL_ELIGIBILITY: Record<TutorialStepId, TutorialEligibility> = {
   roads: { eligible: () => true },
@@ -193,12 +209,75 @@ export const TUTORIAL_ELIGIBILITY: Record<TutorialStepId, TutorialEligibility> =
       d.water.coveredTiles === 0,
     highlight: (houses) => houses.map((h) => h.id),
   },
-  food: { eligible: () => false },
-  labor: { eligible: () => false },
-  trade: { eligible: () => false },
-  rating: { eligible: () => false },
-  'housing-evolution': { eligible: () => false },
-  'immigration-blocked': { eligible: () => false },
+  food: {
+    eligible: (_d, houses, city) =>
+      houses.length > 0 &&
+      houses.every((h) => h.foodCooldown <= 0) &&
+      !city.hasFoodProducer &&
+      !city.hasStorageStock,
+    highlight: (houses) => houses.filter((h) => h.foodCooldown <= 0).map((h) => h.id),
+  },
+  labor: {
+    // A workplace exists (food producer or stocked storage) but houses are
+    // road-isolated — the labor pool cannot reach the staffable buildings.
+    eligible: (_d, houses, city) =>
+      houses.length > 0 &&
+      (city.hasFoodProducer || city.hasStorageStock) &&
+      houses.some((h) => !h.laborConnected),
+    highlight: (houses) => houses.filter((h) => !h.laborConnected).map((h) => h.id),
+  },
+  trade: {
+    // Surplus stock exists but nothing is exported yet — the trade route lesson.
+    eligible: (_d, _houses, city) => city.hasStorageStock && city.annualExports === 0,
+    highlight: () => [],
+  },
+  rating: {
+    eligible: (d, _houses, city) => {
+      if (!city.missionActive || !city.missionTargets) return false;
+      const t = city.missionTargets;
+      return (
+        (t.population !== undefined && d.population < t.population) ||
+        (t.culture !== undefined && d.culture < t.culture) ||
+        (t.prosperity !== undefined && d.prosperity < t.prosperity) ||
+        (t.stability !== undefined && d.stability < t.stability) ||
+        (t.favor !== undefined && d.favor < t.favor) ||
+        (t.treasury !== undefined && d.treasury < t.treasury) ||
+        (t.annualExports !== undefined && d.annualExports < t.annualExports)
+      );
+    },
+    highlight: () => [],
+  },
+  'housing-evolution': {
+    eligible: (_d, houses, _city) => {
+      if (houses.length === 0) return false;
+      return houses.some((h) => {
+        const next = h.level + 1;
+        const nextDef = HOUSING_LEVELS.find((l) => l.level === next);
+        if (!nextDef) return false;
+        // The next level's cumulative requirements are met AND the normalized
+        // desirability clears its padded threshold — the house just needs more
+        // satisfied ticks/services, not a new mechanic.
+        return (
+          requirementsMet(next, h.satisfied ?? []) &&
+          levelDesirability(h.desirability) >= nextDef.desirability + HOUSING_EVOLUTION_PADDING
+        );
+      });
+    },
+    highlight: (houses) =>
+      houses
+        .filter((h) => {
+          const next = h.level + 1;
+          const nextDef = HOUSING_LEVELS.find((l) => l.level === next);
+          return nextDef && requirementsMet(next, h.satisfied ?? []) && levelDesirability(h.desirability) >= nextDef.desirability + HOUSING_EVOLUTION_PADDING;
+        })
+        .map((h) => h.id),
+  },
+  'immigration-blocked': {
+    eligible: (_d, houses, _city) =>
+      houses.some((h) => !h.laborConnected && h.workersRequired > 0),
+    highlight: (houses) =>
+      houses.filter((h) => !h.laborConnected && h.workersRequired > 0).map((h) => h.id),
+  },
   dismissed: { eligible: () => false },
 };
 

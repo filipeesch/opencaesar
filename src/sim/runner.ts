@@ -47,7 +47,7 @@ import { buildCodex, TUTORIAL_ELIGIBILITY, TUTORIAL_STEP_ORDER, tutorialText, TU
 import type { HouseView, CityView, TutorialStepId, TutorialPrompt, TutorialView } from './campaign';
 import { desirabilityOf, tickHousing } from './housing';
 import { housingLevelName } from '../../data/housing';
-import { effectivePopulation, effectiveWorkers } from './housingLive';
+import { effectivePopulation, effectiveWorkers, deriveSatisfied } from './housingLive';
 import { findMergePartner, mergeProposal, targetFootprint } from './housingMerge';
 import { Treasury, rollYear } from './finance';
 import type { FinanceLedger } from './finance';
@@ -1404,6 +1404,7 @@ export class SimRunner {
       services: b.house!.services ? ({ ...b.house!.services } as Record<string, number>) : undefined,
       godAccess: b.house!.godAccess ? ({ ...b.house!.godAccess } as Record<string, number>) : undefined,
       foodInventory: b.house!.foodInventory ? ({ ...b.house!.foodInventory } as Record<string, number>) : undefined,
+      satisfied: deriveSatisfied(b.house!, this.buildings),
     }));
   }
 
