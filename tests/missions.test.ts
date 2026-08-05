@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { startMission, tickMission, missionName, campaignMissions } from '../src/sim/missions';
+// WR-03: the legacy startMission/tickMission/missionName were removed from
+// src/sim/missions (dead, divergent: year:0 landmine). Mission names now come
+// from the data catalog; campaignMissions() stays the pure order helper.
+import { campaignMissions } from '../src/sim/missions';
+import { missionName } from '../data/missions';
 import { ObjectiveTracker } from '../src/sim/objectives';
 import { SimRunner } from '../src/sim/runner';
 import { Map as SimMap } from '../src/sim/map';
@@ -7,27 +11,10 @@ import { missionMap } from '../src/sim/missionMaps';
 import { foodChainMap, buildFoodCity } from './helpers';
 import { MISSIONS, EXTRA_MISSIONS } from '../data/missions';
 
-describe('missions', () => {
-  it('startMission creates an active mission', () => {
-    const m = startMission('tutorial');
-    expect(m.started).toBe(true);
-    expect(m.complete).toBe(false);
-  });
-
-  it('tickMission completes when targets are met', () => {
-    const m = startMission('tutorial'); // targetPopulation 100
-    tickMission(m, { population: 120, culture: 20, prosperity: 20, stability: 20, year: 0 });
-    expect(m.complete).toBe(true);
-  });
-
-  it('tickMission fails when time runs out', () => {
-    const m = startMission('thriving_city'); // timeLimitYears 10
-    tickMission(m, { population: 100, culture: 10, prosperity: 10, stability: 10, year: 11 });
-    expect(m.failed).toBe(true);
-  });
-
-  it('missionName resolves a known mission', () => {
+describe('missions catalog (Phase 17, CAMPAIGN-01)', () => {
+  it('missionName resolves a known mission from the data catalog', () => {
     expect(missionName('small_town')).toBe('Provincial Granary'); // Phase 17 re-theme to the spec arc
+    expect(missionName('no_such_mission')).toBe('no_such_mission');
   });
 });
 
