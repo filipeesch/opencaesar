@@ -86,7 +86,13 @@ export type SaveCommand =
   | { kind: 'payRequest'; requestId: string; amount: number }
   | { kind: 'openTradeRoute'; cityId: string }
   | { kind: 'setTradeOrder'; cityId: string; good: string; mode: import('./trade').TradeOrderMode; reserve?: number; target?: number }
-  | { kind: 'respondEvent'; eventId: string; choiceId: string; tick?: number };
+  | { kind: 'respondEvent'; eventId: string; choiceId: string; tick?: number }
+  // Phase 17 (CAMPAIGN-01/02): the mission start (replayable, so a mid-mission
+  // save/load keeps getMission() — the mission state round-trips through this
+  // command, never a SaveData schema field) and the tutorial "don't show again"
+  // preference. Both reconstruct deterministically from the replayed stream.
+  | { kind: 'startMission'; id: string }
+  | { kind: 'dismissTutorialStep'; step: string };
 
 /** Serializable save payload capturing everything needed to resume a sim deterministically. */
 export interface SaveData {

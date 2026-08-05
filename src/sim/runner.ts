@@ -32,6 +32,7 @@ import { COMMODITIES } from '../../data/commodities';
 import { TRADE_CITIES, type TradeCityDef } from '../../data/trade';
 import { CARAVAN_CAPACITY, SHIP_CAPACITY } from './transport';
 import { MISSIONS, EXTRA_MISSIONS } from '../../data/missions';
+import { campaignMissions } from './missions';
 import { computeServiceCoverage, GODS, computeFavor, FESTIVAL_TIERS, startFestival, tickFestival } from './services';
 import type { FestivalPlan, FestivalTier } from './services';
 import { TEMPLE_COVERAGE_FACTOR, GRAND_TEMPLE_COVERAGE_FACTOR, FESTIVAL_BOOST_WINDOW_TICKS, MONTH_TICKS } from '../../data/religion';
@@ -2099,12 +2100,106 @@ export class SimRunner {
     return [...this.eventLog];
   }
 
-  startMission(id: string): void {
-    this.mission = { id, started: true, complete: false, failed: false, year: 0, objective: id };
+  /** Start a campaign mission. Replayable and recordable (CAMPAIGN-01): the
+   *  whole effect reconstructs from the recorded {kind:'startMission'} command,
+   *  so getMission()/getMissionProgress() survive save/load without any SaveData
+   *  schema change.
+   *
+   *  - Start-year fix: `mission.year` is the CURRENT year (floor(tickCount/360)),
+   *    so a time-limited mission started on an already-ticked runner counts its
+   *    limit from mission start and does NOT instantly fail (RESEARCH Pitfall 1).
+   *  - Sequential gate (LIVE calls only, skipped during replay — precedent: the
+   *    government gate `!this.replaying && gov`, so a replayed startMission(N)
+   *    is not blocked even though N-1's win only happens during the post-replay
+   *    month-gate ticks): mission N+1 unlocks only when N is complete; a
+   *    running/incomplete mission blocks a DIFFERENT id; a fresh runner may
+   *    start ANY single mission (sandbox / winnability probe).
+   *  - Per-mission sub-effects (treasury credit / starters / routes / time-limit
+   *    override) are applied by 17-01-03 under a suppressCommandRecording guard
+   *    so this ONE command is the complete deterministic record (T-17-03).
+   */
+  startMission(id: string): { ok: boolean; error?: string } {
+    if (this.paused) {
+      this.enqueue({ kind: 'startMission', id });
+      return { ok: true };
+    }
+    if (!this.replaying) {
+      const unlock = this.missionUnlocked(id);
+      if (!unlock.ok) return unlock;
+    }
+    const def = MISSIONS[id] ?? EXTRA_MISSIONS[id];
+    if (!def) return { ok: false, error: 'unknown-mission' };
+    this.mission = {
+      id,
+      started: true,
+      complete: false,
+      failed: false,
+      year: Math.floor(this.tickCount / 360),
+      objective: id,
+    };
     this.missionTracker = null;
+    this.commandLog.push({ tick: this.tickCount, command: `startMission ${id}`, result: 'ok' });
+    // The single deterministic replay record for the whole mission start.
+    // Guarded during replay so a save → load → save cycle never duplicates it.
+    if (!this.replaying) this.saveCommands.push({ kind: 'startMission', id });
+    return { ok: true };
+  }
+
+  /** CAMPAIGN-01 progression gate (pure): whether `id` may be started on the
+   *  LIVE runner. See startMission for the exact unlock semantics. */
+  private missionUnlocked(id: string): { ok: boolean; error?: string } {
+    const order = campaignMissions();
+    if (!order.includes(id)) return { ok: false, error: 'unknown-mission' };
+    if (!this.mission) return { ok: true }; // fresh runner / sandbox: any single mission
+    if (this.mission.id === id) return { ok: true }; // same-id restart/no-op
+    if (this.mission.complete) {
+      const idx = order.indexOf(this.mission.id);
+      if (idx >= 0 && order[idx + 1] === id) return { ok: true };
+    }
+    return { ok: false, error: 'locked' };
+  }
+
+  /** RATE-02: PURE read of the active mission's sustained tracker — mission.progress
+   *  is never exposed through getObjectiveProgress because wiring the mission
+   *  tracker into `this.objective` would double-update it on the month cadence
+   *  (tickMissionSystem AND tickDerivedSystems), halving the sustain period. */
+  getMissionProgress(): { won: boolean; progress: number; sustained: number; sustainChecks: number } | null {
+    if (!this.missionTracker) return null;
+    const o = this.missionTracker;
+    const r = o.lastResult();
+    return {
+      won: r.won,
+      progress: Math.min(1, r.sustained / o.sustainChecks),
+      sustained: r.sustained,
+      sustainChecks: o.sustainChecks,
+    };
+  }
+
+  /** CAMPAIGN-01: the sequential campaign position, purely derived (never
+   *  serialized). nextUnlocked = 'tutorial' on a fresh runner; the mission after
+   *  the current one once it is complete; the current id while failed (retry) or
+   *  in-progress (same-id no-op). */
+  getCampaignProgress(): { current: MissionState | null; nextUnlocked: string | null } {
+    if (!this.mission) return { current: null, nextUnlocked: 'tutorial' };
+    if (this.mission.complete) {
+      const order = campaignMissions();
+      const idx = order.indexOf(this.mission.id);
+      return { current: this.mission, nextUnlocked: idx >= 0 ? (order[idx + 1] ?? null) : null };
+    }
+    return { current: this.mission, nextUnlocked: this.mission.id };
   }
   getMission(): MissionState | null {
     return this.mission;
+  }
+
+  /** "Don't show again" tutorial preference (CAMPAIGN-02): a replayable
+   *  SaveCommand whose dismissed set reconstructs from replayed commands — never
+   *  serialized into SaveData. getTutorial() (17-02-01) reads the set. */
+  dismissTutorialStep(step: string): { ok: boolean; error?: string } {
+    this.commandLog.push({ tick: this.tickCount, command: `dismissTutorialStep ${step}`, result: 'ok' });
+    this.dismissedTutorialSteps.add(step);
+    if (!this.replaying) this.saveCommands.push({ kind: 'dismissTutorialStep', step });
+    return { ok: true };
   }
 
   enableTrade(cityId: string, enabled: boolean): void {
@@ -2120,6 +2215,10 @@ export class SimRunner {
   private mission: MissionState | null = null;
   /** RATE-02 (D-03): sustained ObjectiveTracker driving the active mission. */
   private missionTracker: ObjectiveTracker | null = null;
+  /** CAMPAIGN-02: tutorial steps the player dismissed ("don't show again").
+   *  Reconstructed purely from replayed {kind:'dismissTutorialStep'} commands —
+   *  never a SaveData field, so getTutorial() is deterministic from state. */
+  private dismissedTutorialSteps = new Set<string>();
   private tradeRoutes: Record<string, TradeRoute> = {};
   private activeEvent: { id: string; remaining: number; total: number } | null = null;
   /** RATE-03: response choice recorded per event id (construct-init) so the
@@ -2840,6 +2939,10 @@ function applyCommand(runner: SimRunner, cmd: SaveCommand): void {
     runner.setTradeOrder(cmd.cityId, cmd.good, cmd.mode, { reserve: cmd.reserve, target: cmd.target });
   } else if (cmd.kind === 'respondEvent') {
     runner.respondEvent(cmd.eventId, cmd.choiceId, cmd.tick);
+  } else if (cmd.kind === 'startMission') {
+    runner.startMission(cmd.id);
+  } else if (cmd.kind === 'dismissTutorialStep') {
+    runner.dismissTutorialStep(cmd.step);
   } else {
     const exhaustive: never = cmd;
     throw new Error(`unknown command kind: ${(exhaustive as { kind: string }).kind}`);
