@@ -17,7 +17,7 @@ import { Map as SimMap } from '../../src/sim/map';
 import { buildFoodCity, foodChainMap } from '../helpers';
 import { liveStats } from '../../src/sim/housingLive';
 import type { BuildingInstance, HouseInstance } from '../../src/sim/walkers';
-import type { BuildingType } from '../../src/sim/types';
+import type { BuildingType, SaveCommand } from '../../src/sim/types';
 
 /** Deterministic per-tick pump (mirrors the integration scaffold). */
 function pumpHouse(h: HouseInstance, meat = false): void {
@@ -142,6 +142,115 @@ describe('save->load determinism on the natural economy', () => {
     const loaded = SimRunner.fromSaveData(r.getSaveData(), foodChainMap());
     expect(loaded.getStateJson()).toBe(r.getStateJson());
     expect(loaded.getState().tick).toBe(r.getState().tick);
+  });
+});
+
+describe('save->load determinism on the MERGED city (WR-02)', () => {
+  /** Command-producing construction of a level-11 merge city (no gov gate — a
+   *  2x2 merge only needs the level-11 service/goods buildings). Every action
+   *  here is a replayable SaveCommand, so a fresh runner can be reconstructed
+   *  from the save's command stream and re-driven identically. */
+  function constructMergeCity(r: SimRunner): void {
+    r.requestRoyalSubsidy();
+    for (let i = 0; i < 12; i++) r.takeLoan(2000);
+    const W = 46;
+    for (let x = 0; x < W - 1; x++) for (const y of [4, 12, 20, 28, 36, 44]) r.placeBuilding('road', x, y);
+    for (let y = 0; y < W; y++) r.placeBuilding('road', W - 1, y);
+    const place = (t: BuildingType, x: number, y: number) => {
+      const res = r.placeBuilding(t, x, y);
+      if (!res.ok) throw new Error(`place ${t}@(${x},${y}): ${JSON.stringify(res)}`);
+    };
+    place('farm', 2, 5);
+    place('granary', 8, 5);
+    place('market', 12, 5);
+    place('warehouse', 16, 5);
+    place('well', 22, 5);
+    place('fountain', 24, 5);
+    place('school', 26, 5);
+    place('clinic', 28, 5);
+    place('library', 30, 5);
+    place('hospital', 34, 5);
+    place('theatre', 2, 13);
+    place('temple', 8, 13);
+    place('amphitheatre', 14, 13);
+    place('garden', 34, 13);
+    // Two orthogonally-adjacent houses: the pair the %40 merge step fuses.
+    for (const [x, y] of [[10, 29], [11, 29]] as Array<[number, number]>) place('house', x, y);
+    r.setPolicy(0, 0.5);
+  }
+
+  /** Post-command deterministic drive (NOT replayable SaveCommands — per-house
+   *  goods delivery is deferred to the distribution phases, so the test feeds
+   *  the sim the same direct state both sides: warehouse stock for the non-food
+   *  ladder and the merge-eligible level-11 plant). Returns the house ids. */
+  function applyMergeSetup(r: SimRunner): number[] {
+    const wh = (r['buildings'] as BuildingInstance[]).find((b) => b.type === 'warehouse')!;
+    const stock = wh.stock as Record<string, number>;
+    for (const g of ['pottery', 'furniture', 'wine', 'oil', 'tools']) stock[g] = 200;
+    const houses = (r['buildings'] as BuildingInstance[]).filter((b) => b.type === 'house');
+    for (const h of houses) h.house!.level = 11;
+    return houses.map((h) => h.id);
+  }
+
+  function pumpAndTick(r: SimRunner, ids: number[], n: number): void {
+    for (let i = 0; i < n; i++) {
+      for (const b of r['buildings'] as BuildingInstance[]) if (b.house && ids.includes(b.id)) pumpHouse(b.house!);
+      (r as unknown as { treasuryAccount: { balance: number } }).treasuryAccount.balance = 5000;
+      r.tick();
+    }
+  }
+
+  /** Dispatch the save's command stream onto a fresh runner using the public
+   *  command API — the exact reconstruction fromSaveData performs, inlined so
+   *  the deterministic test drive can be re-applied between ticks. */
+  function replayCommands(r: SimRunner, commands: readonly SaveCommand[]): void {
+    for (const c of commands) {
+      if (c.kind === 'requestRoyalSubsidy') r.requestRoyalSubsidy();
+      else if (c.kind === 'takeLoan') r.takeLoan(c.amount);
+      else if (c.kind === 'setPolicy') r.setPolicy(c.taxRate, c.wageRate);
+      else if (c.kind === 'place') {
+        const res = r.placeBuilding(c.type, c.x, c.y, c.god !== undefined ? { god: c.god } : undefined);
+        if (!res.ok) throw new Error(`replay place ${c.type}@(${c.x},${c.y}): ${JSON.stringify(res)}`);
+      } else {
+        throw new Error(`unhandled save command kind in merge round-trip: ${c.kind}`);
+      }
+    }
+  }
+
+  it('a merged city round-trips byte-identically with the combined population (footprint, occupancy, house-merged history)', () => {
+    const m = SimMap.fromLayout(46, 46, () => 'fertile');
+    // ORIGINAL: construct, plant both at level 11, run past the %40 merge.
+    const r = new SimRunner(7, m);
+    constructMergeCity(r);
+    const ids = applyMergeSetup(r);
+    pumpAndTick(r, ids, 90);
+
+    const merged = (r['buildings'] as BuildingInstance[]).find((b) => b.type === 'house' && b.footprint === 2);
+    expect(merged).toBeDefined();
+    expect(merged!.house!.combinedPopulation).toBe(2 * liveStats(11).population);
+    const save = r.getSaveData();
+    const jsonOriginal = r.getStateJson();
+
+    // REPLAY: reconstruct from the save's command stream on a FRESH identical
+    // map (each runner owns its map — it is mutated by construction), then
+    // re-apply the same deterministic drive (level plant + pump — per-house
+    // evolution state is not serialized and HOUS-02 forbids new SaveCommand
+    // kinds, so the replay re-runs the test-side drive and the sim re-derives
+    // the merge). The merged state — footprint, re-keyed occupancy, combined
+    // population, and the house-merged message history — must be byte-identical.
+    const r2 = new SimRunner(save.seed, SimMap.fromLayout(46, 46, () => 'fertile'), save.mapSize);
+    replayCommands(r2, save.commands);
+    const ids2 = applyMergeSetup(r2);
+    pumpAndTick(r2, ids2, 90);
+
+    expect(ids2).toEqual(ids);
+    expect(r2.getStateJson()).toBe(jsonOriginal);
+
+    const merged2 = (r2['buildings'] as BuildingInstance[]).find((b) => b.type === 'house' && b.footprint === 2);
+    expect(merged2).toBeDefined();
+    expect(merged2!.house!.combinedPopulation).toBe(2 * liveStats(11).population);
+    const messages = JSON.parse(r2.getStateJson()).messages as Array<{ type: string }>;
+    expect(messages.some((mm) => mm.type === 'house-merged')).toBe(true);
   });
 });
 
