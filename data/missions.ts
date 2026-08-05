@@ -198,7 +198,7 @@ export const MISSIONS: Record<string, MissionDef> = {
   //    routes; culture is fed by full civic coverage, exports by real loads.
   grand_city: {
     id: 'grand_city', name: 'Trade Roads', description: 'Bind the region with trade — open the roads to Massilia and Tarraco and let a grand city profit from its surplus.',
-    targetPopulation: 240, targetCulture: 40, targetProsperity: 30, targetStability: 30, startingDenarii: 10000, timeLimitYears: 15,
+    targetPopulation: 240, targetCulture: 40, targetProsperity: 30, targetStability: 30, startingDenarii: 10000, timeLimitYears: 20,
     map: {
       width: 30, height: 30,
       legend: { W: 'water', F: 'fertile', T: 'trees', R: 'rock' },
