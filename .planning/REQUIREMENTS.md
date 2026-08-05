@@ -34,8 +34,8 @@ Requirements for completing the OpenCaesar build-out. Each maps to roadmap phase
 
 ### Housing (Section 11)
 
-- [ ] **HOUS-01**: Full data-driven 21-level progression (0 vacant lot → 20 luxurious palace) with cumulative requirements
-- [ ] **HOUS-02**: Evolution/de-evolution uses hysteresis (evolve limit, devolve limit, 1–3 month grace) and house merging into larger lots
+- [x] **HOUS-01**: Full data-driven 21-level progression (0 vacant lot → 20 luxurious palace) with cumulative requirements
+- [x] **HOUS-02**: Evolution/de-evolution uses hysteresis (evolve limit, devolve limit, 1–3 month grace) and house merging into larger lots
 
 ### Water (Section 14)
 

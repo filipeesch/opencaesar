@@ -299,11 +299,13 @@ Plans:
   2. Houses devolve after tolerance loss; hysteresis prevents oscillation.
   3. Compatible adjacent houses merge into larger lots when blocks allow.
 
-**Plans**: 1 plan (4 waves, 7 tasks)
+**Plans**: 1/1 plans executed
 
 Plans:
 
-- [ ] 16-PLAN — bridge the 21-level catalog + decideEvolution into the live sim (housingLive.ts, house.level source of truth, derived tier, HOUSING_LIVE_STATS economy bridge), hysteresis devolution + deterministic house merging (housingMerge.ts + runner % 40 merge step), and intentional golden regeneration + timing/tier test updates (HOUS-01/HOUS-02)
+- [x] 16-PLAN.md
+
+- [x] 16-PLAN — bridge the 21-level catalog + decideEvolution into the live sim (housingLive.ts, house.level source of truth, derived tier, HOUSING_LIVE_STATS economy bridge), hysteresis devolution + deterministic house merging (housingMerge.ts + runner % 40 merge step), and intentional golden regeneration + timing/tier test updates (HOUS-01/HOUS-02)
 
 ### Phase 17: Campaign, Tutorial & Codex
 
