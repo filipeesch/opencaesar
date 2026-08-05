@@ -37,9 +37,27 @@ function levelWorkers(def: HousingLevelDef): number {
   return Math.max(1, Math.round(def.capacity / 5));
 }
 
-/** Tax per tick a level pays: max(1, round(capacity * taxPerCapita / 20)). */
+/**
+ * Tax per tick a level pays: max(1, round(capacity * taxPerCapita / 20)),
+ * floored at 3 × the level's workers so every rung of the 21-level ladder is
+ * solvent at the stock policy (a house's tax income covers its own workers'
+ * wage bill — wages = workers × wagePerWorkerPerTick(2) × wageRate(0.135) ≈
+ * 0.27×workers, taxes = taxPerTick × taxRate(0.1), so break-even needs
+ * taxPerTick ≈ 2.7×workers; the floor of 3×workers keeps a small margin).
+ *
+ * WHY: without this floor, the bottom half of the ladder is structurally
+ * loss-making (a level-1 house with 4 workers pays only 1 denarius/tick tax
+ * vs 1.08 in wages), so wages go unpaid → the unpaid-wages desirability
+ * penalty drives desirability to 0 → no house can ever evolve → the entire
+ * natural economy (governance unlocks, religion, requests, food chain, …)
+ * never bootstraps. The legacy HOUSE_TIERS were solvent exactly this way
+ * (Shack: tax 5 vs 0.27 wages). Module-local constant, never a BALANCE key.
+ */
+const LEVEL_TAX_PER_WORKER = 5;
+
 function levelTaxPerTick(def: HousingLevelDef): number {
-  return Math.max(1, Math.round((def.capacity * def.taxPerCapita) / 20));
+  const derived = Math.max(1, Math.round((def.capacity * def.taxPerCapita) / 20));
+  return Math.max(LEVEL_TAX_PER_WORKER * levelWorkers(def), derived);
 }
 
 /** The 21-entry live stats table, one per HOUSING_LEVELS level. */

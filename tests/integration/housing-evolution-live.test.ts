@@ -116,6 +116,12 @@ function pumpHouse(h: HouseInstance, opts: { meat?: boolean } = {}): void {
 function pumpAndTick(r: SimRunner, ids: number[], fn: (h: HouseInstance) => void, n: number): void {
   for (let i = 0; i < n; i++) {
     for (const b of housesOf(r)) if (ids.includes(b.id)) fn(b.house!);
+    // WAGE-MECHANIC ISOLATION (test-only, mirrors the pump's walker-latency
+    // bypass and placeGov's gate bypass): keep the tiny 2-house city's treasury
+    // funded so the unpaid-wages desirability penalty never distorts the
+    // 21-level housing ladder under test — a real city earns this from many
+    // houses + trade, which these evolution-focused scenarios don't model.
+    (r as unknown as { treasuryAccount: { balance: number } }).treasuryAccount.balance = 5000;
     r.tick();
   }
 }
@@ -157,8 +163,9 @@ describe('progression (HOUS-01 live 21-level ladder)', () => {
     const [target] = housesOf(r);
     pumpAndTick(r, [target.id], (h) => pumpHouse(h, { meat: true }), 3 * MIN_TICKS + 2);
     const t = buildingState(r, target.id)!;
-    // After ~3*60 ticks a well-served house has had at most 3 evolve windows.
-    expect(t.house!.level).toBeLessThanOrEqual(3);
+    // Houses place at the occupied baseline (level 1), so after ~3*60 ticks a
+    // well-served house has passed at most 3 evolve windows → max level 1+3.
+    expect(t.house!.level).toBeLessThanOrEqual(4);
   });
 });
 

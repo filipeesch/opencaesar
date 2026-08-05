@@ -33,11 +33,23 @@ function evolveMergeCity(r: SimRunner): void {
   r.requestRoyalSubsidy();
   for (let i = 0; i < 12; i++) r.takeLoan(2000);
   const W = 46;
-  for (let x = 0; x < W; x++) for (const y of [4, 12, 20, 28, 36, 44]) r.placeBuilding('road', x, y);
-  for (let y = 0; y < W; y++) r.placeBuilding('road', 45, y);
+  for (let x = 0; x < W - 1; x++) for (const y of [4, 12, 20, 28, 36, 44]) r.placeBuilding('road', x, y);
+  for (let y = 0; y < W; y++) r.placeBuilding('road', W - 1, y);
   const place = (t: BuildingType, x: number, y: number) => {
     const res = r.placeBuilding(t, x, y);
     if (!res.ok) throw new Error(`place ${t}@(${x},${y}): ${JSON.stringify(res)}`);
+  };
+  /** Bypass the gov-unlock population gate via the replay path (the placements
+   *  still push saveCommands, so save/load replay is byte-identical). */
+  const placeGov = (t: 'forum' | 'senate', x: number, y: number) => {
+    const rr = r as unknown as { replaying: boolean };
+    rr.replaying = true;
+    try {
+      const res = r.placeBuilding(t, x, y);
+      if (!res.ok) throw new Error(`place ${t}@(${x},${y}): ${JSON.stringify(res)}`);
+    } finally {
+      rr.replaying = false;
+    }
   };
   place('farm', 2, 5);
   place('granary', 8, 5);
@@ -52,13 +64,14 @@ function evolveMergeCity(r: SimRunner): void {
   place('theatre', 2, 13);
   place('temple', 8, 13);
   place('amphitheatre', 14, 13);
-  place('senate', 22, 13);
-  place('forum', 28, 13);
+  placeGov('senate', 22, 13);
+  placeGov('forum', 28, 13);
   place('garden', 34, 13);
   place('grand_temple', 36, 13);
   for (const [x, y] of [[10, 29], [11, 29]] as Array<[number, number]>) place('house', x, y);
   const wh = (r['buildings'] as BuildingInstance[]).find((b) => b.type === 'warehouse')!;
-  for (const g of ['pottery', 'furniture', 'wine', 'oil', 'tools']) wh.stock![g] = 200;
+  const stock = wh.stock as Record<string, number>;
+  for (const g of ['pottery', 'furniture', 'wine', 'oil', 'tools']) stock[g] = 200;
   r.setPolicy(0, 0.5);
   // Plant both houses at the footprint-gated level 11 so the month merge step
   // merges them into a 2x2 WITH combinedPopulation (held without meat so they
@@ -106,7 +119,7 @@ describe('housing evolution + merge chunked determinism (Phase 16)', () => {
       r.tick();
     }
     const state = JSON.parse(r.getStateJson());
-    const mergedHouse = r['buildings'].find((b: BuildingInstance) => b.footprint === 2);
+    const mergedHouse = r['buildings'].find((b: BuildingInstance) => b.type === 'house' && b.footprint === 2);
     expect(mergedHouse).toBeDefined();
     expect(mergedHouse!.house!.combinedPopulation).toBe(2 * liveStats(11).population);
     expect(state.messages.some((mm: { type: string }) => mm.type === 'house-merged')).toBe(true);
@@ -123,7 +136,10 @@ describe('save->load determinism on the natural economy', () => {
       return r;
     };
     const r = buildTick(1200);
-    const loaded = SimRunner.fromSaveData(r.getSaveData());
+    // Round-trip onto the SAME custom map (food-chain layout) so replay
+    // reconstructs the city identically — the established repo convention
+    // for custom-map saves (export-window/event-response determinism).
+    const loaded = SimRunner.fromSaveData(r.getSaveData(), foodChainMap());
     expect(loaded.getStateJson()).toBe(r.getStateJson());
     expect(loaded.getState().tick).toBe(r.getState().tick);
   });

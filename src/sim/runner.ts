@@ -46,6 +46,7 @@ import { buildCodex } from './campaign';
 import { desirabilityOf, tickHousing } from './housing';
 import { housingLevelName } from '../../data/housing';
 import { liveStats } from './housingLive';
+import { findMergePartner, mergeProposal, targetFootprint } from './housingMerge';
 import { Treasury, rollYear } from './finance';
 import type { FinanceLedger } from './finance';
 import { financeAdvisorFromState } from './advisors';
@@ -298,6 +299,11 @@ export class SimRunner {
       this.arrearsDepth(),
     );
 
+    // HOUS-02: deterministic adjacent-house merging on the month cadence. Runs
+    // right after evolution so it sees the tick's final levels, then walkers
+    // move (coverage/arrivals see the merged state).
+    if (this.tickCount % 40 === 0) this.tickHousingMerge();
+
     // Walkers move last: coverage and arrivals see the tick's final services.
     for (const w of [...this.walkers]) updateWalker(this.simInternals(), w);
 
@@ -470,6 +476,102 @@ export class SimRunner {
       if (manhattan(w.x, w.y, b.x, b.y) <= CONFIG.safetyPatrolRadius) return true;
     }
     return false;
+  }
+
+  /** Effective population of a house: the combined population when this
+   *  instance resulted from a merge, else the level's live population. */
+  private effectiveHousePopulation(h: BuildingInstance): number {
+    if (h.house?.combinedPopulation !== undefined) return h.house.combinedPopulation;
+    return liveStats(h.house?.level ?? 0).population;
+  }
+
+  /** Tile keys (x<<20|y) covered by a building's footprint. */
+  private buildingTileKeys(b: BuildingInstance): Set<number> {
+    const keys = new Set<number>();
+    for (let dy = 0; dy < b.footprint; dy++) {
+      for (let dx = 0; dx < b.footprint; dx++) {
+        keys.add(this.tileKey(b.x + dx, b.y + dy));
+      }
+    }
+    return keys;
+  }
+
+  /**
+   * HOUS-02: deterministic adjacent-house merging on the month cadence.
+   * Fixed placement-order scan over this.buildings — a mergeable same-level
+   * house whose contiguous block fits the target-level footprint grows into
+   * it: the survivor keeps its id/origin, gains the footprint and the combined
+   * population of both blocks, occupiedTiles are re-keyed to the whole new
+   * square, and the absorbed instance is dropped (tiles freed / re-keyed).
+   * No RNG/clock, no new SaveCommand — replay re-derives every merge from the
+   * same tick history, so getStateJson() stays byte-identical.
+   */
+  private tickHousingMerge(): void {
+    // Snapshot the scan order: merges mutate this.buildings in place.
+    for (const a of [...this.buildings]) {
+      if (!a.house) continue;
+      if (a.house.mergeable !== true) continue;
+      const level = a.house.level ?? 0;
+      if (level > 20) continue;
+      const footprint = targetFootprint(level);
+      if (a.footprint >= footprint) continue; // already grown (or floor 1x1)
+      if (!this.buildingById.has(a.id)) continue; // absorbed earlier this pass
+
+      const neighbour = findMergePartner(a, this.buildings);
+      if (!neighbour?.house) continue;
+      if (neighbour.house.mergeable !== true) continue;
+      if ((neighbour.house.level ?? 0) !== level) continue;
+
+      const exempt = new Set<number>([...this.buildingTileKeys(a), ...this.buildingTileKeys(neighbour)]);
+      const proposal = mergeProposal(
+        a,
+        neighbour,
+        footprint,
+        (x, y) => this.occupiedTiles.has(this.tileKey(x, y)),
+        exempt,
+      );
+      if (!proposal) continue;
+
+      const survivor = proposal.survivor;
+      const absorbed = proposal.absorbed;
+      // Survivor keeps id/origin; grows into the new footprint with the
+      // combined population of both blocks.
+      survivor.footprint = proposal.footprint;
+      survivor.house!.combinedPopulation =
+        this.effectiveHousePopulation(survivor) + this.effectiveHousePopulation(absorbed);
+
+      // Re-key occupancy: whole new footprint square to the survivor id.
+      for (let dy = 0; dy < survivor.footprint; dy++) {
+        for (let dx = 0; dx < survivor.footprint; dx++) {
+          this.occupiedTiles.set(this.tileKey(survivor.x + dx, survivor.y + dy), survivor.id);
+        }
+      }
+
+      // Free the absorbed instance's former tiles (its origin tiles are
+      // released; tiles inside the survivor square are re-keyed above).
+      for (const key of this.buildingTileKeys(absorbed)) {
+        if (this.occupiedTiles.get(key) === absorbed.id) this.occupiedTiles.delete(key);
+      }
+
+      // Walker-target safety: repoint any walker whose objective is the
+      // absorbed building to the survivor (walkers.ts tolerates a missing
+      // target too, but repointing keeps deliveries/labor on track).
+      this.repointWalkersTowards(absorbed.id, survivor.id);
+
+      // Drop the absorbed instance from the registry.
+      this.buildings = this.buildings.filter((b) => b.id !== absorbed.id);
+      this.buildingById.delete(absorbed.id);
+
+      this.emitMessage('house-merged', `House merged to ${housingLevelName(level)}`);
+    }
+  }
+
+  /** Repoint walkers whose target/dest building is `from` to `to`. */
+  private repointWalkersTowards(from: number, to: number): void {
+    for (const w of this.walkers) {
+      if (w.targetBuildingId === from) w.targetBuildingId = to;
+      if (w.trade?.destBuildingId === from) w.trade.destBuildingId = to;
+    }
   }
 
   private tickDerivedSystems(): void {
@@ -1489,7 +1591,7 @@ export class SimRunner {
       stock: {},
     };
     if (type === 'house') {
-      building.house = { tier: 0, level: 0, satisfiedTicks: 0, unsatisfiedTicks: 0, mergeable: true, foodCooldown: 0, waterCooldown: 0, laborCooldown: 0, evolveCounter: 0, devolveCounter: 0 };
+      building.house = { tier: 0, level: 1, satisfiedTicks: 0, unsatisfiedTicks: 0, mergeable: true, foodCooldown: 0, waterCooldown: 0, laborCooldown: 0, evolveCounter: 0, devolveCounter: 0 };
     } else if (def.production || def.storageCapacity !== undefined) {
       building.stock.wheat = 0;
     }

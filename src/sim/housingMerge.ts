@@ -106,20 +106,21 @@ export interface MergeProposal {
 
 /**
  * Build a merge proposal when two houses are same-level and their union block
- * (target footprint anchored at the survivor's origin `a`) fits. The caller
- * must inject an `isOccupied` that treats the two houses' own tiles as free
- * (exempt) — the runner computes that from occupiedTiles + the pair's keys.
- * Deterministic given fixed inputs.
+ * (target footprint anchored at the survivor's origin `a`) fits. `isOccupied`
+ * is the occupancy predicate (placement.ts style); `exemptTileKeys` are the
+ * two houses' own tiles, which the block-fit check must treat as free (the
+ * runner passes a's + neighbour's tile keys). Deterministic given fixed inputs.
  */
 export function mergeProposal(
   a: BuildingInstance,
   b: BuildingInstance,
   footprint: number,
   isOccupied: (x: number, y: number) => boolean,
+  exemptTileKeys?: Set<number>,
 ): MergeProposal | null {
   if (!a.house || !b.house) return null;
   if (a.house.level !== b.house.level) return null;
   if (b.house.mergeable !== true) return null;
-  if (!blockFits(a.x, a.y, footprint, isOccupied)) return null;
+  if (!blockFits(a.x, a.y, footprint, isOccupied, exemptTileKeys)) return null;
   return { survivor: a, absorbed: b, footprint };
 }
