@@ -151,6 +151,81 @@ describe('inspectors (task 11.2)', () => {
   });
 });
 
+describe('inspectors enriched via getWalkerInternals (UI-04, Wave 0 scaffold)', () => {
+  it('residenceInspection appends rich live fields from internals (never serialized)', () => {
+    const r = new SimRunner(42, foodChainMap());
+    buildFoodCity(r);
+    for (let i = 0; i < 400; i++) r.tick();
+    const sim = r.getWalkerInternals();
+    const house = sim.buildings.find((b) => b.type === 'house' && b.house);
+    expect(house).toBeDefined();
+    const h = house!.house!;
+    const safety = house!.safety;
+
+    const enriched = residenceInspection as (
+      population: number, capacity: number, residentClass: string, services: string[],
+      goods: Record<string, number>,
+      internals?: { house?: typeof h; safety?: typeof safety; happiness?: number; desirability?: number },
+    ) => Record<string, unknown>;
+
+    const insp = enriched(10, 20, 'plebeian', ['well'], { wheat: 2 }, { house: h, safety });
+    // Rich live fields appended from HouseInstance (level/satisfiedTicks), never
+    // from the serialized BuildingState shape.
+    expect(insp).toMatchObject({ level: h.level });
+    if (h.satisfiedTicks !== undefined) expect(insp).toMatchObject({ satisfiedTicks: h.satisfiedTicks });
+    // The safety block (fire/danger/collapseRisk/crime) feeds from BuildingSafetyState.
+    if (safety) {
+      expect(insp).toMatchObject({ fire: safety.fire, danger: safety.danger });
+      expect(insp).toMatchObject({ collapseRisk: safety.collapseRisk, crime: safety.crime });
+    }
+    // The ORIGINAL minimal call keeps returning the same shape.
+    expect(residenceInspection(10, 20, 'plebeian', ['well'], { wheat: 2 })).toMatchObject({ population: 10, services: ['well'] });
+  });
+
+  it('productionInspection appends blocked/workers from live ProductionState', () => {
+    const r = new SimRunner(42, productionChainMap());
+    buildProductionCity(r);
+    for (let i = 0; i < 400; i++) r.tick();
+    const sim = r.getWalkerInternals();
+    const workshop = sim.buildings.find((b) => b.type === 'pottery_workshop');
+    expect(workshop).toBeDefined();
+    const prod = workshop!.production!;
+
+    const enriched = productionInspection as (
+      inputs: Record<string, number>, output: Record<string, number>, status: string,
+      internals?: { production?: typeof prod; active?: boolean; workersAssigned?: number; workersRequired?: number },
+    ) => Record<string, unknown>;
+
+    const insp = enriched({ clay: 3 }, { pottery: 1 }, 'working', { production: prod, active: true, workersAssigned: 8, workersRequired: 8 });
+    expect(insp).toMatchObject({ active: true, blocked: prod.blocked });
+    expect(insp).toMatchObject({ workersAssigned: 8, workersRequired: 8 });
+    // Minimal call unchanged.
+    expect(productionInspection({ clay: 3 }, { pottery: 1 }, 'working')).toMatchObject({ status: 'working' });
+  });
+
+  it('walkerInspection appends type/origin/path/carriedAmount from a WalkerInstance', () => {
+    const r = new SimRunner(42, foodChainMap());
+    buildFoodCity(r);
+    for (let i = 0; i < 400; i++) r.tick();
+    const sim = r.getWalkerInternals();
+    const walkers = sim.walkers ?? [];
+    expect(walkers.length).toBeGreaterThan(0);
+    const w = walkers[0];
+
+    const enriched = walkerInspection as (
+      id: number, x: number, y: number, status: string, stepsUsed: number, maxSteps: number,
+      internals?: typeof w,
+    ) => Record<string, unknown>;
+
+    const insp = enriched(w.id, w.x, w.y, w.state, w.stepsTaken, 40, w);
+    expect(insp).toMatchObject({ id: w.id, type: w.type });
+    expect(insp).toMatchObject({ carriedAmount: w.carriedAmount });
+    expect(insp).toMatchObject({ origin: w.origin ?? null });
+    // Minimal call unchanged.
+    expect(walkerInspection(1, 2, 3, 'travelling', 4, 8)).toMatchObject({ id: 1, status: 'travelling' });
+  });
+});
+
 describe('food HUD months-of-food & advisor data (AGRI-03, spec §15/§21)', () => {
   it('computes months of food = available / projected monthly consumption', () => {
     expect(monthsOfFood(1160, 200)).toBeCloseTo(5.8, 5);
