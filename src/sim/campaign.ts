@@ -273,9 +273,21 @@ function buildingHowItWorks(b: (typeof BUILDINGS)[string]): string {
 }
 
 /** Build the full codex from the real data catalogs. Pure and cheap-enough to
- *  cache on the runner (getCodex) so per-snapshot codex work stays light. */
+ *  cache on the runner (getCodex) so per-snapshot codex work stays light.
+ *  IN-02: each entry is COPYED with its nested arrays (inputs/outputs/
+ *  relatedLinks/requirements/hints) cloned too, so a consumer mutating a
+ *  getCodex() result (e.g. the Phase-18 UI annotating links) can never corrupt
+ *  the module-level ENTRIES shared by every subsequent runner. One-time per
+ *  runner (cached), so the deep copy is cheap. */
 export function buildCodex(): CodexEntry[] {
-  return ENTRIES.map((e) => ({ ...e }));
+  return ENTRIES.map((e) => ({
+    ...e,
+    ...(e.inputs ? { inputs: [...e.inputs] } : {}),
+    ...(e.outputs ? { outputs: [...e.outputs] } : {}),
+    ...(e.relatedLinks ? { relatedLinks: [...e.relatedLinks] } : {}),
+    ...(e.requirements ? { requirements: [...e.requirements] } : {}),
+    ...(e.hints ? { hints: [...e.hints] } : {}),
+  }));
 }
 
 /** Find a codex entry by id (optionally constrained to a kind). */
