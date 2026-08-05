@@ -133,3 +133,32 @@ describe('ratings', () => {
     expect(ratings.prosperity).toBeGreaterThanOrEqual(0);
   });
 });
+
+describe('CR-02: merged combined population is live in every consumer', () => {
+  // A merged 2x2 of two level-11 houses bears combinedPopulation = 2 * 240, so
+  // population, workers, and tax must double at the consumer level — the old
+  // code counted only the level capacity (240).
+  const merged = mkHouse({
+    id: 1,
+    house: { tier: 2, level: 11, combinedPopulation: 2 * L[11].population, laborCooldown: 120 },
+  });
+
+  it('populationOf counts the combined population', () => {
+    expect(populationOf([merged])).toBe(2 * L[11].population);
+  });
+
+  it('workerPool counts the combined-scaled workers', () => {
+    expect(workerPool([merged])).toBe(2 * L[11].workers);
+  });
+
+  it('tickEconomy taxes the combined-scaled tax per tick', () => {
+    const { result } = tickEconomy([merged], { taxRate: 0.5, wageRate: 0 }, 1000);
+    expect(result.taxIncome).toBeCloseTo((2 * L[11].taxPerTick) * 0.5);
+  });
+
+  it('a non-merged house is unchanged (no combinedPopulation → level values)', () => {
+    const plain = mkHouse({ id: 2, house: { tier: 2, level: 11, laborCooldown: 120 } });
+    expect(populationOf([plain])).toBe(L[11].population);
+    expect(workerPool([plain])).toBe(L[11].workers);
+  });
+});

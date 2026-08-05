@@ -92,6 +92,48 @@ export function liveStats(level: number | undefined): LiveHouseStats {
   return HOUSING_LIVE_STATS[clamped];
 }
 
+/**
+ * Effective population of a house — the single consumer-facing accessor every
+ * observable population read must route through (CR-02): when the instance
+ * resulted from a merge (HOUS-02) it bears the COMBINED population of both
+ * merged blocks, else the level's capacity. Without this, the merged survivor's
+ * combined population was write-only — the city counted a merged 2x2 of two
+ * level-11 houses as 240 instead of 480 in every observable number.
+ */
+export function effectivePopulation(
+  b: { house?: { combinedPopulation?: number; level?: number } } | undefined,
+): number {
+  const cp = b?.house?.combinedPopulation;
+  if (cp !== undefined && Number.isFinite(cp)) return cp;
+  return liveStats(b?.house?.level ?? 0).population;
+}
+
+/**
+ * Scale a per-level live-stats value (workers, taxPerTick) up by a merged
+ * survivor's population ratio: a block that absorbed another at the same level
+ * houses twice the people, so it contributes twice the workers/tax — not just
+ * twice the population. Pure integer math, deterministic.
+ */
+function scaledByEffective(
+  b: { house?: { combinedPopulation?: number; level?: number } } | undefined,
+  pick: (s: LiveHouseStats) => number,
+): number {
+  const base = liveStats(b?.house?.level ?? 0);
+  const pop = effectivePopulation(b);
+  if (base.population <= 0 || pop === base.population) return pick(base);
+  return Math.max(0, Math.round((pick(base) * pop) / base.population));
+}
+
+/** Effective workers a house contributes (combined-population scaled, CR-02). */
+export function effectiveWorkers(b: { house?: { combinedPopulation?: number; level?: number } } | undefined): number {
+  return scaledByEffective(b, (s) => s.workers);
+}
+
+/** Effective tax per tick a house pays (combined-population scaled, CR-02). */
+export function effectiveTaxPerTick(b: { house?: { combinedPopulation?: number; level?: number } } | undefined): number {
+  return scaledByEffective(b, (s) => s.taxPerTick);
+}
+
 function levelDef(level: number): HousingLevelDef | undefined {
   return HOUSING_LEVELS.find((l) => l.level === level);
 }

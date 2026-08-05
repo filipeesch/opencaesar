@@ -8,7 +8,7 @@ import { computeServiceCoverage } from './services';
 import { type CityStats, computeTargets, type RatingDecomposition } from './ratings';
 import type { TileWater, ReservoirState } from './water';
 import { BUILDINGS } from './buildings';
-import { liveStats } from './housingLive';
+import { effectivePopulation } from './housingLive';
 import { dailyFoodConsumption, foodVariety, houseFoodDays, houseFoodFromUnits } from './housing';
 import {
   EXTRACTION_SITES, WORKSHOPS,
@@ -579,7 +579,9 @@ export function foodOverlayGrids(state: SimState): Record<string, number[][]> {
     const inventory = b.house.foodInventory;
     if (inventory && Object.keys(inventory).length > 0) {
       const inv = houseFoodFromUnits(inventory, 'wheat');
-      const pop = liveStats(b.house.level).population;
+      // CR-02: food-days projection uses the house's effective population — a
+      // merged block's combined residents must drive the supply-days estimate.
+      const pop = effectivePopulation(b);
       days = houseFoodDays(inv, dailyFoodConsumption(pop));
       varietyCount = foodVariety(inv);
     } else {

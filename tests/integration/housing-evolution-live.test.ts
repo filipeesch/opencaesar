@@ -228,6 +228,15 @@ describe('merge (HOUS-02 deterministic adjacent-house merging)', () => {
     expect(occ.get(tileKey(11, 29))).toBe(merged!.id);
     expect((r as any).buildingAt(10, 30)!.id).toBe(merged!.id);
     expect(r.getState().messages.some((m) => m.type === 'house-merged')).toBe(true);
+
+    // CR-02: the combined population is NOT write-only — the city-level
+    // consumers (population, workers, serialized capacity) all see the doubled
+    // merged block. Old behavior counted 240; the merged 2x2 counts 480.
+    const s = r.getState();
+    expect(s.ratings.population).toBe(2 * liveStats(11).population);
+    expect(s.totalWorkers).toBe(2 * liveStats(11).workers);
+    const mergedState = s.buildings.find((bb) => bb.id === merged!.id)!;
+    expect(mergedState.house!.populationCapacity).toBe(2 * liveStats(11).population);
   });
 
   it('merges two 2x2 houses into a 4x4 at the top of the ladder (levels 19-20)', () => {

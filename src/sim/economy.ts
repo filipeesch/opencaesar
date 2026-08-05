@@ -4,7 +4,7 @@
  */
 
 import { CONFIG, HOUSE_TIERS } from './config';
-import { liveStats } from './housingLive';
+import { effectivePopulation, effectiveTaxPerTick, effectiveWorkers } from './housingLive';
 import type { Policy, Ratings } from './types';
 import type { BuildingInstance } from './walkers';
 
@@ -17,11 +17,13 @@ export interface EconomyResult {
 
 /** Worker pool: workers contributed by houses whose labor walker is out.
  *  Workers are read from the 21-level stats via the clamped liveStats accessor
- *  (HOUS-01) — never a bare index (NaN guard). */
+ *  (HOUS-01) — never a bare index (NaN guard) — and scaled by the merged
+ *  survivor's combined population (CR-02): an absorbed block doubles the block's
+ *  workers alongside its population. */
 export function workerPool(buildings: BuildingInstance[]): number {
   let total = 0;
   for (const b of buildings) {
-    if (b.house && b.house.laborCooldown > 0) total += liveStats(b.house.level).workers;
+    if (b.house && b.house.laborCooldown > 0) total += effectiveWorkers(b);
   }
   return total;
 }
@@ -52,7 +54,9 @@ export function tickEconomy(
 ): { treasury: number; result: EconomyResult } {
   let taxIncome = 0;
   for (const b of buildings) {
-    if (b.house) taxIncome += liveStats(b.house.level).taxPerTick * policy.taxRate;
+    // CR-02: a merged survivor pays on its combined population, so an absorbed
+    // block's residents pay tax too (effective, combined-population scaled).
+    if (b.house) taxIncome += effectiveTaxPerTick(b) * policy.taxRate;
   }
 
   const pool = workerPool(buildings);
@@ -69,11 +73,12 @@ export function tickEconomy(
   };
 }
 
-/** Population = sum of house level capacities (via clamped liveStats). */
+/** Population = sum of house effective populations (level capacity, or the
+ *  merged combined population when the house resulted from a merge — CR-02). */
 export function populationOf(buildings: BuildingInstance[]): number {
   let total = 0;
   for (const b of buildings) {
-    if (b.house) total += liveStats(b.house.level).population;
+    if (b.house) total += effectivePopulation(b);
   }
   return total;
 }

@@ -45,7 +45,7 @@ import { WaterSystem } from './water';
 import { buildCodex } from './campaign';
 import { desirabilityOf, tickHousing } from './housing';
 import { housingLevelName } from '../../data/housing';
-import { liveStats } from './housingLive';
+import { effectivePopulation } from './housingLive';
 import { findMergePartner, mergeProposal, targetFootprint } from './housingMerge';
 import { Treasury, rollYear } from './finance';
 import type { FinanceLedger } from './finance';
@@ -479,10 +479,11 @@ export class SimRunner {
   }
 
   /** Effective population of a house: the combined population when this
-   *  instance resulted from a merge, else the level's live population. */
+   *  instance resulted from a merge, else the level's live population. Delegates
+   *  to the shared housingLive accessor so every consumer counts merged
+   *  residents identically (CR-02). */
   private effectiveHousePopulation(h: BuildingInstance): number {
-    if (h.house?.combinedPopulation !== undefined) return h.house.combinedPopulation;
-    return liveStats(h.house?.level ?? 0).population;
+    return effectivePopulation(h);
   }
 
   /** Tile keys (x<<20|y) covered by a building's footprint. */
@@ -1699,7 +1700,9 @@ export class SimRunner {
       this.buildings
         .filter((b) => b.house)
         .map((b) => ({
-          population: liveStats(b.house!.level ?? 0).population,
+          // CR-02: happiness weighting uses the house's EFFECTIVE population so
+          // a merged block's combined residents weight happiness correctly.
+          population: effectivePopulation(b),
           happiness: houseHappiness(this.houseHappinessInput(b)),
         })),
     );
@@ -2747,7 +2750,9 @@ export class SimRunner {
               tierName: HOUSE_TIERS[b.house!.tier].name,
               level: lvl,
               levelName: housingLevelName(lvl),
-              populationCapacity: liveStats(lvl).population,
+              // CR-02: the serialized capacity reflects the merged combined
+              // population (a 2x2 of two level-11 houses shows 480, not 240).
+              populationCapacity: effectivePopulation(b),
               foodCooldown: b.house!.foodCooldown,
               waterCooldown: b.house!.waterCooldown,
               laborCooldown: b.house!.laborCooldown,
