@@ -367,17 +367,19 @@ export function consumeQuota(route: TradeRouteState, good: string, amount: numbe
 
 ## Open Questions
 
-1. **Should event effects reach `getState()` for player-visible "real" changes, or is `DerivedSnapshot` enough?**
+> All three questions are RESOLVED — the plan (15-PLAN.md) implements the recommendations below.
+
+1. **Should event effects reach `getState()` for player-visible "real" changes, or is `DerivedSnapshot` enough?** *(RESOLVED — derived-only)*
    - What we know: `getState()` uses economy `computeRatings` (separate), goldens depend on it, and events currently never reach it.
    - What's unclear: whether "applied to live city metrics" (CONTEXT) permits derived-only or requires economic/treasury mutation.
    - Recommendation: derived-only for ratings; treasury only through explicit responses. Confirm with user during discuss if "real" means economic.
 
-2. **`annualExports` — precisely which goods and load sources count?**
+2. **`annualExports` — precisely which goods and load sources count?** *(RESOLVED — usedPerGood across enabled routes, trailing 360)*
    - What we know: specimen says "annual pottery exports 20 loads"; the physical path counts `route.usedPerGood[good]`; the legacy abstract-ledger path counts `result.exports` (`runner.ts:461`).
    - What's unclear: whether the window sums only physical orders-routes or also legacy wheat-ledger exports, and whether "loads" = quota-consumed units.
    - Recommendation: sum `usedPerGood[good]` across enabled routes for the target good (all types), trailing 360 ticks.
 
-3. **What happens to a player response after the event already concluded?**
+3. **What happens to a player response after the event already concluded?** *(RESOLVED — reject with no state change)*
    - What we know: none of this exists yet; the validation contract is proposed to reject unknown/inactive event ids.
    - What's unclear: whether a stale `respondEvent` should be a silent no-op or an error surfaced to the UI.
    - Recommendation: reject (no state change) mirroring `checkPlacement`, and log to commandLog.
