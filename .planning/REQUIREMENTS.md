@@ -107,9 +107,9 @@ Requirements for completing the OpenCaesar build-out. Each maps to roadmap phase
 
 ### Ratings & Objectives (Sections 27, 29)
 
-- [ ] **RATE-01**: Four city ratings (Culture, Prosperity, Stability, Favor) with decomposition and separate construction-cost treatment for Prosperity
-- [ ] **RATE-02**: Objectives and win conditions (targets sustained for a required period)
-- [ ] **RATE-03**: Non-military event engine with catalog (deterministic schedule, lifecycle, responses)
+- [x] **RATE-01**: Four city ratings (Culture, Prosperity, Stability, Favor) with decomposition and separate construction-cost treatment for Prosperity
+- [x] **RATE-02**: Objectives and win conditions (targets sustained for a required period)
+- [x] **RATE-03**: Non-military event engine with catalog (deterministic schedule, lifecycle, responses)
 
 ### Campaign & Tutorial (Sections 42–44)
 
