@@ -20,6 +20,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SimRunner } from '../../src/sim/runner';
+import { Map as SimMap } from '../../src/sim/map';
+import { missionMap } from '../../src/sim/missionMaps';
+import { MISSIONS } from '../../data/missions';
 import { foodChainMap, buildFoodCity } from '../helpers';
 
 /**
@@ -71,14 +74,49 @@ describe('campaign determinism (Phase 17, CAMPAIGN-01)', () => {
     expect(loaded.getMission()!.id).toBe('tutorial');
   });
 
-  // Deferred to 17-01-03 (needs missionMaps.ts + per-mission sub-effects):
-  //   - a mission with map/modifiers/routes: save → load → save reproduces the
-  //     exact treasury/buildings/routes and does NOT grow saveCommands (the
-  //     single {kind:'startMission'} record is the complete deterministic
-  //     record — T-17-03 command-bloat).
-  // Deferred to 17-02-01 (needs dismissTutorialStep + getTutorial()):
-  //   - after dismissTutorialStep(step), save → load keeps the step dismissed
-  //     (dismissed set reconstructs from replayed commands — never SaveData).
+  // Deferred to 17-03-02 (needs winnability probe): per-mission target ceilings.
+  // Deferred to 17-02-01 (needs dismissTutorialStep + getTutorial()): a dismissed
+  //   step stays dismissed through save → load (reconstructed from replay).
+
+  it('startMission sub-effects replay byte-identically through save→load (T-17-03)', () => {
+    const def = MISSIONS['grand_city']!; // map + modifiers + routes + preplace
+    const r = new SimRunner(7, missionMap(def)!);
+    expect(r.startMission('grand_city').ok).toBe(true);
+    for (let i = 0; i < 80; i++) r.tick(); // past a month gate
+
+    const save = r.getSaveData();
+    // Load with a FRESH mission map instance (the construction-time contract —
+    // missionMap() is pure, so a fresh call yields identical unmutated terrain).
+    const loaded = SimRunner.fromSaveData(save, missionMap(def) as SimMap);
+    for (let i = 0; i < 20; i++) { r.tick(); loaded.tick(); }
+
+    expect(loaded.getStateJson()).toBe(r.getStateJson());
+    expect(loaded.getMission()).toEqual(r.getMission());
+    // The sub-effect state is restored from the single {kind:'startMission'} record.
+    expect(loaded.getTradeRoutes()['massilia']?.enabled).toBe(true);
+    expect(loaded.getTradeRoutes()['tarraco']?.orders?.tools).toBe('export_above_reserve');
+  });
+
+  it('a save→load→save cycle does NOT grow saveCommands (no self-duplicated place/openTradeRoute/startMission records)', () => {
+    const def = MISSIONS['grand_city']!;
+    const r = new SimRunner(7, missionMap(def)!);
+    expect(r.startMission('grand_city').ok).toBe(true);
+    for (let i = 0; i < 40; i++) r.tick();
+
+    const save1 = r.getSaveData();
+    // Only the ONE startMission command is the record (sub-effects suppressed).
+    expect(save1.commands).toEqual([{ kind: 'startMission', id: 'grand_city' }]);
+
+    const loaded = SimRunner.fromSaveData(save1, missionMap(def) as SimMap);
+    const save2 = loaded.getSaveData();
+    expect(save2.commands.length).toBeLessThanOrEqual(save1.commands.length);
+    // No place/openTradeRoute/setTradeOrder records ever appear for the sub-effects.
+    for (const c of save2.commands) {
+      expect(c.kind).not.toBe('place');
+      expect(c.kind).not.toBe('openTradeRoute');
+      expect(c.kind).not.toBe('setTradeOrder');
+    }
+  });
 });
 
 describe('no Math.random / wall-clock in the Phase 17 sim chain (determinism audit)', () => {

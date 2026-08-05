@@ -955,11 +955,14 @@ export class SimRunner {
     route.openYear = Math.floor(this.tickCount / 360);
     route.catalogQuota = city.annualQuotaPerGood;
     route.lastYear = Math.floor(this.tickCount / 360);
-    this.commandLog.push({ tick: this.tickCount, command: `openTradeRoute ${cityId}`, result: 'ok' });
     // RATE-02: route openings are replayed as SaveCommands so a save/load
     // round-trip reconstructs the exact trade state (and the annualExports
-    // window that derives from it).
-    this.saveCommands.push({ kind: 'openTradeRoute', cityId });
+    // window that derives from it). Skipped for startMission sub-effects
+    // (T-17-03 — the single {kind:'startMission'} command is the record).
+    if (!this.suppressCommandRecording) {
+      this.commandLog.push({ tick: this.tickCount, command: `openTradeRoute ${cityId}`, result: 'ok' });
+      this.saveCommands.push({ kind: 'openTradeRoute', cityId });
+    }
     return { ok: true, cost };
   }
 
@@ -981,10 +984,14 @@ export class SimRunner {
     if (opts?.reserve !== undefined) route.exportReserve = { ...route.exportReserve, [good]: opts.reserve };
     if (opts?.target !== undefined) route.importTargets = { ...route.importTargets, [good]: opts.target };
     if (mode !== 'no_trade' && !route.enabled) route.enabled = true;
-    this.commandLog.push({ tick: this.tickCount, command: `setTradeOrder ${cityId} ${good} ${mode}`, result: 'ok' });
     // RATE-02: per-good orders are replayed as SaveCommands so the physical
-    // trade path (and the annualExports window) survives save/load.
-    this.saveCommands.push({ kind: 'setTradeOrder', cityId, good, mode, reserve: opts?.reserve, target: opts?.target });
+    // trade path (and the annualExports window) survives save/load. Skipped for
+    // startMission sub-effects (T-17-03 — the single startMission command is the
+    // complete deterministic record).
+    if (!this.suppressCommandRecording) {
+      this.commandLog.push({ tick: this.tickCount, command: `setTradeOrder ${cityId} ${good} ${mode}`, result: 'ok' });
+      this.saveCommands.push({ kind: 'setTradeOrder', cityId, good, mode, reserve: opts?.reserve, target: opts?.target });
+    }
     return { ok: true };
   }
 
@@ -1516,9 +1523,11 @@ export class SimRunner {
       this.mission.failed = true;
       return;
     }
-    // Time-limit failure preserved (year − start year > timeLimitYears).
+    // Time-limit failure preserved (year − start year > timeLimitYears). A
+    // per-mission override (modifiers.timeLimitYears) wins over the flat field.
     const year = Math.floor(this.tickCount / 360);
-    if (def.timeLimitYears && year - this.mission.year > def.timeLimitYears) {
+    const limitYears = def.modifiers?.timeLimitYears ?? def.timeLimitYears;
+    if (limitYears && year - this.mission.year > limitYears) {
       this.mission.failed = true;
       return;
     }
@@ -1620,8 +1629,12 @@ export class SimRunner {
       }
     }
 
-    this.commandLog.push({ tick: this.tickCount, command: `place ${type}@${x},${y}`, result: 'ok' });
-    this.saveCommands.push({ kind: 'place', type, x, y, god: building.god });
+    // CAMPAIGN-01 (T-17-03): a startMission sub-effect (mission preplace) must
+    // not self-record — the single {kind:'startMission'} command is the record.
+    if (!this.suppressCommandRecording) {
+      this.commandLog.push({ tick: this.tickCount, command: `place ${type}@${x},${y}`, result: 'ok' });
+      this.saveCommands.push({ kind: 'place', type, x, y, god: building.god });
+    }
     return { ok: true };
   }
 
@@ -2142,6 +2155,47 @@ export class SimRunner {
     // The single deterministic replay record for the whole mission start.
     // Guarded during replay so a save → load → save cycle never duplicates it.
     if (!this.replaying) this.saveCommands.push({ kind: 'startMission', id });
+
+    // Per-mission sub-effects (CAMPAIGN-01): treasury credit, policy override,
+    // preplaced starter buildings, and routes are applied deterministically. All
+    // sub-effect mutations run under suppressCommandRecording (ON BOTH the live
+    // call AND replay) so they do NOT self-record — the one {kind:'startMission'}
+    // command above is the complete deterministic record (T-17-03): a
+    // save → load → save cycle never grows saveCommands. The terrain itself is
+    // read-only (missionMaps Assumption A4): callers construct the runner with
+    // `new SimRunner(seed, missionMap(def))` and load with
+    // `SimRunner.fromSaveData(save, missionMap(def))`.
+    this.suppressCommandRecording = true;
+    try {
+      if (def.modifiers) {
+        const credit = def.modifiers.startingTreasuryCredit ?? def.startingDenarii;
+        if (credit) this.treasuryAccount.addRevenue('other', credit);
+        if (def.modifiers.startingPolicy) {
+          const p = def.modifiers.startingPolicy;
+          if (p.taxRate !== undefined) this.policy.taxRate = clamp01(p.taxRate);
+          if (p.wageRate !== undefined) this.policy.wageRate = clamp01(p.wageRate);
+        }
+      }
+      if (def.map?.preplace) {
+        for (const p of def.map.preplace) {
+          this.placeBuilding(p.type as BuildingType, p.x, p.y, p.god !== undefined ? { god: p.god } : undefined);
+        }
+      }
+      if (def.routes) {
+        for (const route of def.routes) {
+          this.openTradeRoute(route.cityId);
+          if (route.good && route.order) {
+            this.setTradeOrder(route.cityId, route.good, route.order);
+            if (route.quota !== undefined) {
+              const tr = this.tradeRoutes[route.cityId];
+              if (tr) tr.perGoodQuota = { ...(tr.perGoodQuota ?? {}), [route.good]: route.quota };
+            }
+          }
+        }
+      }
+    } finally {
+      this.suppressCommandRecording = false;
+    }
     return { ok: true };
   }
 
@@ -2219,6 +2273,14 @@ export class SimRunner {
    *  Reconstructed purely from replayed {kind:'dismissTutorialStep'} commands —
    *  never a SaveData field, so getTutorial() is deterministic from state. */
   private dismissedTutorialSteps = new Set<string>();
+  /** CAMPAIGN-01 (T-17-03): while true, state-mutating public methods
+   *  (placeBuilding / openTradeRoute / setTradeOrder) apply their effect but do
+   *  NOT record commandLog/saveCommands. startMission wraps its per-mission
+   *  sub-effects (treasury credit / preplaced buildings / routes) with this flag
+   *  ON BOTH the live call AND replay, so the single {kind:'startMission'}
+   *  command is the complete deterministic record and a save → load → save cycle
+   *  never duplicates records (command-bloat). */
+  private suppressCommandRecording = false;
   private tradeRoutes: Record<string, TradeRoute> = {};
   private activeEvent: { id: string; remaining: number; total: number } | null = null;
   /** RATE-03: response choice recorded per event id (construct-init) so the

@@ -115,6 +115,43 @@ describe('campaign progression + start-year (Phase 17, CAMPAIGN-01)', () => {
     expect(m!.failed).toBe(false); // today's year:0 landmine fails it here
   });
 
+  it('startMission applies the mission modifiers, preplaced starters, and routes deterministically (CAMPAIGN-01)', () => {
+    const def = MISSIONS['grand_city']!; // map + modifiers + routes
+    const r = new SimRunner(7, missionMap(def)!);
+    const treasuryBefore = r.getTreasury();
+    expect(r.startMission('grand_city').ok).toBe(true);
+
+    // Treasury credit applied additively on top of the running treasury (after
+    // the preplace costs (60) AND the route-opening costs (massilia 500 +
+    // tarraco 1500) are charged through the normal paths).
+    const credit = def.modifiers!.startingTreasuryCredit ?? 0;
+    expect(r.getTreasury()).toBeGreaterThan(treasuryBefore + credit - 2500);
+
+    // Preplaced starter buildings exist (the mission's house + well).
+    const buildings = r.getState().buildings as { type: string }[];
+    expect(buildings.some((b) => b.type === 'house')).toBe(true);
+    expect(buildings.some((b) => b.type === 'well')).toBe(true);
+
+    // Routes opened and the per-good order set.
+    expect(r.getTradeRoutes()['massilia']).toBeDefined();
+    expect(r.getTradeRoutes()['massilia'].enabled).toBe(true);
+    expect(r.getTradeRoutes()['massilia'].orders?.pottery).toBe('export_above_reserve');
+    expect(r.getTradeRoutes()['tarraco'].orders?.tools).toBe('export_above_reserve');
+  });
+
+  it('a save taken after a mission start with sub-effects survives load with the mission map (CAMPAIGN-01)', () => {
+    const def = MISSIONS['grand_city']!;
+    const r = new SimRunner(7, missionMap(def)!);
+    r.startMission('grand_city');
+    for (let i = 0; i < 80; i++) r.tick();
+    const loaded = SimRunner.fromSaveData(r.getSaveData(), missionMap(def)!);
+    expect(loaded.getMission()!.id).toBe('grand_city');
+    // The sub-effect state (started route) is restored via the single startMission command.
+    for (const city of ['massilia', 'tarraco']) {
+      expect(loaded.getTradeRoutes()[city]?.enabled).toBe(true);
+    }
+  });
+
   // Deferred to 17-01-02/03 (needs missionMap + mission modifiers data):
   //   - startMission on a mission with modifiers/preplace/routes applies the
   //     treasury credit, preplaces the starter buildings, and opens the routes.
