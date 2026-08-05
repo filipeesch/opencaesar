@@ -571,11 +571,14 @@ export class SimRunner {
     }
   }
 
-  /** Repoint walkers whose target/dest building is `from` to `to`. */
+  /** Repoint walkers whose target/dest/source building is `from` to `to`,
+   *  so a walker (or trade carrier) whose objective references the absorbed
+   *  house is redirected to the merger instead of dangling (WR-03). */
   private repointWalkersTowards(from: number, to: number): void {
     for (const w of this.walkers) {
       if (w.targetBuildingId === from) w.targetBuildingId = to;
       if (w.trade?.destBuildingId === from) w.trade.destBuildingId = to;
+      if (w.trade?.sourceBuildingId === from) w.trade.sourceBuildingId = to;
     }
   }
 

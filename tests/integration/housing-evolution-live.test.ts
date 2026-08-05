@@ -25,6 +25,7 @@ import { SimRunner } from '../../src/sim/runner';
 import { Map as SimMap } from '../../src/sim/map';
 import { DEFAULT_HYSTERESIS } from '../../src/sim/housingEvolution';
 import { liveStats, tierOfLevel } from '../../src/sim/housingLive';
+import { createWalker } from '../../src/sim/walkers';
 import type { BuildingInstance, HouseInstance } from '../../src/sim/walkers';
 import type { BuildingType } from '../../src/sim/types';
 
@@ -262,6 +263,37 @@ describe('merge (HOUS-02 deterministic adjacent-house merging)', () => {
     expect(s.totalWorkers).toBe(2 * liveStats(11).workers);
     const mergedState = s.buildings.find((bb) => bb.id === merged!.id)!;
     expect(mergedState.house!.populationCapacity).toBe(2 * liveStats(11).population);
+  });
+
+  it('WR-03: a walker whose targetBuildingId points at the absorbed house is repointed to the survivor on merge', () => {
+    const r = serviceCity([[10, 29], [11, 29]]);
+    const [a, b] = housesOf(r);
+    // plant both at the footprint-gated level 11 (held without meat), so the
+    // %40 merge fuses them — survivor a absorbs b.
+    a.house!.level = 11;
+    b.house!.level = 11;
+    // Bring the city to exactly one tick BEFORE the next %40 merge step.
+    pumpAndTick(r, [a.id, b.id], (h) => pumpHouse(h, { meat: false }), 39);
+    expect((r as unknown as { tickCount: number }).tickCount).toBe(39);
+
+    // Plant a walker whose objective references the ABSORBED house b.
+    const w = createWalker('seller', 3, 4, ((r as any).nextWalkerId as number) + 1000);
+    w.state = 'seeking';
+    w.targetBuildingId = b.id;
+    w.path = [{ x: 5, y: 6 }];
+    (r as any).walkers.push(w);
+
+    // One more tick crosses the %40 boundary: the merge runs, b is absorbed by
+    // a, and repointWalkersTowards must redirect the walker to the survivor.
+    (r as unknown as { treasuryAccount: { balance: number } }).treasuryAccount.balance = 5000;
+    r.tick();
+    expect((r as unknown as { tickCount: number }).tickCount).toBe(40);
+
+    const survivor = housesOf(r).find((s) => s.footprint === 2);
+    expect(survivor, 'the %40 merge should have run').toBeDefined();
+    expect(survivor!.id, 'survivor keeps the first house').toBe(a.id);
+    expect(w.targetBuildingId, 'walker is repointed onto the survivor').toBe(a.id);
+    expect((r as any).buildingById.has(b.id)).toBe(false);
   });
 
   it('merges two 2x2 houses into a 4x4 at the top of the ladder (levels 19-20)', () => {
