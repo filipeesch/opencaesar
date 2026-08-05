@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Map as SimMap } from '../src/sim/map';
 import { SimRunner } from '../src/sim/runner';
 import { BUILDINGS } from '../src/sim/buildings';
-import { productionChainMap, buildProductionCity } from './helpers';
+import { productionChainMap, foodChainMap, buildProductionCity, buildFoodCity } from './helpers';
 import { pickEvent, eventDuration, resolveResponse } from '../src/sim/events';
 import { EVENTS } from '../data/events';
 
@@ -176,6 +176,30 @@ describe('save/load round-trip determinism (task 12.3)', () => {
     expect(c.getState().tick).toBe(b.getState().tick);
     expect(c.getStateJson()).toBe(b.getStateJson());
   });
+});
+
+describe('mission save/load round-trip (Phase 17, CAMPAIGN-01)', () => {
+  it('a mid-mission save keeps getMission() across load (command replay, not SaveData)', () => {
+    const map = foodChainMap();
+    const r = new SimRunner(9, map);
+    buildFoodCity(r);
+    r.startMission('small_town');
+    for (let i = 0; i < 100; i++) r.tick(); // past a month gate
+
+    // Pass a FRESH deterministic map: the original run's map was mutated by
+    // buildFoodCity's road placement (replaying place-commands onto already-road
+    // terrain would be rejected). foodChainMap() is seed-free → identical terrain.
+    const loaded = SimRunner.fromSaveData(r.getSaveData(), foodChainMap());
+    expect(loaded.getStateJson()).toBe(r.getStateJson());
+    expect(loaded.getMission()).toEqual(r.getMission());
+    expect(loaded.getMission()!.id).toBe('small_town');
+    expect(loaded.getMission()!.started).toBe(true);
+  });
+
+  // Deferred accessor-shape cases (their methods arrive in later waves):
+  //   - 17-01-01: getMissionProgress() / getCampaignProgress() shaped returns.
+  //   - 17-02-01/17-03-01: getTutorial() and getCodex() shaped returns after
+  //     ticking (mirroring the getDerived accessor test above).
 });
 
 describe('derived sim wiring (warning fix)', () => {
