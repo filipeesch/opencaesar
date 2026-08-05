@@ -227,7 +227,10 @@ Plans:
   1. Ratings decompose into sub-factors; Prosperity treats construction cost separately.
   2. Win conditions require targets sustained for the required period.
   3. Events are deterministic from seed and expose response choices that change outcomes.
-**Plans**: TBD
+**Plans**: 1 (single 15-PLAN.md, 3 waves)
+
+Plans:
+- [ ] 15-PLAN — ratings decomposition + constructionSpend separation (RATE-01), sustained objectives/win conditions + trailing-year annualExports (RATE-02), ~25-event responses + respondEvent command (RATE-03)
 
 ### Phase 16: Full Housing Evolution
 **Goal**: 21-level progression with cumulative requirements, hysteresis, and merging.
