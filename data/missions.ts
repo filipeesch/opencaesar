@@ -122,7 +122,7 @@ export const MISSIONS: Record<string, MissionDef> = {
   // 2. provincial granary — enough food surplus to sustain a small town.
   small_town: {
     id: 'small_town', name: 'Provincial Granary', description: 'Feed a growing town — a belt of farms feeding granaries, then a market to distribute the surplus.',
-    targetPopulation: 500, targetCulture: 30, targetProsperity: 30, targetStability: 30, startingDenarii: 2000,
+    targetPopulation: 150, targetCulture: 20, targetProsperity: 20, targetStability: 20, startingDenarii: 2000,
     map: {
       width: 16, height: 16,
       legend: { F: 'fertile', T: 'trees' },
@@ -156,7 +156,7 @@ export const MISSIONS: Record<string, MissionDef> = {
   //    furniture, olives to oil, grapes to wine.
   thriving_city: {
     id: 'thriving_city', name: 'Clay and Fire', description: 'Fire the kilns — feed clay and timber into workshops and grow a thriving city on manufactured goods.',
-    targetPopulation: 2000, targetCulture: 60, targetProsperity: 60, targetStability: 60, startingDenarii: 5000, timeLimitYears: 10,
+    targetPopulation: 200, targetCulture: 30, targetProsperity: 25, targetStability: 25, startingDenarii: 5000, timeLimitYears: 10,
     map: {
       width: 24, height: 24,
       legend: { F: 'fertile', T: 'trees' },
@@ -198,8 +198,7 @@ export const MISSIONS: Record<string, MissionDef> = {
   //    routes; culture is fed by full civic coverage, exports by real loads.
   grand_city: {
     id: 'grand_city', name: 'Trade Roads', description: 'Bind the region with trade — open the roads to Massilia and Tarraco and let a grand city profit from its surplus.',
-    targetPopulation: 5000, targetCulture: 80, targetProsperity: 80, targetStability: 80,
-    targetAnnualExports: 40, startingDenarii: 10000, timeLimitYears: 20,
+    targetPopulation: 240, targetCulture: 40, targetProsperity: 30, targetStability: 30, startingDenarii: 10000, timeLimitYears: 15,
     map: {
       width: 30, height: 30,
       legend: { W: 'water', F: 'fertile', T: 'trees', R: 'rock' },
@@ -258,7 +257,7 @@ export const EXTRA_MISSIONS: Record<string, MissionDef> = {
   // 5. water for all — the wharf town: fish from the coast and clean water.
   fishing_village: {
     id: 'fishing_village', name: 'Water for All', description: 'Bring water to every home — wells and fountains on the fishing coast.',
-    targetPopulation: 300, targetCulture: 20, targetProsperity: 20, targetStability: 20, startingDenarii: 1500,
+    targetPopulation: 180, targetCulture: 15, targetProsperity: 20, targetStability: 20, startingDenarii: 1500,
     map: {
       width: 18, height: 18,
       legend: { W: 'water', F: 'fertile' },
@@ -293,7 +292,7 @@ export const EXTRA_MISSIONS: Record<string, MissionDef> = {
   // 6. city of scholars — libraries and schools raise a modest town to culture.
   market_town: {
     id: 'market_town', name: 'City of Scholars', description: 'Raise the town\'s mind — pack schools, a library, and a theatre into a bustling market town.',
-    targetPopulation: 900, targetCulture: 40, targetProsperity: 40, targetStability: 40, startingDenarii: 3000, timeLimitYears: 8,
+    targetPopulation: 220, targetCulture: 30, targetProsperity: 25, targetStability: 25, startingDenarii: 3000, timeLimitYears: 8,
     map: {
       width: 20, height: 20,
       legend: { F: 'fertile', T: 'trees' },
@@ -331,8 +330,8 @@ export const EXTRA_MISSIONS: Record<string, MissionDef> = {
   //    worship; the port city stacks favor on top of its targets.
   port_city: {
     id: 'port_city', name: 'Favors of the Gods', description: 'Win the favor of the gods — raise temples and hold festivals in a flourishing port.',
-    targetPopulation: 3000, targetCulture: 60, targetProsperity: 60, targetStability: 60,
-    targetFavor: 60, startingDenarii: 6000, timeLimitYears: 12,
+    targetPopulation: 260, targetCulture: 40, targetProsperity: 30, targetStability: 30,
+    targetFavor: 30, startingDenarii: 6000, timeLimitYears: 12,
     map: {
       width: 26, height: 26,
       legend: { W: 'water', F: 'fertile', T: 'trees' },
@@ -376,8 +375,7 @@ export const EXTRA_MISSIONS: Record<string, MissionDef> = {
   //    goal, with enough sea trade to justify the name.
   cultural_center: {
     id: 'cultural_center', name: 'Southern Port', description: 'Foster learning and spectacle — a cultural center on the southern sea with workshops feeding the ships.',
-    targetPopulation: 4000, targetCulture: 80, targetProsperity: 50, targetStability: 60,
-    targetAnnualExports: 30, startingDenarii: 8000, timeLimitYears: 15,
+    targetPopulation: 280, targetCulture: 45, targetProsperity: 35, targetStability: 35, startingDenarii: 8000, timeLimitYears: 15,
     map: {
       width: 32, height: 32,
       legend: { F: 'fertile', T: 'trees', R: 'rock' },
@@ -431,8 +429,8 @@ export const EXTRA_MISSIONS: Record<string, MissionDef> = {
   //    patricians, sustained by godly favor.
   religious_hub: {
     id: 'religious_hub', name: 'City of Patricians', description: 'Raise villas for the patricians — great temples and festivals keep the city graceful and stable.',
-    targetPopulation: 4500, targetCulture: 70, targetProsperity: 60, targetStability: 70,
-    targetFavor: 70, startingDenarii: 9000, timeLimitYears: 18,
+    targetPopulation: 300, targetCulture: 45, targetProsperity: 35, targetStability: 40,
+    targetFavor: 35, startingDenarii: 9000, timeLimitYears: 18,
     map: {
       width: 30, height: 30,
       legend: { F: 'fertile', T: 'trees' },
@@ -481,8 +479,8 @@ export const EXTRA_MISSIONS: Record<string, MissionDef> = {
   //     long limit (RESEARCH per-mission winnability: 85/85/85 is fragile).
   metropolis: {
     id: 'metropolis', name: 'Provincial Capital', description: 'Crown the campaign — a glorious metropolis spanning the river, the seat of the province.',
-    targetPopulation: 6000, targetCulture: 80, targetProsperity: 80, targetStability: 80,
-    targetTreasury: 12000, targetFavor: 70, startingDenarii: 12000, timeLimitYears: 25,
+    targetPopulation: 300, targetCulture: 55, targetProsperity: 45, targetStability: 45,
+    targetTreasury: 4000, targetFavor: 35, startingDenarii: 12000, timeLimitYears: 25,
     map: {
       width: 36, height: 36,
       legend: { W: 'water', F: 'fertile', T: 'trees', R: 'rock' },
