@@ -433,15 +433,21 @@ getWaterOverlay(): Record<string, number[][]> {
 
 ## Open Questions
 
-1. **How should `residentClass` be presented in the residence inspector given no live source?**
+> All a question are RESOLVED — the plan (18-PLAN.md) implements the recommendations below.
+
+1. **How should `residentClass` be presented in the residence inspector given no live source?** *(RESOLVED — derive from tier)*
    - What we know: `population.ts` `Residence` class is standalone (not runner-wired); no class on `BuildingState.house`.
    - What's unclear: whether to (a) omit, (b) derive from tier (patrician high-tiers), or (c) wire the population module into the runner (large, out of scope).
    - Recommendation: derive from tier now, omit if contested; record in the plan; do not block UI-04 on it.
-2. **Should `derivedSnapshot`'s water coverage aggregate all sources, or keep first-well semantics?**
+   - **Resolution (plan 18-04-01):** residence inspector derives a class label from `house.level`/tier (high tiers → patrician); population module not wired.
+2. **Should `derivedSnapshot`'s water coverage aggregate all sources, or keep first-well semantics?** *(RESOLVED — aggregate all sources)*
    - What we know: stats % and a full water overlay would otherwise diverge.
    - What's unclear: whether the divergence is acceptable in this phase.
    - Recommendation: aggregate all sources (one-line change, no golden impact); confirm at discuss.
-3. **Overlay legend ramp correctness for water `0..3` (grand)** — `WaterSystem` never emits `grand` today, so the top ramp step is dormant; keep the legend but note it. No action needed unless WATR-03 (aqueduct) lands this phase (it does not).
+   - **Resolution (plan 18-03-01):** `getWaterOverlay()` aggregates ALL well/fountain sources via `WaterSystem.setSources`+`compute`; `derivedSnapshot` water aggregation aligned so stats % and the overlay agree.
+3. **Overlay legend ramp correctness for water `0..3` (grand)** *(RESOLVED — keep legend, no action; aqueduct not in scope this phase)*
+   - `WaterSystem` never emits `grand` today, so the top ramp step is dormant; keep the legend but note it. No action needed unless WATR-03 (aqueduct) lands this phase (it does not).
+   - **Resolution (plan 18-03-02):** water legend keeps the `grand` step documented as dormant; reservoir/aqueduct grids expected 0; no aqueduct/reservoir build this phase (no scope creep).
 ## Environment Availability
 
 | Dependency | Required By | Available | Version | Fallback |
