@@ -139,6 +139,57 @@ describe('findMergePartner (fixed-scan same-level adjacency)', () => {
     expect(proposal!.survivor.id).toBe(a.id);
     expect(proposal!.absorbed.id).toBe(b.id);
     expect(proposal!.footprint).toBe(2);
+    // Union-corner anchoring: a is already the min-corner, so origin == a.
+    expect(proposal!.originX).toBe(5);
+    expect(proposal!.originY).toBe(5);
+  });
+
+  it('CR-01 regression: right-anchor pair anchors at the union corner and still contains the absorbed origin', () => {
+    // The reviewer repro: scan anchor a is the RIGHT-hand member of the pair —
+    // the old block anchored at a=(6,5) covered (6,5)-(7,6), which EXCLUDED the
+    // absorbed origin (5,5) and freed a detached hole.
+    const a = mkHouse(1, 6, 5, 11);
+    const b = mkHouse(2, 5, 5, 11);
+    const occ = new Map<number, number>();
+    const isOcc = (x: number, y: number) => occ.has(tileKey(x, y));
+    const proposal = mergeProposal(a, b, targetFootprint(11), isOcc);
+    expect(proposal).not.toBeNull();
+    // The block is placed at the union min-corner, which contains BOTH origins.
+    expect(proposal!.originX).toBe(5);
+    expect(proposal!.originY).toBe(5);
+  });
+
+  it('CR-01 regression: below/above-anchor pairs anchor at the union corner', () => {
+    // a below b on the y axis: a=(5,6), b=(5,5). Union corner is (5,5).
+    const a = mkHouse(1, 5, 6, 11);
+    const b = mkHouse(2, 5, 5, 11);
+    const isOcc = (_x: number, _y: number) => false;
+    const proposal = mergeProposal(a, b, targetFootprint(11), isOcc);
+    expect(proposal).not.toBeNull();
+    expect(proposal!.originX).toBe(5);
+    expect(proposal!.originY).toBe(5);
+    // a above b on the y axis: a=(5,5), b=(5,6). Union corner is still (5,5).
+    const c = mkHouse(1, 5, 5, 11);
+    const d = mkHouse(2, 5, 6, 11);
+    const proposal2 = mergeProposal(c, d, targetFootprint(11), (_x: number, _y: number) => false);
+    expect(proposal2).not.toBeNull();
+    expect(proposal2!.originX).toBe(5);
+    expect(proposal2!.originY).toBe(5);
+  });
+
+  it('CR-01 regression: a 1x1 never absorbs an already-2x2 same-level house (footprint the target square cannot cover)', () => {
+    // Reviewer repro: a=(6,5) 1x1 level 11 merges with b=(7,5) 2x2 level 11.
+    // A 2x2 target square cannot contain a 2x2 neighbour next to a 1x1 anchor.
+    const a = mkHouse(1, 6, 5, 11, 1);
+    const b = mkHouse(2, 7, 5, 11, 2);
+    const occ = new Map<number, number>();
+    occ.set(tileKey(7, 5), b.id);
+    occ.set(tileKey(8, 5), b.id);
+    occ.set(tileKey(7, 6), b.id);
+    occ.set(tileKey(8, 6), b.id);
+    const isOcc = (x: number, y: number) => occ.has(tileKey(x, y));
+    const exempt = new Set([...occ.keys()]);
+    expect(mergeProposal(a, b, targetFootprint(11), isOcc, exempt)).toBeNull();
   });
 
   it('mergeProposal rejects when the block square is occupied', () => {

@@ -534,8 +534,12 @@ export class SimRunner {
 
       const survivor = proposal.survivor;
       const absorbed = proposal.absorbed;
-      // Survivor keeps id/origin; grows into the new footprint with the
-      // combined population of both blocks.
+      // CR-01: the block is anchored at the UNION min-corner (not the survivor
+      // origin) so it contains the absorbed house too. Relocate the survivor to
+      // that corner so its geometry (buildingTileKeys, adjacency, re-keying)
+      // matches the placed square for any later merge pass.
+      survivor.x = proposal.originX;
+      survivor.y = proposal.originY;
       survivor.footprint = proposal.footprint;
       survivor.house!.combinedPopulation =
         this.effectiveHousePopulation(survivor) + this.effectiveHousePopulation(absorbed);

@@ -102,14 +102,29 @@ export interface MergeProposal {
   survivor: BuildingInstance;
   absorbed: BuildingInstance;
   footprint: number;
+  /** Union-corner the merged block is actually placed at (originX = min(a.x,
+   *  b.x), originY = min(a.y, b.y)). CR-01: anchoring the square at the
+   *  survivor's origin was wrong for right/below-anchor scans — the block
+   *  detached from the absorbed house and freed a hole. */
+  originX: number;
+  originY: number;
 }
 
 /**
- * Build a merge proposal when two houses are same-level and their union block
- * (target footprint anchored at the survivor's origin `a`) fits. `isOccupied`
- * is the occupancy predicate (placement.ts style); `exemptTileKeys` are the
- * two houses' own tiles, which the block-fit check must treat as free (the
- * runner passes a's + neighbour's tile keys). Deterministic given fixed inputs.
+ * Build a merge proposal when two houses are same-level AND the target
+ * footprint square anchored at the UNION min-corner contains BOTH houses'
+ * full current footprints. `isOccupied` is the occupancy predicate (placement.ts
+ * style); `exemptTileKeys` are the two houses' own tiles, which the block-fit
+ * check must treat as free (the runner passes a's + neighbour's tile keys).
+ * Deterministic given fixed inputs.
+ *
+ * CR-01: two requirements the old implementation missed —
+ *   1. the square must be anchored so it CONTAINS the absorbed house (a
+ *      right/below-anchor pair merged into a block that excluded the absorbed
+ *      origin, leaving a detached block + freed hole);
+ *   2. a house with a footprint the target square cannot cover (e.g. a 1x1
+ *      at level 11 absorbing an already-2x2 same-level house) is rejected —
+ *      a 1x1 must never absorb a larger structure.
  */
 export function mergeProposal(
   a: BuildingInstance,
@@ -121,6 +136,14 @@ export function mergeProposal(
   if (!a.house || !b.house) return null;
   if (a.house.level !== b.house.level) return null;
   if (b.house.mergeable !== true) return null;
-  if (!blockFits(a.x, a.y, footprint, isOccupied, exemptTileKeys)) return null;
-  return { survivor: a, absorbed: b, footprint };
+  const originX = Math.min(a.x, b.x);
+  const originY = Math.min(a.y, b.y);
+  const contains = (h: BuildingInstance): boolean =>
+    h.x >= originX && h.x + h.footprint <= originX + footprint &&
+    h.y >= originY && h.y + h.footprint <= originY + footprint;
+  // The target square must contain BOTH houses entirely — never absorb a
+  // footprint the square cannot cover.
+  if (!contains(a) || !contains(b)) return null;
+  if (!blockFits(originX, originY, footprint, isOccupied, exemptTileKeys)) return null;
+  return { survivor: a, absorbed: b, footprint, originX, originY };
 }
