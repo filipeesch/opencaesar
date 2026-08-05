@@ -9,7 +9,7 @@
  * setPolicy(tax, wage), getCommandLog(). getState() returns plain serializable data.
  */
 
-import { pickEvent, applyEvent, eventDuration, eventSustainMsg, eventFinalMsg } from './events';
+import { pickEvent, applyEvent, eventDuration, eventSustainMsg, eventFinalMsg, resolveResponse } from './events';
 import { EVENTS } from '../../data/events';
 import { WALKERS } from '../../data/walkers';
 import { BUILDINGS } from './buildings';
@@ -17,7 +17,7 @@ import { CONFIG, HOUSE_TIERS } from './config';
 import { validateCatalogs, throwCatalogIssues } from '../../data/validate';
 import { assignedWorkers, computeRatings, tickEconomy, totalJobs, workerPool } from './economy';
 import { cityHappiness, houseHappiness } from './happiness';
-import { computeTargets, decomposeRatings } from './ratings';
+import { computeTargets, decomposeRatings, clampRating } from './ratings';
 import type { CityStats, RatingDecomposition } from './ratings';
 import { createGovernor, donate, payGovernor, GOVERNOR_SALARY_LEVELS } from './governor';
 import type { GovernorState } from './governor';
@@ -25,7 +25,7 @@ import { tickTrade } from './trade';
 import {
   resolveTradeOrder, tradeExportGate, importGatedBy, quotaRemaining,
   quotaSuspended, consumeQuota, resetAnnualQuotas, createTradePriceState,
-  sampleTradePrice, priceTrend, effectivePrice,
+  sampleTradePrice, priceTrend, effectivePrice, applyPriceEvent,
   type TradePriceState, type TradeOrderMode,
 } from './trade';
 import { COMMODITIES } from '../../data/commodities';
@@ -300,12 +300,15 @@ export class SimRunner {
     for (const w of [...this.walkers]) updateWalker(this.simInternals(), w);
 
     // Random events (deterministic by seed + tick), with lifecycle tracking.
+    // RATE-03 (BUG 2 fix): effects are applied LIVE — an active-event rating
+    // modifier is computed and removed at conclusion — never discarded.
     if (this.activeEvent) {
       this.activeEvent.remaining -= 1;
       const ev = this.activeEvent;
       if (ev.remaining <= 0) {
         this.logEvent('event', eventFinalMsg(ev.id), EVENTS[ev.id]?.severity ?? 'mild');
         this.activeEvent = null;
+        this.refreshEventDelta();
       } else if (ev.remaining === Math.floor(ev.total / 2)) {
         const sustain = eventSustainMsg(ev.id);
         if (sustain) this.logEvent('event', sustain, EVENTS[ev.id]?.severity ?? 'mild');
@@ -314,9 +317,18 @@ export class SimRunner {
     if (!this.activeEvent && this.tickCount % 40 === 0) {
       const ev = pickEvent(this.seed, this.tickCount);
       if (ev) {
-        const result = applyEvent(ev, { culture: 10, prosperity: this.getState().ratings.prosperity, stability: 10, favor: 10 });
+        const live = this.derived ?? this.derivedSnapshot();
+        const result = applyEvent(ev, { culture: live.culture, prosperity: live.prosperity, stability: live.stability, favor: live.favor });
         this.logEvent('event', `${result.name}: ${result.message}`, result.severity);
         this.activeEvent = { id: ev, remaining: eventDuration(ev), total: eventDuration(ev) };
+        this.refreshEventDelta();
+        // price_rise/price_fall adjust pricing on EXISTING price states only.
+        const def = EVENTS[ev];
+        if (def?.priceModify) this.applyEventPriceModifier(def.priceModify);
+        // A recorded conclude response (replayed early) ends the event next tick.
+        const respId = this.eventResponseByEvent[ev];
+        const resp = respId ? def?.responses?.find((r) => r.id === respId) : undefined;
+        if (resp?.effect?.conclude) this.activeEvent.remaining = 0;
       }
     }
 
@@ -952,6 +964,102 @@ export class SimRunner {
     return this.sumUsedPerGood() + (this.annualExportBuckets[year - 1] ?? 0);
   }
 
+  /** RATE-03: price_rise/price_fall modify EXISTING per-city/good price states
+   *  only (a no-op when none exist, so golden runs with no routes stay intact). */
+  private applyEventPriceModifier(mod: { good?: string; delta: number }): void {
+    for (const [, byGood] of this.tradePrices) {
+      if (mod.good) {
+        const st = byGood.get(mod.good);
+        if (st) applyPriceEvent(st, mod.delta, this.tickCount);
+      } else {
+        for (const st of byGood.values()) applyPriceEvent(st, mod.delta, this.tickCount);
+      }
+    }
+  }
+
+  /** Severity multiplier for scaling an event's own rating deltas when a
+   *  response alters its severity (mild < serious < disaster). */
+  private static severityMultiplier(s: string): number {
+    switch (s) {
+      case 'disaster': return 1.5;
+      case 'serious': return 1;
+      case 'mild':
+      default: return 0.5;
+    }
+  }
+
+  /** RATE-03: recompute the active-event rating modifier from the event's base
+   *  effect, scaled by any recorded response's severity, plus the response's own
+   *  rating deltas. Zero when no event is active. */
+  private refreshEventDelta(): void {
+    let d = { culture: 0, prosperity: 0, stability: 0, favor: 0 };
+    if (this.activeEvent) {
+      const ev = EVENTS[this.activeEvent.id];
+      if (ev) {
+        const respId = this.eventResponseByEvent[ev.id];
+        const resp = respId ? ev.responses?.find((r) => r.id === respId) : undefined;
+        const scale = resp?.effect?.severity
+          ? SimRunner.severityMultiplier(resp.effect.severity) / SimRunner.severityMultiplier(ev.severity)
+          : 1;
+        d = {
+          culture: Math.round((ev.effect.culture ?? 0) * scale) + (resp?.effect?.culture ?? 0),
+          prosperity: Math.round((ev.effect.prosperity ?? 0) * scale) + (resp?.effect?.prosperity ?? 0),
+          stability: Math.round((ev.effect.stability ?? 0) * scale) + (resp?.effect?.stability ?? 0),
+          favor: Math.round((ev.effect.favor ?? 0) * scale) + (resp?.effect?.favor ?? 0),
+        };
+      }
+    }
+    this.activeEventDelta = d;
+  }
+
+  /** RATE-03: respond to an active event with a player choice. A valid choice
+   *  mutates the outcome (treasury cost via the ledger, altered severity, or
+   *  early conclusion); unknown/inactive events or unknown choices are rejected
+   *  with no state change. Replayable as a SaveCommand (the response is recorded
+   *  so an event that re-fires during replay shapes the same outcome).
+   */
+  respondEvent(eventId: string, choiceId: string): { ok: boolean; error?: string } {
+    if (this.paused) {
+      this.enqueue({ kind: 'respondEvent', eventId, choiceId });
+      return { ok: true };
+    }
+    const ev = EVENTS[eventId];
+    const choice = resolveResponse(eventId, choiceId);
+    if (!ev || !choice) {
+      if (!this.replaying) this.commandLog.push({ tick: this.tickCount, command: `respondEvent ${eventId}:${choiceId}`, result: 'invalid-type' });
+      return { ok: false, error: 'unknown-choice' };
+    }
+    if (!this.replaying) {
+      if (!this.activeEvent) {
+        this.commandLog.push({ tick: this.tickCount, command: `respondEvent ${eventId}:${choiceId}`, result: 'invalid-type' });
+        return { ok: false, error: 'no-active-event' };
+      }
+      if (this.activeEvent.id !== eventId) {
+        this.commandLog.push({ tick: this.tickCount, command: `respondEvent ${eventId}:${choiceId}`, result: 'invalid-type' });
+        return { ok: false, error: 'no-active-event' };
+      }
+      if (choice.effect.treasuryCost && this.treasuryAccount.balance < choice.effect.treasuryCost) {
+        this.commandLog.push({ tick: this.tickCount, command: `respondEvent ${eventId}:${choiceId}`, result: 'not-enough-money' });
+        return { ok: false, error: 'not-enough-money' };
+      }
+    }
+    // Accept (live and replay): record the choice, apply any treasury cost
+    // through the ledger (never hand-rolled balance math), and shape the
+    // ongoing rating modifier / early conclusion.
+    this.eventResponseByEvent[eventId] = choiceId;
+    if (choice.effect.treasuryCost && choice.effect.treasuryCost > 0) {
+      this.treasuryAccount.addExpense('other', choice.effect.treasuryCost);
+    }
+    if (this.activeEvent && choice.effect.conclude) {
+      this.activeEvent.remaining = 0;
+    }
+    this.refreshEventDelta();
+    this.derived = null;
+    this.commandLog.push({ tick: this.tickCount, command: `respondEvent ${eventId}:${choiceId}`, result: 'ok' });
+    this.saveCommands.push({ kind: 'respondEvent', eventId, choiceId });
+    return { ok: true };
+  }
+
   private derivedSnapshot(): DerivedSnapshot {
     const population = this.getPopulation();
     const employment = this.getEmployment();
@@ -1022,6 +1130,11 @@ export class SimRunner {
       performance: this.lastWagesUnpaid > 0 ? 0.3 : 0.7,
     };
     const targets = computeTargets(cityStats);
+    // RATE-03: the active event's rating modifier is applied to the live
+    // derived ratings (removed at conclusion). It is derived-only — NEVER
+    // written into getState(), so goldens and the economy computeRatings path
+    // stay untouched.
+    const eventMod = this.activeEvent ? this.activeEventDelta : { culture: 0, prosperity: 0, stability: 0, favor: 0 };
     const water = new WaterSystem();
     const well = this.buildings.find((b) => b.type === 'well' || b.type === 'fountain');
     water.setSources(well ? [{ x: well.x, y: well.y, kind: 'well', active: true, radius: 2 }] : []);
@@ -1034,8 +1147,11 @@ export class SimRunner {
     const codex = buildCodex();
     const decomposition = decomposeRatings(cityStats, this.constructionSpend);
     return {
-      population, culture: targets.culture, prosperity: targets.prosperity, stability: targets.stability,
-      favor: Math.min(100, targets.favor + computeFavor(godWorship) + festivalFavorBoost + this.governorFavorBonus),
+      population,
+      culture: clampRating(targets.culture + eventMod.culture),
+      prosperity: clampRating(targets.prosperity + eventMod.prosperity),
+      stability: clampRating(targets.stability + eventMod.stability),
+      favor: clampRating(Math.min(100, targets.favor + computeFavor(godWorship) + festivalFavorBoost + this.governorFavorBonus) + eventMod.favor),
       employment: { jobs: employment.totalJobs, employed: employment.employed },
       services: serviceCoverage,
       godWorship,
@@ -1833,6 +1949,12 @@ export class SimRunner {
   private missionTracker: ObjectiveTracker | null = null;
   private tradeRoutes: Record<string, TradeRoute> = {};
   private activeEvent: { id: string; remaining: number; total: number } | null = null;
+  /** RATE-03: response choice recorded per event id (construct-init) so the
+   *  lifecycle shapes the post-response effect deterministically even when the
+   *  event re-fires during replay. */
+  private readonly eventResponseByEvent: Record<string, string> = {};
+  /** RATE-03: active-event rating modifier (0s when no event is active). */
+  private activeEventDelta = { culture: 0, prosperity: 0, stability: 0, favor: 0 };
   private houseHappinessInput(b: BuildingInstance) {
     const services = {
       food: b.house!.foodCooldown > 0,
@@ -2533,6 +2655,8 @@ function applyCommand(runner: SimRunner, cmd: SaveCommand): void {
     runner.openTradeRoute(cmd.cityId);
   } else if (cmd.kind === 'setTradeOrder') {
     runner.setTradeOrder(cmd.cityId, cmd.good, cmd.mode, { reserve: cmd.reserve, target: cmd.target });
+  } else if (cmd.kind === 'respondEvent') {
+    runner.respondEvent(cmd.eventId, cmd.choiceId);
   } else {
     const exhaustive: never = cmd;
     throw new Error(`unknown command kind: ${(exhaustive as { kind: string }).kind}`);

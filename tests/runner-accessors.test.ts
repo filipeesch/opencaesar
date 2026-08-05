@@ -3,6 +3,8 @@ import { Map as SimMap } from '../src/sim/map';
 import { SimRunner } from '../src/sim/runner';
 import { BUILDINGS } from '../src/sim/buildings';
 import { productionChainMap, buildProductionCity } from './helpers';
+import { pickEvent, eventDuration, resolveResponse } from '../src/sim/events';
+import { EVENTS } from '../data/events';
 
 describe('SimRunner accessors', () => {
   it('getRatings returns the computed ratings', () => {
@@ -292,6 +294,62 @@ describe('constructionSpend separation and full decomposition (RATE-01)', () => 
     expect(Number.isFinite(a)).toBe(true);
   });
 });
+
+describe('live event effects + respondEvent wiring (RATE-03)', () => {
+  it('an active event moves live derived ratings and clears on conclusion', () => {
+    // Seed 19 fires good_harvest (prosperity +2) at tick 680 on the production map.
+    const r = new SimRunner(19, productionChainMap());
+    buildProductionCity(r);
+    for (let i = 0; i < 680; i++) r.tick();
+    const during = r.getDerived();
+    for (let i = 0; i < 60; i++) r.tick(); // duration 50 → concluded + modifier removed
+    const after = r.getDerived();
+    expect(during.prosperity).toBeGreaterThan(after.prosperity); // +2 while active
+    expect(during.prosperity - after.prosperity).toBe(2);
+  });
+
+  it('respondEvent applies a valid choice treasury cost and rejects invalid choices with no state change', () => {
+    const { seed, tick, eventId, choiceId } = findRespondableEvent();
+    const r = new SimRunner(seed, productionChainMap());
+    buildProductionCity(r);
+    r.takeLoan(1500); // fund any response cost
+    r.openTradeRoute('massilia');
+    r.setTradeOrder('massilia', 'pottery', 'export_above_reserve', { reserve: 2 });
+    for (let i = 0; i < tick; i++) r.tick();
+    const before = r.getStateJson();
+    expect(r.respondEvent('unknown_event', 'x').ok).toBe(false);
+    expect(r.respondEvent(eventId, 'bogus_choice').ok).toBe(false);
+    expect(r.getStateJson()).toBe(before); // rejected with no state change
+
+    const resp = resolveResponse(eventId, choiceId)!;
+    const beforeTreasury = r.getTreasury();
+    expect(r.respondEvent(eventId, choiceId).ok).toBe(true);
+    if (resp.effect.treasuryCost) {
+      expect(r.getTreasury()).toBe(beforeTreasury - resp.effect.treasuryCost);
+    }
+  });
+});
+
+/** Replicate the runner's month-cadence event scheduling to locate a
+ *  (seed, monthTick) where a response-bearing event activates. */
+function findRespondableEvent(): { seed: number; tick: number; eventId: string; choiceId: string } {
+  for (let seed = 1; seed <= 30; seed++) {
+    let activeUntil = 0;
+    for (let t = 40; t <= 1200; t += 40) {
+      if (t >= activeUntil) {
+        const id = pickEvent(seed, t);
+        if (id) {
+          const responses = EVENTS[id]?.responses;
+          if (responses && responses.length > 0) {
+            return { seed, tick: t, eventId: id, choiceId: responses[0].id };
+          }
+          activeUntil = t + eventDuration(id);
+        }
+      }
+    }
+  }
+  throw new Error('no response-bearing event found for seeds 1..30 within 1200 ticks');
+}
 
 describe('sustained objectives on the month cadence (RATE-02)', () => {
   it('sustain counts on month boundaries — sustainChecks 3 wins after 3 month gates, not 3 ticks', () => {
