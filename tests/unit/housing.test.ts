@@ -47,6 +47,24 @@ function earthMap(): SimMap {
   return SimMap.fromLayout(5, 5, () => 'earth');
 }
 
+/** Minimal non-house building for the deriveSatisfied city-structure gates. */
+function mkBld(type: string, x: number, y: number, stock: Record<string, number> = {}): BuildingInstance {
+  return {
+    id: 100000 + x * 100 + y,
+    type,
+    x,
+    y,
+    footprint: 1,
+    workersAssigned: 0,
+    workersRequired: 0,
+    active: false,
+    laborConnected: false,
+    laborCooldown: 0,
+    spawnCooldown: 0,
+    stock,
+  } as unknown as BuildingInstance;
+}
+
 function makeEmitter() {
   const messages: string[] = [];
   const emit = (type: MessageType, text: string) => messages.push(`${type}:${text}`);
@@ -179,9 +197,30 @@ describe('housing evolution', () => {
   it('never evolves above level 20', () => {
     const map = earthMap();
     const house = mkHouse(4, { level: 20, foodCooldown: 500, waterCooldown: 500, laborCooldown: 500 });
+    // WR-01: a level-20 house's baseOk now checks CURRENT-level (20)
+    // requirements (next level 21 is undefined, so before the fix it was
+    // vacuous). To hold a Luxury Villa at 20 — proving the cap — it must
+    // actually satisfy level 20's full requirement set; a requirement-losing
+    // level-20 house correctly devolves instead. Generous service/god TTLs so
+    // tickCivic's decay never lapses them within the test window.
+    house.house!.services = { health: 1000, literacy: 1000, entertainment: 1000 };
+    house.house!.godAccess = { jupiter: 1000 };
+    house.house!.foodInventory = { wheat: 50, vegetables: 50, fruit: 50, fish: 50, meat: 50 };
+    const buildings: BuildingInstance[] = [
+      house,
+      mkBld('school', 3, 3),
+      mkBld('hospital', 3, 4),
+      mkBld('library', 4, 3),
+      mkBld('theatre', 4, 4),
+      mkBld('amphitheatre', 2, 4),
+      mkBld('forum', 5, 3),
+      mkBld('garden', 5, 4),
+      mkBld('senate', 6, 3),
+      mkBld('granary', 6, 4, { pottery: 50, furniture: 50, wine: 50, oil: 50 }),
+    ];
     const { emit } = makeEmitter();
     for (let i = 0; i < DEFAULT_HYSTERESIS.minSatisfiedTicks * 3; i++) {
-      tickHousing(map, [house], { taxRate: 0, wageRate: 0.5 }, false, emit);
+      tickHousing(map, buildings, { taxRate: 0, wageRate: 0.5 }, false, emit);
     }
     expect(house.house?.level).toBe(20);
     expect(house.house?.tier).toBe(4);
