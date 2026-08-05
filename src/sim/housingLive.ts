@@ -39,11 +39,12 @@ function levelWorkers(def: HousingLevelDef): number {
 
 /**
  * Tax per tick a level pays: max(1, round(capacity * taxPerCapita / 20)),
- * floored at 3 × the level's workers so every rung of the 21-level ladder is
+ * floored at 5 × the level's workers so every rung of the 21-level ladder is
  * solvent at the stock policy (a house's tax income covers its own workers'
  * wage bill — wages = workers × wagePerWorkerPerTick(2) × wageRate(0.135) ≈
  * 0.27×workers, taxes = taxPerTick × taxRate(0.1), so break-even needs
- * taxPerTick ≈ 2.7×workers; the floor of 3×workers keeps a small margin).
+ * taxPerTick ≈ 2.7×workers; the floor of LEVEL_TAX_PER_WORKER = 5×workers
+ * keeps a comfortable margin).
  *
  * WHY: without this floor, the bottom half of the ladder is structurally
  * loss-making (a level-1 house with 4 workers pays only 1 denarius/tick tax
@@ -73,7 +74,6 @@ export function levelDesirability(tileDesirability: number): number {
   const raw = Number.isFinite(tileDesirability) ? tileDesirability : 0;
   if (raw <= 0) return 0;
   const v = Math.round(raw / 6);
-  if (v < 0) return 0;
   if (v > 30) return 30;
   return v;
 }
