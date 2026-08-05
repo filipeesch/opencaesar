@@ -31,6 +31,7 @@ an opaque "teleporting stock" or radious-only model.
 - Four decomposed 0–100 city ratings with per-factor buckets, construction cost separated from Prosperity operating balance — Phase 15
 - Sustained win conditions (month-cadence objective tracker: population/ratings/favor/treasury/annual exports) — Phase 15
 - ~31-event catalog with deterministic responses that change outcomes, replayable via SaveCommand — Phase 15
+- 21-level housing progression (cumulative requirements, hysteresis devolution, deterministic house merging, level-based economy bridge) — Phase 16
 
 ### Active
 
@@ -49,7 +50,8 @@ Full build-out of the game.md specification — see REQUIREMENTS.md and ROADMAP.
 - Implementation is tracked in OpenSpec under `openspec/changes/opencaesar-game-systems/` (79 tasks, 12 sections).
 - Live simulation: `src/sim/runner.ts` (`SimRunner`), builds from `src/sim/buildings.ts`, types in `src/sim/types.ts`.
 - Live ratings/objectives/events: `src/sim/ratings.ts` (weighted decomposition), `src/sim/objectives.ts` (sustained tracker), `src/sim/events.ts` + `data/events.ts` (respondEvent); exposed via `getDerived()`.
-- Tests: Vitest (`npm run test`), 108 files / 782 passing including golden determinism. `tsc --noEmit` must be clean.
+- Housing: `data/housing.ts` (`HOUSING_LEVELS` 21-level + footprint ladder), `src/sim/housingLive.ts` (bridge: `HOUSING_LIVE_STATS`, `levelDesirability`, `deriveSatisfied`, `liveStats`), `src/sim/housingMerge.ts` (deterministic merge), `housingEvolution.ts` (`decideEvolution` hysteresis, untouched).
+- Tests: Vitest (`npm run test`), 112 files / 823 passing including golden determinism. `tsc --noEmit` must be clean.
 - Fragile API contract: expanding certain types previously broke tests; changes need golden-equivalence verification.
 
 ## Constraints
@@ -68,6 +70,8 @@ Full build-out of the game.md specification — see REQUIREMENTS.md and ROADMAP.
 - Housing follows cumulative-requirement evolution with hysteresis — [D5]
 - Every new player-action surface is a replayable `SaveCommand` (union + applyCommand + push-on-accept); `fromSaveData` replay-derives all derived state — Phase 15
 - Event/rating effects stay in `DerivedSnapshot` (never `getState()`); treasury mutations only via explicit response choices — preserves golden fixtures — Phase 15
+- Housing: `house.level` (0-20) is the live source of truth via `decideEvolution`; `house.tier` is a derived 0-4 bucket (ratings denominator intact); economy reads `HOUSING_LIVE_STATS[level]` only through the clamped `liveStats()` accessor — Phase 16
+- Merges re-derive from tick+commands (NO new SaveCommand); merge target block must contain both houses' full footprints; merged population effective via `effectivePopulation` — Phase 16
 
 ## Evolution
 
@@ -86,4 +90,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
-_Last updated: 2026-08-05 after Phase 15_
+_Last updated: 2026-08-05 after Phase 16_
