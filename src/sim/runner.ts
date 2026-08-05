@@ -43,8 +43,8 @@ import { pickRequest, entryById } from '../../data/requests';
 import type { RequestDef } from '../../data/requests';
 import { ObjectiveTracker } from './objectives';
 import { WaterSystem } from './water';
-import { buildCodex, TUTORIAL_ELIGIBILITY, TUTORIAL_STEP_ORDER, tutorialText, TUTORIAL_EXPANDED, TUTORIAL_CODEX_REF, nextTutorialCurrent } from './campaign';
-import type { HouseView, CityView, TutorialStepId, TutorialPrompt, TutorialView } from './campaign';
+import { buildCodex, lookupEntry, TUTORIAL_ELIGIBILITY, TUTORIAL_STEP_ORDER, tutorialText, TUTORIAL_EXPANDED, TUTORIAL_CODEX_REF, nextTutorialCurrent } from './campaign';
+import type { CodexEntry, CodexKind, HouseView, CityView, TutorialStepId, TutorialPrompt, TutorialView } from './campaign';
 import { desirabilityOf, tickHousing } from './housing';
 import { housingLevelName } from '../../data/housing';
 import { effectivePopulation, effectiveWorkers, deriveSatisfied } from './housingLive';
@@ -212,6 +212,10 @@ export class SimRunner {
   private paused = false;
   private pendingCommands: PendingCommand[] = [];
   private derived: DerivedSnapshot | null = null;
+  /** CAMPAIGN-03: the codex is built once per runner (pure catalogs) and reused
+   *  by getCodex() and the per-snapshot derived codex count — enrichment must
+   *  not make every snapshot rebuild the full encyclopedia (T-17-06 perf). */
+  private codexCache: { entries: CodexEntry[] } | null = null;
   /** True while recorded commands are being replayed (save load, paused-command
    *  drain) so state-dependent placement gates — already enforced when the
    *  command was first issued — do not reject the recorded placement. */
@@ -1318,7 +1322,7 @@ export class SimRunner {
 
     const taxes = taxCollected(population, 2, this.policy.taxRate, 1);
     const wages = employment.employed * CONFIG.wagePerWorkerPerTick * this.policy.wageRate;
-    const codex = buildCodex();
+    const codex = this.codexCache?.entries ?? (this.codexCache = { entries: buildCodex() }).entries;
     const decomposition = decomposeRatings(cityStats, this.constructionSpend);
     return {
       population,
@@ -1476,6 +1480,24 @@ export class SimRunner {
       current: eligible.find((p) => p.step === currentId) ?? null,
       eligible,
       dismissed: [...this.dismissedTutorialSteps],
+    };
+  }
+
+  /** CAMPAIGN-03: the full codex encyclopedia — a PURE derived accessor over the
+   *  data catalogs, built once and cached (the per-snapshot derived count reuses
+   *  it). Exposes per-category counts and an id/kind lookup. Never serialized. */
+  getCodex(): {
+    entries: CodexEntry[];
+    categories: Record<string, number>;
+    lookupEntry: (id: string, kind?: CodexKind) => CodexEntry | undefined;
+  } {
+    const entries = this.codexCache?.entries ?? (this.codexCache = { entries: buildCodex() }).entries;
+    const categories: Record<string, number> = {};
+    for (const e of entries) categories[e.kind] = (categories[e.kind] ?? 0) + 1;
+    return {
+      entries,
+      categories,
+      lookupEntry: (id: string, kind?: CodexKind) => lookupEntry(entries, id, kind),
     };
   }
 

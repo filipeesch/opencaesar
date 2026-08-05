@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Map as SimMap } from '../src/sim/map';
 import { SimRunner } from '../src/sim/runner';
 import { BUILDINGS } from '../src/sim/buildings';
+import { BUILDINGS as DATA_BUILDINGS } from '../data/buildings';
 import { productionChainMap, foodChainMap, buildProductionCity, buildFoodCity } from './helpers';
 import { pickEvent, eventDuration, resolveResponse } from '../src/sim/events';
 import { EVENTS } from '../data/events';
@@ -150,6 +151,23 @@ describe('trade wired into sim tick', () => {
     const treasury = r.getTreasury();
     expect(typeof treasury).toBe('number');
     expect(r.getTradeRoutes()['massilia'].enabled).toBe(true);
+  });
+});
+
+describe('codex accessor (Phase 17, CAMPAIGN-03)', () => {
+  it('getCodex returns entries, per-category counts, and a working lookupEntry wired to the catalogs', () => {
+    const r = new SimRunner(7);
+    r.tick();
+    const c = r.getCodex();
+    expect(c.entries.length).toBeGreaterThan(0);
+    expect(c.categories['building']).toBeGreaterThan(0);
+    expect(c.categories['chain']).toBeGreaterThan(0);
+    const farm = c.lookupEntry('farm', 'building');
+    expect(farm).toBeDefined();
+    // live catalog equality (data/buildings, the codex source)
+    expect(farm!.cost).toBe(DATA_BUILDINGS['farm'].cost);
+    expect(farm!.workers).toBe(DATA_BUILDINGS['farm'].workers);
+    expect(c.lookupEntry('farm', 'commodity')).toBeUndefined();
   });
 });
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { campaignMissions } from '../../src/sim/missions';
-import { buildCodex, nextTutorialPrompt, tutorialText, TUTORIAL_ELIGIBILITY } from '../../src/sim/campaign';
+import { buildCodex, nextTutorialPrompt, tutorialText, TUTORIAL_ELIGIBILITY, lookupEntry } from '../../src/sim/campaign';
+import { BUILDINGS } from '../../data/buildings';
 import { SimRunner } from '../../src/sim/runner';
 import { foodChainMap, buildFoodCity } from '../helpers';
 
@@ -19,6 +20,46 @@ describe('codex (task 10.6)', () => {
     expect(codex.some((e) => e.kind === 'commodity' && e.id === 'wheat')).toBe(true);
     expect(codex.some((e) => e.kind === 'service')).toBe(true);
     expect(codex.some((e) => e.kind === 'god')).toBe(true);
+  });
+});
+
+describe('enriched codex (Phase 17, CAMPAIGN-03)', () => {
+  it('every entry carries description/howItWorks and buildings carry cost/workers', () => {
+    const codex = buildCodex();
+    for (const e of codex) {
+      expect(e.id.length).toBeGreaterThan(0);
+      expect(e.name.length).toBeGreaterThan(0);
+      expect(e.blurb.length).toBeGreaterThan(0);
+      expect(typeof e.description).toBe('string');
+      expect(typeof e.howItWorks).toBe('string');
+    }
+    for (const b of codex.filter((e) => e.kind === 'building')) {
+      expect(typeof b.cost).toBe('number');
+      expect(typeof b.workers).toBe('number');
+    }
+  });
+
+  it('covers all twelve categories (the four original + nine new kinds)', () => {
+    const kinds = new Set(buildCodex().map((e) => e.kind));
+    for (const k of ['building', 'commodity', 'service', 'god', 'chain', 'housing',
+      'desirability', 'trade', 'finance', 'ratings', 'religion', 'risks', 'shortcuts']) {
+      expect(kinds.has(k as never), `missing codex category: ${k}`).toBe(true);
+    }
+  });
+
+  it('a building entry\'s cost/workers/outputs match the live data catalog', () => {
+    const farm = buildCodex().find((e) => e.id === 'farm' && e.kind === 'building')!;
+    expect(farm.cost).toBe(BUILDINGS['farm'].cost);
+    expect(farm.workers).toBe(BUILDINGS['farm'].workers);
+    expect(farm.outputs).toContain(BUILDINGS['farm'].produces);
+  });
+
+  it('lookupEntry resolves by (id, kind) and returns undefined for a missing pair', () => {
+    const codex = buildCodex();
+    expect(lookupEntry(codex, 'farm', 'building')?.id).toBe('farm');
+    expect(lookupEntry(codex, 'farm', 'commodity')).toBeUndefined();
+    expect(lookupEntry(codex, 'no_such_entry', 'building')).toBeUndefined();
+    expect(lookupEntry(codex, 'wheat', 'commodity')?.name).toBe('Wheat');
   });
 });
 

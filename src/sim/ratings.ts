@@ -85,8 +85,10 @@ export interface CityStats {
  * intentionally NOT added to data/balance.ts, because every BALANCE key must
  * have a CONFIG.<key> consumer in src/ (balance-parity gate); keeping the
  * rating weights here dodge that requirement with zero external-key churn.
+ * Exported (Phase 17) so the codex derives its per-rating explains from the
+ * LIVE weights — never hand-copied.
  */
-const W = {
+export const W = {
   culture: { education: 30, entertainment: 25, religion: 25, festival: 15, base: 10, coveragePenalty: 5 },
   prosperity: { housing: 14, patricians: 10, operatingBalance: 20, unemployment: 16, wages: 12, trade: 12, stability: 8, debt: 8, base: 5, construction: 5 },
   stability: { fire: 12, homelessness: 10, crime: 12, protests: 10, health: 10, supply: 12, employment: 12, collapses: 10, residentialStability: 12, base: 0 },
