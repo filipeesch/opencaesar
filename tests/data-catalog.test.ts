@@ -69,10 +69,41 @@ describe('data catalog', () => {
 });
 
 import { validateCatalogs } from '../data/validate';
+import { EXTRA_MISSIONS } from '../data/missions';
 import { localize, translateAll } from '../data/localization';
 
 describe('data catalog validation + localization', () => {
   it('all catalogs pass load-time validation', () => {
+    expect(validateCatalogs()).toEqual([]);
+  });
+
+  it('malformed mission data (Phase 17 additive fields) is rejected at load (T-17-01)', () => {
+    const HOST = EXTRA_MISSIONS as Record<string, unknown> & { __probe__: unknown };
+    const saved = HOST['__probe__'];
+    HOST['__probe__'] = {
+      id: '__probe__', name: 'Bad Mission', description: 'bad', targetPopulation: 100,
+      targetCulture: 10, targetProsperity: 10, targetStability: 10, startingDenarii: 100,
+      // extra bad row length, unknown legend tile, unknown preplace type,
+      // product not in COMMODITIES, route city not in TRADE_CITIES, negative credit
+      map: { width: 4, height: 4, legend: { Z: 'mars' as never }, layout: '....\n..ZZ\n12345\n....', preplace: [{ type: 'unknown_building', x: 0, y: 0 }] },
+      products: ['no_such_good'],
+      routes: [{ cityId: 'atlantis' }],
+      modifiers: { startingTreasuryCredit: -5 },
+    };
+    try {
+      const issues = validateCatalogs();
+      const mine = issues.filter((i) => i.catalog === 'missions' && i.message.startsWith('__probe__'));
+      expect(mine.length).toBeGreaterThan(0);
+      // each malformed field surfaces its own message
+      expect(mine.some((i) => i.message.includes('unknown_building'))).toBe(true);
+      expect(mine.some((i) => i.message.includes('no_such_good'))).toBe(true);
+      expect(mine.some((i) => i.message.includes('atlantis'))).toBe(true);
+      expect(mine.some((i) => i.message.includes('startingTreasuryCredit'))).toBe(true);
+      expect(mine.some((i) => i.message.includes('legend'))).toBe(true);
+    } finally {
+      if (saved === undefined) delete HOST['__probe__'];
+      else HOST['__probe__'] = saved;
+    }
     expect(validateCatalogs()).toEqual([]);
   });
 

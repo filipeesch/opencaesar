@@ -9,7 +9,7 @@ import { HOUSING_LEVELS } from './housing';
 import { WALKERS } from './walkers';
 import { TRADE_CITIES, type TradeCityDef } from './trade';
 import { EVENTS } from './events';
-import { MISSIONS } from './missions';
+import { MISSIONS, EXTRA_MISSIONS } from './missions';
 import { STRINGS } from './localization';
 import { BALANCE } from './balance';
 import { REQUEST_CATALOG } from './requests';
@@ -168,7 +168,9 @@ export function validateCatalogs(tradeCatalog: Record<string, TradeCityDef> = TR
     }
   }
 
-  for (const m of Object.values(MISSIONS)) {
+  const TILE_TYPES: readonly string[] = ['earth', 'water', 'fertile', 'trees', 'rock', 'road'];
+  const allMissions = [...Object.values(MISSIONS), ...Object.values(EXTRA_MISSIONS)];
+  for (const m of allMissions) {
     if (m.targetPopulation <= 0) {
       issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: missing positive population target` });
     }
@@ -181,6 +183,80 @@ export function validateCatalogs(tradeCatalog: Record<string, TradeCityDef> = TR
       const v = m[key];
       if (v !== undefined && (typeof v !== 'number' || !Number.isFinite(v) || v < 0)) {
         issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: ${key} must be a finite non-negative number` });
+      }
+    }
+    // Phase 17 additive field validation (CAMPAIGN-01): map / products / routes /
+    // modifiers are validated over BOTH MISSIONS and EXTRA_MISSIONS (T-17-01).
+    if (m.map) {
+      const map = m.map;
+      if (!Number.isInteger(map.width) || map.width <= 0 || !Number.isInteger(map.height) || map.height <= 0) {
+        issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: map width/height must be positive integers` });
+      }
+      const rows = map.layout.split('\n');
+      if (rows.length !== map.height) {
+        issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: map layout has ${rows.length} rows, expected ${map.height}` });
+      }
+      rows.forEach((row, y) => {
+        if (row.length !== map.width) {
+          issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: map layout row ${y} has ${row.length} columns, expected ${map.width}` });
+        }
+        for (const ch of row) {
+          if (ch !== '.' && map.legend[ch] === undefined) {
+            issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: map layout char '${ch}' missing from legend` });
+          }
+        }
+      });
+      for (const [ch, tile] of Object.entries(map.legend)) {
+        if (!TILE_TYPES.includes(tile as string)) {
+          issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: map legend '${ch}' maps to invalid tile '${tile}'` });
+        }
+      }
+      if (map.preplace) {
+        for (const p of map.preplace) {
+          if (!BUILDINGS[p.type]) {
+            issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: preplace references unknown building '${p.type}'` });
+          }
+          if (!Number.isInteger(p.x) || !Number.isInteger(p.y) || p.x < 0 || p.y < 0 || p.x >= map.width || p.y >= map.height) {
+            issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: preplace '${p.type}' out of bounds` });
+          }
+        }
+      }
+    }
+    if (m.products) {
+      for (const good of m.products) {
+        if (!COMMODITIES[good]) {
+          issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: product '${good}' missing from COMMODITIES` });
+        }
+      }
+    }
+    if (m.routes) {
+      for (const route of m.routes) {
+        if (!TRADE_CITIES[route.cityId]) {
+          issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: route city '${route.cityId}' missing from TRADE_CITIES` });
+        }
+        if (route.quota !== undefined && (typeof route.quota !== 'number' || !Number.isFinite(route.quota) || route.quota < 0)) {
+          issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: route '${route.cityId}' quota must be a finite non-negative number` });
+        }
+        if (route.good !== undefined && !COMMODITIES[route.good]) {
+          issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: route '${route.cityId}' good '${route.good}' missing from COMMODITIES` });
+        }
+      }
+    }
+    if (m.modifiers) {
+      const mod = m.modifiers;
+      if (mod.startingTreasuryCredit !== undefined && (typeof mod.startingTreasuryCredit !== 'number' || !Number.isFinite(mod.startingTreasuryCredit) || mod.startingTreasuryCredit < 0)) {
+        issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: startingTreasuryCredit must be a finite non-negative number` });
+      }
+      if (mod.timeLimitYears !== undefined && (typeof mod.timeLimitYears !== 'number' || !Number.isFinite(mod.timeLimitYears) || mod.timeLimitYears <= 0)) {
+        issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: timeLimitYears must be a positive finite number` });
+      }
+      if (mod.startingPolicy) {
+        for (const key of ['taxRate', 'wageRate'] as const) {
+          const v = mod.startingPolicy[key];
+          if (v !== undefined && (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1)) {
+            issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: startingPolicy.${key} must be a number in 0..1` });
+          }
+        }
       }
     }
   }

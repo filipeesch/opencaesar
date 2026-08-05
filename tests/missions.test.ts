@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { startMission, tickMission, missionName } from '../src/sim/missions';
+import { startMission, tickMission, missionName, campaignMissions } from '../src/sim/missions';
 import { ObjectiveTracker } from '../src/sim/objectives';
 import { SimRunner } from '../src/sim/runner';
 import { Map as SimMap } from '../src/sim/map';
+import { missionMap } from '../src/sim/missionMaps';
 import { foodChainMap, buildFoodCity } from './helpers';
 import { MISSIONS, EXTRA_MISSIONS } from '../data/missions';
 
@@ -26,7 +27,7 @@ describe('missions', () => {
   });
 
   it('missionName resolves a known mission', () => {
-    expect(missionName('small_town')).toBe('Small Town');
+    expect(missionName('small_town')).toBe('Provincial Granary'); // Phase 17 re-theme to the spec arc
   });
 });
 
@@ -118,6 +119,45 @@ describe('campaign progression + start-year (Phase 17, CAMPAIGN-01)', () => {
   //   - startMission on a mission with modifiers/preplace/routes applies the
   //     treasury credit, preplaces the starter buildings, and opens the routes.
   //   - a save/load with the mission map reproduces that exact state.
+});
+
+describe('per-mission maps parse deterministically (Phase 17, CAMPAIGN-01)', () => {
+  it('every mission with a map field parses into a SimMap of the right size with exact terrain', () => {
+    for (const m of [...Object.values(MISSIONS), ...Object.values(EXTRA_MISSIONS)]) {
+      if (!m.map) continue;
+      const map = missionMap(m);
+      expect(map).not.toBeNull();
+      expect(map!.width).toBe(m.map.width);
+      expect(map!.height).toBe(m.map.height);
+      const rows = m.map.layout.split('\n');
+      for (let y = 0; y < rows.length; y++) {
+        for (let x = 0; x < rows[y].length; x++) {
+          const ch = rows[y][x];
+          const expected = ch === '.' ? 'earth' : (m.map.legend[ch] ?? 'earth');
+          expect(map!.get(x, y)).toBe(expected);
+        }
+      }
+    }
+  });
+
+  it('all ten mission ids follow the spec arc in campaign order with non-empty names', () => {
+    const order = campaignMissions();
+    expect(order).toEqual([
+      'tutorial', 'small_town', 'thriving_city', 'grand_city',
+      'fishing_village', 'market_town', 'port_city', 'cultural_center',
+      'religious_hub', 'metropolis',
+    ]);
+    for (const id of order) {
+      const def = MISSIONS[id] ?? EXTRA_MISSIONS[id];
+      expect(def.name.length).toBeGreaterThan(0);
+      expect(def.description.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('an all-undefined additive entry still parses (additive MissionDef contract)', () => {
+    expect(missionMap({ map: undefined })).toBeNull();
+    expect(missionMap(undefined)).toBeNull();
+  });
 });
 
 /**
