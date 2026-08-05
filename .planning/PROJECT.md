@@ -28,6 +28,9 @@ an opaque "teleporting stock" or radious-only model.
 - Ratings (4-rating), trade, events (lifecycle), and mission win-condition modules
 - Non-military random event engine wired into the sim tick (deterministic, lifecycle)
 - Mission win-condition checks wired into the sim tick
+- Four decomposed 0–100 city ratings with per-factor buckets, construction cost separated from Prosperity operating balance — Phase 15
+- Sustained win conditions (month-cadence objective tracker: population/ratings/favor/treasury/annual exports) — Phase 15
+- ~31-event catalog with deterministic responses that change outcomes, replayable via SaveCommand — Phase 15
 
 ### Active
 
@@ -45,9 +48,9 @@ Full build-out of the game.md specification — see REQUIREMENTS.md and ROADMAP.
 - Full specification lives in `game.md` (4,308 lines, 56 sections, Portuguese).
 - Implementation is tracked in OpenSpec under `openspec/changes/opencaesar-game-systems/` (79 tasks, 12 sections).
 - Live simulation: `src/sim/runner.ts` (`SimRunner`), builds from `src/sim/buildings.ts`, types in `src/sim/types.ts`.
-- Live `BuildingType` = road | house | farm | granary | market | well. Live `BuildingCategory` = roads | housing | food | water | infrastructure.
-- Tests: Vitest (`npm run test`), 126 passing tests including golden determinism. `tsc --noEmit` must be clean.
-- Fragile API contract: expanding certain types previously broke 45 tests; changes need golden-equivalence verification.
+- Live ratings/objectives/events: `src/sim/ratings.ts` (weighted decomposition), `src/sim/objectives.ts` (sustained tracker), `src/sim/events.ts` + `data/events.ts` (respondEvent); exposed via `getDerived()`.
+- Tests: Vitest (`npm run test`), 108 files / 782 passing including golden determinism. `tsc --noEmit` must be clean.
+- Fragile API contract: expanding certain types previously broke tests; changes need golden-equivalence verification.
 
 ## Constraints
 
@@ -63,6 +66,8 @@ Full build-out of the game.md specification — see REQUIREMENTS.md and ROADMAP.
 - Goods exist as physical "loads" moved by carrier walkers; no global teleporting stock — [D6]
 - Road network as a graph with localized (dirty-flag) recomputation — [D3]
 - Housing follows cumulative-requirement evolution with hysteresis — [D5]
+- Every new player-action surface is a replayable `SaveCommand` (union + applyCommand + push-on-accept); `fromSaveData` replay-derives all derived state — Phase 15
+- Event/rating effects stay in `DerivedSnapshot` (never `getState()`); treasury mutations only via explicit response choices — preserves golden fixtures — Phase 15
 
 ## Evolution
 
@@ -81,4 +86,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
-_Last updated: 2026-08-03_
+_Last updated: 2026-08-05 after Phase 15_
