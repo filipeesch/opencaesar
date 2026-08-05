@@ -44,6 +44,8 @@ import { ObjectiveTracker } from './objectives';
 import { WaterSystem } from './water';
 import { buildCodex } from './campaign';
 import { desirabilityOf, tickHousing } from './housing';
+import { housingLevelName } from '../../data/housing';
+import { liveStats } from './housingLive';
 import { Treasury, rollYear } from './finance';
 import type { FinanceLedger } from './finance';
 import { financeAdvisorFromState } from './advisors';
@@ -1487,7 +1489,7 @@ export class SimRunner {
       stock: {},
     };
     if (type === 'house') {
-      building.house = { tier: 0, foodCooldown: 0, waterCooldown: 0, laborCooldown: 0, evolveCounter: 0, devolveCounter: 0 };
+      building.house = { tier: 0, level: 0, satisfiedTicks: 0, unsatisfiedTicks: 0, mergeable: true, foodCooldown: 0, waterCooldown: 0, laborCooldown: 0, evolveCounter: 0, devolveCounter: 0 };
     } else if (def.production || def.storageCapacity !== undefined) {
       building.stock.wheat = 0;
     }
@@ -2633,10 +2635,13 @@ export class SimRunner {
       const house = b.house
         ? (() => {
             const input = this.houseHappinessInput(b);
+            const lvl = b.house!.level ?? 0;
             const h: NonNullable<BuildingState['house']> = {
               tier: b.house!.tier,
               tierName: HOUSE_TIERS[b.house!.tier].name,
-              populationCapacity: HOUSE_TIERS[b.house!.tier].population,
+              level: lvl,
+              levelName: housingLevelName(lvl),
+              populationCapacity: liveStats(lvl).population,
               foodCooldown: b.house!.foodCooldown,
               waterCooldown: b.house!.waterCooldown,
               laborCooldown: b.house!.laborCooldown,

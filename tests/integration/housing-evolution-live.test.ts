@@ -31,6 +31,22 @@ import type { BuildingType } from '../../src/sim/types';
 const MIN_TICKS = DEFAULT_HYSTERESIS.minSatisfiedTicks;
 const tileKey = (x: number, y: number): number => (x << 20) | y;
 
+/** Bypass the gov-unlock population gate (forum/senate unlock at 250/500 pop):
+ *  these pumped scenarios hold the houses at their starting levels by design,
+ *  so no lasting population is grown before the government buildings are placed.
+ *  Uses the replay path, which records the same saveCommands a real placement
+ *  would, keeping save/load replay byte-identical. Test-only gate bypass. */
+function placeGov(r: SimRunner, type: 'forum' | 'senate', x: number, y: number): void {
+  const rr = r as unknown as { replaying: boolean };
+  rr.replaying = true;
+  try {
+    const res = r.placeBuilding(type, x, y);
+    if (!res.ok) throw new Error(`place ${type}@(${x},${y}): ${JSON.stringify(res)}`);
+  } finally {
+    rr.replaying = false;
+  }
+}
+
 /** All-fertile 46x46 service city with a road grid and every cumulative service. */
 function serviceCity(houseSlots: Array<[number, number]>): SimRunner {
   const W = 46;
@@ -43,8 +59,8 @@ function serviceCity(houseSlots: Array<[number, number]>): SimRunner {
   r.requestRoyalSubsidy();
   for (let i = 0; i < 12; i++) r.takeLoan(2000);
   // Road rows every 8 tiles (bands of 7 free rows) + a vertical spine for reachability.
-  for (let x = 0; x < W; x++) for (const y of [4, 12, 20, 28, 36, 44]) place('road', x, y);
-  for (let y = 0; y < W; y++) place('road', 45, y);
+  for (let x = 0; x < W - 1; x++) for (const y of [4, 12, 20, 28, 36, 44]) place('road', x, y);
+  for (let y = 0; y < W; y++) place('road', W - 1, y);
   // Services/cluster in band y=5..11 (top-anchored at y=5).
   place('farm', 2, 5); // 3x3
   place('granary', 8, 5); // 2x2
@@ -60,8 +76,8 @@ function serviceCity(houseSlots: Array<[number, number]>): SimRunner {
   place('theatre', 2, 13); // 3x3
   place('temple', 8, 13); // 2x2
   place('amphitheatre', 14, 13); // 4x4
-  place('senate', 22, 13); // 3x3
-  place('forum', 28, 13); // 3x3
+  placeGov(r, 'senate', 22, 13); // 3x3 (gov unlock gate bypassed)
+  placeGov(r, 'forum', 28, 13); // 3x3 (gov unlock gate bypassed)
   place('garden', 34, 13);
   place('grand_temple', 36, 13); // 4x4
   // Houses (top-anchored at y=29, road y=28 above).
@@ -69,7 +85,8 @@ function serviceCity(houseSlots: Array<[number, number]>): SimRunner {
   r.setPolicy(0, 0.5);
   // Stock the warehouse with every non-food cumulative requirement.
   const wh = (r['buildings'] as BuildingInstance[]).find((b) => b.type === 'warehouse')!;
-  for (const g of ['pottery', 'furniture', 'wine', 'oil', 'tools']) wh.stock![g] = 200;
+  const stock = wh.stock as Record<string, number>;
+  for (const g of ['pottery', 'furniture', 'wine', 'oil', 'tools']) stock[g] = 200;
   return r;
 }
 
@@ -131,8 +148,8 @@ describe('progression (HOUS-01 live 21-level ladder)', () => {
     const r = serviceCity([[0, 29], [4, 29]]);
     const [target] = housesOf(r);
     pumpAndTick(r, [target.id], (h) => pumpHouse(h, { meat: true }), 2000);
-    const t = buildingState(r, target.id)!;
-    expect(t.house!.level).toBeGreaterThanOrEqual(16);
+    expect(maxLevel(r)).toBeGreaterThanOrEqual(16);
+    expect(buildingState(r, target.id)!.house!.level).toBe(maxLevel(r));
   });
 
   it('steps at most one level per eligibility period (minSatisfiedTicks respected)', () => {
@@ -161,7 +178,7 @@ describe('devolve (HOUS-02 hysteresis + tolerance)', () => {
     const target = housesOf(r)[0];
     // climb to a mid level (well -> water coverage, market, wheat, pottery).
     pumpAndTick(r, [target.id], (h) => pumpHouse(h, { meat: true }), 500);
-    const before = (r['buildings'] as BuildingInstance[]).find((b) => b.id === target.id)!.house!.level;
+    const before = (r['buildings'] as BuildingInstance[]).find((b) => b.id === target.id)!.house!.level ?? 0;
     expect(before).toBeGreaterThanOrEqual(3);
 
     // demolish the ONLY well and stop pumping — water lapses, then the tolerance window.
@@ -170,14 +187,14 @@ describe('devolve (HOUS-02 hysteresis + tolerance)', () => {
     for (let i = 0; i < 400; i++) r.tick();
 
     let house = (r['buildings'] as BuildingInstance[]).find((b) => b.id === target.id)!;
-    expect(house.house!.level).toBeLessThan(before);
+    expect(house.house!.level ?? 0).toBeLessThan(before);
     expect(r.getState().messages.some((m) => m.type === 'house-devolved')).toBe(true);
 
     // grace period: level never rebounds (no evolve/devolve oscillation).
-    const floorAfter = house.house!.level;
+    const floorAfter = house.house!.level ?? 0;
     for (let i = 0; i < 100; i++) r.tick();
     house = (r['buildings'] as BuildingInstance[]).find((b) => b.id === target.id)!;
-    expect(house.house!.level).toBeLessThanOrEqual(floorAfter);
+    expect(house.house!.level ?? 0).toBeLessThanOrEqual(floorAfter);
   });
 });
 

@@ -57,7 +57,7 @@ export interface Policy {
   wageRate: number;
 }
 
-export type MessageType = 'building-inactive' | 'building-active' | 'house-evolved' | 'house-devolved' | 'warning';
+export type MessageType = 'building-inactive' | 'building-active' | 'house-evolved' | 'house-devolved' | 'house-merged' | 'warning';
 
 export interface SimMessage {
   tick: number;
@@ -120,6 +120,9 @@ export interface BuildingState {
   house?: {
     tier: number;
     tierName: string;
+    /** Live 21-level progression (HOUS-01): 0-20, the serialized level name. */
+    level: number;
+    levelName: string;
     populationCapacity: number;
     foodCooldown: number;
     waterCooldown: number;

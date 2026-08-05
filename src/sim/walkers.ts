@@ -87,6 +87,19 @@ export interface TradeCarrierPayload {
 /** House-only simulation state (undefined on non-house buildings). */
 export interface HouseInstance {
   tier: number;
+  /** Live 21-level progression state (HOUS-01): 0-20, driven exclusively by
+   *  decideEvolution. `house.tier` is always the derived tierOfLevel bucket. */
+  level?: number;
+  /** Ticks the house consecutively satisfied the next level's requirements. */
+  satisfiedTicks?: number;
+  /** Ticks the house consecutively lost requirements / desirability-tolerance. */
+  unsatisfiedTicks?: number;
+  /** Whether the house may merge with an adjacent same-level house (HOUS-02). */
+  mergeable?: boolean;
+  /** Combined population when this instance resulted from a merge (sum of the
+   *  merged blocks). Internal only — never serialized to BuildingState, so
+   *  goldens/SimState stay byte-identical. Cleared on any later level change. */
+  combinedPopulation?: number;
   foodCooldown: number;
   waterCooldown: number;
   laborCooldown: number;

@@ -1,29 +1,21 @@
 /**
- * Housing: coverage cooldown decay, desirability, and tier evolution.
- * Evolution requires sustained food + water + labor coverage above the
- * desirability threshold; persistent food/water shortfall devolves.
+ * Housing: coverage cooldown decay, desirability, and 21-level evolution.
+ * Evolution is driven exclusively by the pure hysteresis engine
+ * (housingEvolution.decideEvolution) fed by per-house requirement satisfaction
+ * (housingLive.deriveSatisfied) and the normalized desirability
+ * (housingLive.levelDesirability). A house evolves only when ALL of the target
+ * level's cumulative requires+requiresGoods are met for the eligibility
+ * period; it devolves after the tolerance period of lost requirements.
  */
 
-import { CONFIG, HOUSE_TIERS } from './config';
-import { TIER_CIVIC_GATES } from '../../data/housing';
+import { CONFIG } from './config';
+import { HOUSING_LEVELS, housingLevelName } from '../../data/housing';
 import type { Map } from './map';
 import { roadDesirability } from './roadTypes';
 import type { MessageType, Policy } from './types';
+import { decideEvolution, DEFAULT_HYSTERESIS } from './housingEvolution';
+import { deriveSatisfied, levelDesirability, requirementsMet, tierOfLevel } from './housingLive';
 import type { BuildingInstance } from './walkers';
-
-/**
- * Civic service gates (Phase 12, ENTR-01/HEAL-01/EDUC-01): a house needs the
- * listed service access fresh (walker-delivered, see `tickCivic`) to evolve
- * INTO the given 1-indexed tier (TIER_CIVIC_GATES from data/housing.ts).
- * Additive: scenarios without civic buildings have no fresh access, so the
- * gates simply block tiers the house could not satisfy anyway — legacy
- * evolution paths are unchanged.
- */
-function civicGateSatisfied(house: NonNullable<BuildingInstance['house']>, tier: number): boolean {
-  const requires = TIER_CIVIC_GATES[tier];
-  if (!requires) return true;
-  return requires.every((s) => (house.services?.[s] ?? 0) > 0);
-}
 
 /**
  * Phase 12 civic wellness: decay the walker-delivered service access flags
@@ -123,11 +115,11 @@ export interface HousingTickResult {
 }
 
 /**
- * Advance every house by one tick: decay service cooldowns, then apply the
- * evolution rules. Emits house-evolved / house-devolved messages.
+ * Advance every house by one tick: decay service cooldowns, then drive the
+ * 21-level progression through decideEvolution (HOUSING_LEVELS cumulative
+ * requirements + hysteresis). Emits house-evolved / house-devolved messages.
  * `arrearsDepth` (unpaid-wage arrears steps, 0 = none) deepens the desirability
- * penalty; a house whose desirability stays below its current tier threshold
- * devolves even while food and water hold.
+ * penalty, which lowers the normalized desirability a house gives the engine.
  */
 export function tickHousing(
   map: Map,
@@ -149,57 +141,68 @@ export function tickHousing(
     house.laborCooldown = Math.max(0, house.laborCooldown - 1);
     tickCivic(house);
 
+    const level = house.level ?? 0;
     const hasFood = house.foodCooldown > 0;
     const hasWater = house.waterCooldown > 0;
     const hasLabor = house.laborCooldown > 0;
 
-    if (hasFood && hasWater) {
-      const desirability = desirabilityOf(map, b.x, b.y, policy, wagesUnpaid, {
-        food: hasFood,
-        water: hasWater,
-        labor: hasLabor,
-      }, arrearsDepth);
-      if (desirability < tierThreshold(house.tier)) {
-        // Sustained desirability below the current tier devolves (e.g. deep
-        // wage arrears), even though food and water are holding.
-        house.evolveCounter = 0;
-        house.devolveCounter += 1;
-        if (house.devolveCounter >= CONFIG.devolveWindowTicks && house.tier > 0) {
-          house.tier -= 1;
-          house.devolveCounter = 0;
-          devolved += 1;
-          emit('house-devolved', `House devolved to ${HOUSE_TIERS[house.tier].name}`);
-        }
-      } else {
-        house.devolveCounter = 0;
-        if (hasLabor && desirability >= tierThreshold(house.tier + 2)) {
-          if (civicGateSatisfied(house, house.tier + 1)) {
-            house.evolveCounter += 1;
-            if (house.evolveCounter >= CONFIG.evolveWindowTicks && house.tier < HOUSE_TIERS.length - 1) {
-              house.tier += 1;
-              house.evolveCounter = 0;
-              evolved += 1;
-              emit('house-evolved', `House evolved to ${HOUSE_TIERS[house.tier].name}`);
-            }
-          } else {
-            // Civic gate unmet: the tier requires service access the house
-            // lacks (health/literacy/entertainment) — keep the counter pinned.
-            house.evolveCounter = 0;
-          }
-        } else {
-          house.evolveCounter = 0;
-        }
-      }
+    // Normalized desirability (0-200 -> 1-30): the cap-30 normalizer that keeps
+    // the full 21-level ladder satisfiable (level 20's padded requirement is 25).
+    const raw = desirabilityOf(map, b.x, b.y, policy, wagesUnpaid, {
+      food: hasFood,
+      water: hasWater,
+      labor: hasLabor,
+    }, arrearsDepth);
+    const normalized = levelDesirability(raw);
+    const satisfied = deriveSatisfied(house, buildings);
+
+    // Counter accumulation (deterministic, before decideEvolution): a tick is
+    // "satisfied" only when the live food+water+labor precondition holds AND
+    // the next level's cumulative requirements are met AND the normalized
+    // desirability clears the level's base requirement.
+    const next = level + 1;
+    const nextDef = HOUSING_LEVELS.find((l) => l.level === next);
+    const baseOk =
+      hasFood && hasWater && hasLabor &&
+      requirementsMet(next, satisfied) &&
+      normalized >= (nextDef?.desirability ?? 0);
+    if (baseOk) {
+      house.satisfiedTicks = (house.satisfiedTicks ?? 0) + 1;
+      house.unsatisfiedTicks = 0;
     } else {
-      house.evolveCounter = 0;
-      house.devolveCounter += 1;
-      if (house.devolveCounter >= CONFIG.devolveWindowTicks && house.tier > 0) {
-        house.tier -= 1;
-        house.devolveCounter = 0;
-        devolved += 1;
-        emit('house-devolved', `House devolved to ${HOUSE_TIERS[house.tier].name}`);
-      }
+      house.satisfiedTicks = 0;
+      house.unsatisfiedTicks = (house.unsatisfiedTicks ?? 0) + 1;
     }
+
+    const action = decideEvolution(
+      {
+        currentLevel: level,
+        satisfied,
+        desirability: normalized,
+        satisfiedTicks: house.satisfiedTicks,
+        unsatisfiedTicks: house.unsatisfiedTicks,
+      },
+      DEFAULT_HYSTERESIS,
+    );
+    if (action === 'evolve') {
+      house.level = Math.min(20, level + 1);
+      // Grace period: any level change zeroes BOTH counters (no oscillation).
+      house.satisfiedTicks = 0;
+      house.unsatisfiedTicks = 0;
+      house.combinedPopulation = undefined;
+      evolved += 1;
+      emit('house-evolved', `House evolved to ${housingLevelName(house.level)}`);
+    } else if (action === 'devolve') {
+      house.level = Math.max(0, level - 1);
+      house.satisfiedTicks = 0;
+      house.unsatisfiedTicks = 0;
+      house.combinedPopulation = undefined;
+      devolved += 1;
+      emit('house-devolved', `House devolved to ${housingLevelName(house.level)}`);
+    }
+
+    // house.tier is always the derived bucket of house.level — never a decision source.
+    house.tier = tierOfLevel(house.level ?? level);
   }
 
   return { evolved, devolved };

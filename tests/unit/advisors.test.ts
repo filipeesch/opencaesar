@@ -15,6 +15,8 @@ import {
 } from '../../src/sim/water';
 import type { ReservoirState } from '../../src/sim/water';
 import type { BuildingState, SimState } from '../../src/sim/types';
+import { housingLevelName } from '../../data/housing';
+import { liveStats } from '../../src/sim/housingLive';
 
 /** Compact, hand-built SimState for advisor tests (deterministic, no runner). */
 function mkFoodState(buildings: BuildingState[], population: number): SimState {
@@ -38,11 +40,12 @@ function granaryBuilding(id: number, x: number, y: number, stock: Record<string,
 }
 
 function houseBuilding(id: number, x: number, y: number, tier: number, foodInventory: Record<string, number> | undefined, foodCooldown = 0): BuildingState {
+  const level = 2; // consistent tier-0 bucket (tierOfLevel); non-zero population for overlays
   return {
     id, type: 'house', x, y, footprint: 1, workersAssigned: 0, workersRequired: 0,
     active: true, laborConnected: false, stock: {},
     house: {
-      tier, tierName: 'Hut', populationCapacity: 5, foodCooldown, waterCooldown: 0, laborCooldown: 0,
+      tier, tierName: 'Hut', level, levelName: housingLevelName(level), populationCapacity: liveStats(level).population, foodCooldown, waterCooldown: 0, laborCooldown: 0,
       desirability: 50, happiness: 50, foodInventory,
     },
   };
