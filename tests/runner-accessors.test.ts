@@ -281,4 +281,13 @@ describe('constructionSpend separation and full decomposition (RATE-01)', () => 
       }
     }
   });
+
+  it('getDerived().annualExports is a non-negative number derived from trade state (RATE-02)', () => {
+    const r = new SimRunner(1234);
+    for (let i = 0; i < 100; i++) r.tick();
+    const a = r.getDerived().annualExports;
+    expect(typeof a).toBe('number');
+    expect(a).toBeGreaterThanOrEqual(0);
+    expect(Number.isFinite(a)).toBe(true);
+  });
 });

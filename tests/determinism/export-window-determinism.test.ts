@@ -7,8 +7,8 @@ import { productionChainMap, buildProductionCity } from '../helpers';
  *
  * Targets the Phase-15 API: getDerived().annualExports is a trailing-360-tick
  * window of exported loads derived from live trade state (never wall-clock),
- * identical across chunked ticking and a save/load round-trip. This file is
- * RED until task 15-02-02 wires the window into derivedSnapshot().
+ * identical across chunked ticking and a save/load round-trip. RED until task
+ * 15-02-02 wires the window into derivedSnapshot().
  */
 
 function buildExportCity(r: SimRunner): void {
@@ -46,13 +46,17 @@ describe('annualExports trailing-360 window determinism (Phase 15, RATE-02)', ()
   it('annualExports and state survive a getSaveData() → fromSaveData() round-trip', () => {
     for (const seed of [1, 7, 1337]) {
       const total = 430;
-      const original = new SimRunner(seed, productionChainMap());
+      const map = productionChainMap();
+      const original = new SimRunner(seed, map);
       buildExportCity(original);
       for (let i = 0; i < total; i++) original.tick();
+      expect(original.getDerived().annualExports).toBeGreaterThan(0); // real exports
       const originalJson = original.getStateJson();
       const originalExports = original.getDerived().annualExports;
 
-      const loaded = SimRunner.fromSaveData(original.getSaveData());
+      // Pass the SAME map so fromSaveData replays the verified production city
+      // (route opening + per-good order are replayable SaveCommands).
+      const loaded = SimRunner.fromSaveData(original.getSaveData(), productionChainMap());
       expect(loaded.getStateJson()).toBe(originalJson);
       expect(loaded.getDerived().annualExports).toBe(originalExports);
     }

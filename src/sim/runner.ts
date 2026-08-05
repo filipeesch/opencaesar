@@ -152,6 +152,8 @@ export interface DerivedSnapshot {
   /** RATE-01/D-02: lifetime construction spend (build + route-open costs),
    *  separated from the Prosperity operating-balance factor. */
   constructionSpend: number;
+  /** RATE-02/D-03: trailing-360-tick window of exported loads (deterministic). */
+  annualExports: number;
 }
 
 export class SimRunner {
@@ -215,6 +217,13 @@ export class SimRunner {
    *  re-derives byte-identically from replaying saveCommands. It lands only in
    *  the Prosperity construction bucket, never the operating-balance factor. */
   private constructionSpend = 0;
+  /** RATE-02/D-03: per-year exported-load totals (yearKey → loads) snapshotted
+   *  just before resetAnnualQuotas wipes usedPerGood, so the trailing-360
+   *  annualExports window survives the wipe. Deterministic from tickCount +
+   *  live trade state — no wall-clock, no schema change. */
+  private annualExportBuckets: Record<number, number> = {};
+  /** Last year the annual-export bucket was snapshotted (Math.floor(tick/360)). */
+  private annualExportYear = -1;
 
   constructor(seed: number, map?: SimMap, mapSize?: number) {
     if (!catalogsValidated) {
@@ -447,6 +456,16 @@ export class SimRunner {
 
   private tickTradeSystem(): void {
     const year = Math.floor(this.tickCount / 360);
+    // RATE-02/D-03: snapshot the just-elapsed year's per-good export loads
+    // BEFORE resetAnnualQuotas wipes the live usedPerGood tally, so the
+    // trailing-360 annualExports window survives the reset deterministically.
+    // The snapshot triggers exactly when the tick-based year changes (a no-op
+    // within a year) and derives purely from live trade state + tickCount, so
+    // it is byte-identical across chunked ticking and a save/load replay.
+    if (year !== this.annualExportYear) {
+      this.annualExportYear = year;
+      if (year - 1 >= 0) this.annualExportBuckets[year - 1] = this.sumUsedPerGood();
+    }
     // Per-good quotas reset on the tick-based year clock (TRAD-04).
     resetAnnualQuotas(this.tradeRoutes, year);
 
@@ -787,6 +806,11 @@ export class SimRunner {
     route.openYear = Math.floor(this.tickCount / 360);
     route.catalogQuota = city.annualQuotaPerGood;
     route.lastYear = Math.floor(this.tickCount / 360);
+    this.commandLog.push({ tick: this.tickCount, command: `openTradeRoute ${cityId}`, result: 'ok' });
+    // RATE-02: route openings are replayed as SaveCommands so a save/load
+    // round-trip reconstructs the exact trade state (and the annualExports
+    // window that derives from it).
+    this.saveCommands.push({ kind: 'openTradeRoute', cityId });
     return { ok: true, cost };
   }
 
@@ -808,6 +832,10 @@ export class SimRunner {
     if (opts?.reserve !== undefined) route.exportReserve = { ...route.exportReserve, [good]: opts.reserve };
     if (opts?.target !== undefined) route.importTargets = { ...route.importTargets, [good]: opts.target };
     if (mode !== 'no_trade' && !route.enabled) route.enabled = true;
+    this.commandLog.push({ tick: this.tickCount, command: `setTradeOrder ${cityId} ${good} ${mode}`, result: 'ok' });
+    // RATE-02: per-good orders are replayed as SaveCommands so the physical
+    // trade path (and the annualExports window) survives save/load.
+    this.saveCommands.push({ kind: 'setTradeOrder', cityId, good, mode, reserve: opts?.reserve, target: opts?.target });
     return { ok: true };
   }
 
@@ -889,6 +917,27 @@ export class SimRunner {
     let rewards = 0;
     for (const h of this.requestHistory) if (h.outcome === 'reward') rewards += 1;
     return rewards / this.requestHistory.length;
+  }
+
+  /** RATE-02/D-03: total loads exported so far this year across enabled routes
+   *  (the live usedPerGood tally resetAnnualQuotas will wipe). */
+  private sumUsedPerGood(): number {
+    let total = 0;
+    for (const route of Object.values(this.tradeRoutes)) {
+      if (!route.enabled) continue;
+      for (const v of Object.values(route.usedPerGood ?? {})) {
+        if (typeof v === 'number') total += v;
+      }
+    }
+    return total;
+  }
+
+  /** RATE-02/D-03: the trailing-360-tick annual-export window — the current
+   *  partial year's exports plus the prior full year's snapshot. Deterministic
+   *  (replay-derivable from tickCount + trade state), never wall-clock. */
+  private annualExportsTotal(): number {
+    const year = Math.floor(this.tickCount / 360);
+    return this.sumUsedPerGood() + (this.annualExportBuckets[year - 1] ?? 0);
   }
 
   private derivedSnapshot(): DerivedSnapshot {
@@ -984,6 +1033,7 @@ export class SimRunner {
       government: unlockedGov(population).map((g) => g.id),
       decomposition,
       constructionSpend: this.constructionSpend,
+      annualExports: this.annualExportsTotal(),
     };
   }
 
@@ -1822,11 +1872,15 @@ export class SimRunner {
    * resulting state equals the original run at save time. Commands that were
    * still pending at save time (the sim was paused) are re-enqueued so the
    * queue survives the round-trip.
+   *
+   * `map` is optional: pass the SAME map the original run was constructed with
+   * to round-trip a custom-map city. A seed-generated original (no map) needs
+   * no map — fromSaveData regenerates the identical seed map.
    */
-  static fromSaveData(save: SaveData): SimRunner {
+  static fromSaveData(save: SaveData, map?: SimMap): SimRunner {
     // Reconstruct through the no-map path so map generation and the sim body
     // share the same RNG stream, exactly as the original run did.
-    const runner = new SimRunner(save.seed, undefined, save.mapSize);
+    const runner = new SimRunner(save.seed, map, save.mapSize);
     runner.replaying = true;
     for (const c of save.commands) applyCommand(runner, c);
     runner.replaying = false;
@@ -2434,6 +2488,10 @@ function applyCommand(runner: SimRunner, cmd: SaveCommand): void {
     runner.deliverGoods(cmd.requestId, cmd.good, cmd.qty);
   } else if (cmd.kind === 'payRequest') {
     runner.payRequest(cmd.requestId, cmd.amount);
+  } else if (cmd.kind === 'openTradeRoute') {
+    runner.openTradeRoute(cmd.cityId);
+  } else if (cmd.kind === 'setTradeOrder') {
+    runner.setTradeOrder(cmd.cityId, cmd.good, cmd.mode, { reserve: cmd.reserve, target: cmd.target });
   } else {
     const exhaustive: never = cmd;
     throw new Error(`unknown command kind: ${(exhaustive as { kind: string }).kind}`);

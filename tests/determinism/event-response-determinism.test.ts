@@ -57,7 +57,7 @@ describe('respondEvent save/load replay determinism (Phase 15, RATE-03)', () => 
     expect(r.respondEvent(eventId, choiceId).ok).toBe(true);
     for (let i = 0; i < extra; i++) r.tick();
 
-    const loaded = SimRunner.fromSaveData(r.getSaveData());
+    const loaded = SimRunner.fromSaveData(r.getSaveData(), productionChainMap());
     for (let i = 0; i < extra; i++) loaded.tick();
 
     expect(loaded.getStateJson()).toBe(r.getStateJson());
@@ -75,7 +75,7 @@ describe('respondEvent save/load replay determinism (Phase 15, RATE-03)', () => 
     const a = new SimRunner(seed, productionChainMap());
     buildExportCity(a);
     for (let i = 0; i < tick + 200; i++) a.tick();
-    const b = SimRunner.fromSaveData(r.getSaveData());
+    const b = SimRunner.fromSaveData(r.getSaveData(), productionChainMap());
     for (let i = 0; i < 200; i++) b.tick();
     expect(b.getStateJson()).toBe(a.getStateJson());
   });

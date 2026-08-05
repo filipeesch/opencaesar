@@ -83,7 +83,9 @@ export type SaveCommand =
   | { kind: 'setGovernorSalaryLevel'; level: number }
   | { kind: 'donateToGovernor'; amount: number }
   | { kind: 'deliverGoods'; requestId: string; good: string; qty: number }
-  | { kind: 'payRequest'; requestId: string; amount: number };
+  | { kind: 'payRequest'; requestId: string; amount: number }
+  | { kind: 'openTradeRoute'; cityId: string }
+  | { kind: 'setTradeOrder'; cityId: string; good: string; mode: import('./trade').TradeOrderMode; reserve?: number; target?: number };
 
 /** Serializable save payload capturing everything needed to resume a sim deterministically. */
 export interface SaveData {
