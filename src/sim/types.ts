@@ -86,7 +86,7 @@ export type SaveCommand =
   | { kind: 'payRequest'; requestId: string; amount: number }
   | { kind: 'openTradeRoute'; cityId: string }
   | { kind: 'setTradeOrder'; cityId: string; good: string; mode: import('./trade').TradeOrderMode; reserve?: number; target?: number }
-  | { kind: 'respondEvent'; eventId: string; choiceId: string };
+  | { kind: 'respondEvent'; eventId: string; choiceId: string; tick?: number };
 
 /** Serializable save payload capturing everything needed to resume a sim deterministically. */
 export interface SaveData {

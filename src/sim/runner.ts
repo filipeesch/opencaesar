@@ -373,6 +373,14 @@ export class SimRunner {
     // Civil safety: per-building fire lifecycle, collapse risk, crime.
     this.tickSafety();
 
+    // RATE-03 (CR-01/WR-04): apply any replay-deferred event response whose
+    // original application tick has now been reached (cost + effect at the SAME
+    // tick the original run applied it, so the ledger and the live derived
+    // effect window stay byte-identical). Runs immediately before the derived
+    // snapshot so the snapshot reflects the response exactly as the original
+    // run did at that tick. A no-op when the sim is not replaying a save.
+    this.applyDueEventResponses();
+
     // Remaining systems read live sim state into a derived snapshot (WARNING 1 fix).
     this.tickDerivedSystems();
   }
@@ -1011,48 +1019,99 @@ export class SimRunner {
    *  early conclusion); unknown/inactive events or unknown choices are rejected
    *  with no state change. Replayable as a SaveCommand (the response is recorded
    *  so an event that re-fires during replay shapes the same outcome).
+   *
+   *  `applyTick` is the tick the response was first issued live (`tick` on the
+   *  saved command). On a save-load replay the effect + treasury cost are
+   *  deferred to that same tick (CR-01/WR-04) so the ledger and the live
+   *  derived-ratings effect window reproduce the original run exactly.
    */
-  respondEvent(eventId: string, choiceId: string): { ok: boolean; error?: string } {
-    if (this.paused) {
-      this.enqueue({ kind: 'respondEvent', eventId, choiceId });
-      return { ok: true };
-    }
+  respondEvent(eventId: string, choiceId: string, applyTick?: number): { ok: boolean; error?: string } {
     const ev = EVENTS[eventId];
     const choice = resolveResponse(eventId, choiceId);
-    if (!ev || !choice) {
-      if (!this.replaying) this.commandLog.push({ tick: this.tickCount, command: `respondEvent ${eventId}:${choiceId}`, result: 'invalid-type' });
-      return { ok: false, error: 'unknown-choice' };
+    // Validation shared by the direct and paused paths (WR-03: a paused-queued
+    // response must clear the same active-event / funds gates as a direct one).
+    const validate = (): string | null => {
+      if (!ev || !choice) return 'unknown-choice';
+      if (!this.activeEvent) return 'no-active-event';
+      if (this.activeEvent.id !== eventId) return 'no-active-event';
+      if (choice.effect.treasuryCost && this.treasuryAccount.balance < choice.effect.treasuryCost) return 'not-enough-money';
+      return null;
+    };
+
+    if (this.paused) {
+      const err = validate();
+      if (err) {
+        this.commandLog.push({ tick: this.tickCount, command: `respondEvent ${eventId}:${choiceId}`, result: err === 'not-enough-money' ? 'not-enough-money' : 'invalid-type' });
+        return { ok: false, error: err };
+      }
+      this.enqueue({ kind: 'respondEvent', eventId, choiceId, tick: this.tickCount });
+      return { ok: true };
     }
-    if (!this.replaying) {
-      if (!this.activeEvent) {
-        this.commandLog.push({ tick: this.tickCount, command: `respondEvent ${eventId}:${choiceId}`, result: 'invalid-type' });
-        return { ok: false, error: 'no-active-event' };
+
+    // Replay / paused-queue drain: the command was already validated when first
+    // issued, so accept without re-running the state gates.
+    if (this.replaying) {
+      if (!ev || !choice) return { ok: false, error: 'unknown-choice' };
+      const issuedTick = applyTick ?? this.tickCount;
+      if (issuedTick <= this.tickCount) {
+        // Already at/after the application tick (paused-drain) — apply now.
+        this.applyRecordedResponse(eventId, choiceId, true);
+      } else {
+        // CR-01/WR-04: replayed at tick 0 but the response is not due yet —
+        // defer so the cost is booked and the effect shaped at the ORIGINAL
+        // application tick (applyDueEventResponses), not at the reconstruction.
+        this.deferredEventResponses.push({ eventId, choiceId, applyTick: issuedTick });
       }
-      if (this.activeEvent.id !== eventId) {
-        this.commandLog.push({ tick: this.tickCount, command: `respondEvent ${eventId}:${choiceId}`, result: 'invalid-type' });
-        return { ok: false, error: 'no-active-event' };
-      }
-      if (choice.effect.treasuryCost && this.treasuryAccount.balance < choice.effect.treasuryCost) {
-        this.commandLog.push({ tick: this.tickCount, command: `respondEvent ${eventId}:${choiceId}`, result: 'not-enough-money' });
-        return { ok: false, error: 'not-enough-money' };
-      }
+      return { ok: true };
     }
-    // Accept (live and replay): record the choice, apply any treasury cost
-    // through the ledger (never hand-rolled balance math), and shape the
-    // ongoing rating modifier / early conclusion.
+
+    const err = validate();
+    if (err) {
+      this.commandLog.push({ tick: this.tickCount, command: `respondEvent ${eventId}:${choiceId}`, result: err === 'not-enough-money' ? 'not-enough-money' : 'invalid-type' });
+      return { ok: false, error: err };
+    }
+    // Live accept: record the choice, apply any treasury cost through the
+    // ledger, and shape the ongoing rating modifier / early conclusion.
+    this.applyRecordedResponse(eventId, choiceId, true);
+    this.commandLog.push({ tick: this.tickCount, command: `respondEvent ${eventId}:${choiceId}`, result: 'ok' });
+    this.saveCommands.push({ kind: 'respondEvent', eventId, choiceId, tick: this.tickCount });
+    return { ok: true };
+  }
+
+  /** RATE-03: accept a validated response — record the choice, charge any
+   *  treasury cost through the ledger, and shape the event's continuing rating
+   *  modifier / early conclusion. Shared by the live, paused-drain, and
+   *  deferred-replay application paths. */
+  private applyRecordedResponse(eventId: string, choiceId: string, chargeCost: boolean): void {
+    const choice = resolveResponse(eventId, choiceId);
+    if (!choice) return;
+    const active = !!this.activeEvent && this.activeEvent.id === eventId;
     this.eventResponseByEvent[eventId] = choiceId;
-    if (choice.effect.treasuryCost && choice.effect.treasuryCost > 0) {
+    if (chargeCost && choice.effect.treasuryCost && choice.effect.treasuryCost > 0) {
       this.treasuryAccount.addExpense('other', choice.effect.treasuryCost);
     }
-    if (this.activeEvent && choice.effect.conclude) {
-      this.activeEvent.remaining = 0;
+    if (active && choice.effect.conclude) {
+      this.activeEvent!.remaining = 0;
     }
     this.refreshEventDelta();
     this.derived = null;
-    this.commandLog.push({ tick: this.tickCount, command: `respondEvent ${eventId}:${choiceId}`, result: 'ok' });
-    this.saveCommands.push({ kind: 'respondEvent', eventId, choiceId });
-    return { ok: true };
   }
+
+  /** RATE-03 (CR-01/WR-04): apply any replay-deferred event response whose
+   *  original application tick has been reached. Runs once per tick just before
+   *  the derived snapshot. Bookkeeping: the treasury cost is charged with the
+   *  ordinary clamped-`addExpense` because the reconstructed balance at the
+   *  application tick equals the balance the original run had when the response
+   *  was accepted (the live path already guaranteed funds) — so no clamp
+   *  divergence and the ledger stays byte-identical. A no-op when live. */
+  private applyDueEventResponses(): void {
+    if (this.deferredEventResponses.length === 0) return;
+    const due = this.deferredEventResponses.filter((d) => d.applyTick <= this.tickCount);
+    if (due.length === 0) return;
+    this.deferredEventResponses = this.deferredEventResponses.filter((d) => d.applyTick > this.tickCount);
+    for (const d of due) this.applyRecordedResponse(d.eventId, d.choiceId, true);
+  }
+
 
   private derivedSnapshot(): DerivedSnapshot {
     const population = this.getPopulation();
@@ -1953,6 +2012,11 @@ export class SimRunner {
    *  lifecycle shapes the post-response effect deterministically even when the
    *  event re-fires during replay. */
   private readonly eventResponseByEvent: Record<string, string> = {};
+  /** RATE-03 (CR-01/WR-04): event responses replayed at tick 0 whose effect
+   *  must wait until their ORIGINAL application tick so the live derived-ratings
+   *  effect window and the treasury ledger stay byte-identical to the run that
+   *  was saved (see applyDueEventResponses). */
+  private deferredEventResponses: { eventId: string; choiceId: string; applyTick: number }[] = [];
   /** RATE-03: active-event rating modifier (0s when no event is active). */
   private activeEventDelta = { culture: 0, prosperity: 0, stability: 0, favor: 0 };
   private houseHappinessInput(b: BuildingInstance) {
@@ -2656,7 +2720,7 @@ function applyCommand(runner: SimRunner, cmd: SaveCommand): void {
   } else if (cmd.kind === 'setTradeOrder') {
     runner.setTradeOrder(cmd.cityId, cmd.good, cmd.mode, { reserve: cmd.reserve, target: cmd.target });
   } else if (cmd.kind === 'respondEvent') {
-    runner.respondEvent(cmd.eventId, cmd.choiceId);
+    runner.respondEvent(cmd.eventId, cmd.choiceId, cmd.tick);
   } else {
     const exhaustive: never = cmd;
     throw new Error(`unknown command kind: ${(exhaustive as { kind: string }).kind}`);
