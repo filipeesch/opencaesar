@@ -196,3 +196,50 @@ describe('derived sim wiring (warning fix)', () => {
     expect(typeof prog!.progress).toBe('number');
   });
 });
+
+describe('ratings decomposition wired into DerivedSnapshot (RATE-01 tracer)', () => {
+  it('getDerived().decomposition exists and culture factors respond to placed civic buildings (end-to-end)', () => {
+    const m = SimMap.fromLayout(24, 24, () => 'fertile');
+    const r = new SimRunner(7, m);
+    // Phase-12 civic skeleton: road grid + 12 houses + a school/theatre/temple.
+    for (let x = 0; x <= 20; x++) for (const y of [0, 3, 5, 7, 9]) r.placeBuilding('road', x, y);
+    for (const [x, y] of [[7, 1], [7, 2], [7, 4], [7, 6], [7, 8]]) r.placeBuilding('road', x, y);
+    r.placeBuilding('farm', 0, 1);
+    r.placeBuilding('granary', 2, 1);
+    r.placeBuilding('market', 4, 1);
+    r.placeBuilding('well', 0, 6);
+    r.placeBuilding('well', 14, 6);
+    for (const x of [0, 2, 4, 6]) r.placeBuilding('house', x, 4);
+    for (const x of [0, 2, 4, 6, 8, 10, 12, 14]) r.placeBuilding('house', x, 8);
+    r.requestRoyalSubsidy();
+    r.tick();
+    const school = r.placeBuilding('school', 10, 10);
+    const theatre = r.placeBuilding('theatre', 14, 10);
+    const temple = r.placeBuilding('temple', 8, 10, { god: 'jupiter' });
+    expect(school.ok && theatre.ok && temple.ok).toBe(true);
+    r.setPolicy(0.1, 0.135);
+    for (let i = 0; i < 500; i++) r.tick();
+
+    const d = r.getDerived();
+    expect(d.decomposition).toBeDefined();
+    expect(d.decomposition.culture).toBeDefined();
+    // The placed education/entertainment/religion buildings move the culture
+    // factor buckets above zero (weighted contributions on a 0..100 scale).
+    expect(d.decomposition.culture.education).toBeGreaterThan(0);
+    expect(d.decomposition.culture.entertainment).toBeGreaterThan(0);
+    expect(d.decomposition.culture.religion).toBeGreaterThan(0);
+    expect(d.decomposition.culture.education).toBeLessThanOrEqual(30);
+    expect(d.decomposition.culture.entertainment).toBeLessThanOrEqual(25);
+    expect(d.decomposition.culture.religion).toBeLessThanOrEqual(25);
+  });
+
+  it('a bare city carries a defined decomposition with culture buckets at zero', () => {
+    const r = new SimRunner(55);
+    for (let i = 0; i < 20; i++) r.tick();
+    const d = r.getDerived();
+    expect(d.decomposition).toBeDefined();
+    expect(d.decomposition.culture.education).toBe(0);
+    expect(d.decomposition.culture.entertainment).toBe(0);
+    expect(d.decomposition.culture.religion).toBe(0);
+  });
+});

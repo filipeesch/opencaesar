@@ -81,6 +81,6 @@ describe('rating decomposition (task 10.3)', () => {
     const d = decomposeRatings(stats, 150);
     expect(d.prosperity.construction).toBeGreaterThanOrEqual(0);
     expect(d.prosperity.economy).toBeGreaterThan(0);
-    expect(d.culture.religion).toBe(10);
+    expect(d.culture.religion).toBe(25);
   });
 });

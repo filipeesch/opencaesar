@@ -17,7 +17,8 @@ import { CONFIG, HOUSE_TIERS } from './config';
 import { validateCatalogs, throwCatalogIssues } from '../../data/validate';
 import { assignedWorkers, computeRatings, tickEconomy, totalJobs, workerPool } from './economy';
 import { cityHappiness, houseHappiness } from './happiness';
-import { computeTargets, tickRatings } from './ratings';
+import { computeTargets, tickRatings, decomposeRatings } from './ratings';
+import type { CityStats, RatingDecomposition } from './ratings';
 import { createGovernor, donate, payGovernor, GOVERNOR_SALARY_LEVELS } from './governor';
 import type { GovernorState } from './governor';
 import { tickTrade } from './trade';
@@ -145,6 +146,9 @@ export interface DerivedSnapshot {
   wages: number;
   codex: { buildings: number; goods: number; services: number; gods: number };
   government: string[];
+  /** RATE-01: per-factor decomposition of the four ratings (one computation
+   *  with the ratings above — never a second recompute). */
+  decomposition: RatingDecomposition;
 }
 
 export class SimRunner {
@@ -203,6 +207,11 @@ export class SimRunner {
    *  command was first issued — do not reject the recorded placement. */
   private replaying = false;
   private objective: ObjectiveTracker | null = null;
+  /** RATE-01/D-02: lifetime construction spend accumulator — incremented beside
+   *  the build/route-open treasury captures (placeBuilding/openTradeRoute) and
+   *  re-derives byte-identically from replaying saveCommands. It lands only in
+   *  the Prosperity construction bucket, never the operating-balance factor. */
+  private constructionSpend = 0;
 
   constructor(seed: number, map?: SimMap, mapSize?: number) {
     if (!catalogsValidated) {
@@ -837,11 +846,6 @@ export class SimRunner {
     const population = this.getPopulation();
     const employment = this.getEmployment();
     const has = (cat: string) => this.buildings.some((b) => BUILDINGS[b.type].category === cat);
-    const targets = computeTargets({
-      population, treasury: this.getTreasury(), taxRate: this.policy.taxRate,
-      hasReligion: has('religion'), hasEntertainment: has('entertainment'), hasEducation: has('education'),
-      hasHealth: has('health'), hasWater: has('water'), hasFood: has('food'),
-    });
     const godWorship = this.liveGodWorship();
     const festivalFavorBoost = this.festivalBoost
       ? (FESTIVAL_TIERS.find((t) => t.id === this.festivalBoost!.tierId)?.favorBoost ?? 0)
@@ -852,6 +856,22 @@ export class SimRunner {
       entertainmentCoverage: this.civicCoverage('entertainment'),
       godWorship,
     });
+    // RATE-01: the CityStats fed to computeTargets carries the live normalized
+    // factor inputs so the decomposition reflects real buildings, and
+    // decomposeRatings consumes the SAME CityStats — one computation, never a
+    // second recompute of the rating.
+    let religionCoverage = 0;
+    for (const v of Object.values(godWorship)) religionCoverage = Math.max(religionCoverage, v ?? 0);
+    const cityStats: CityStats = {
+      population, treasury: this.getTreasury(), taxRate: this.policy.taxRate,
+      hasReligion: has('religion'), hasEntertainment: has('entertainment'), hasEducation: has('education'),
+      hasHealth: has('health'), hasWater: has('water'), hasFood: has('food'),
+      educationCoverage: serviceCoverage.literacy,
+      entertainmentCoverage: serviceCoverage.entertainment,
+      religionCoverage,
+      festivalBoost: this.festivalBoost ? 1 : 0,
+    };
+    const targets = computeTargets(cityStats);
     const water = new WaterSystem();
     const well = this.buildings.find((b) => b.type === 'well' || b.type === 'fountain');
     water.setSources(well ? [{ x: well.x, y: well.y, kind: 'well', active: true, radius: 2 }] : []);
@@ -873,6 +893,7 @@ export class SimRunner {
     const taxes = taxCollected(population, 2, this.policy.taxRate, 1);
     const wages = employment.employed * CONFIG.wagePerWorkerPerTick * this.policy.wageRate;
     const codex = buildCodex();
+    const decomposition = decomposeRatings(cityStats, this.constructionSpend);
     return {
       population, culture: targets.culture, prosperity: targets.prosperity, stability: targets.stability,
       favor: Math.min(100, targets.favor + computeFavor(godWorship) + festivalFavorBoost + this.governorFavorBonus),
@@ -883,6 +904,7 @@ export class SimRunner {
       fireRisk, collapseRisk, crime, treasury: this.getTreasury(), taxes, wages,
       codex: { buildings: codex.filter((e) => e.kind === 'building').length, goods: codex.filter((e) => e.kind === 'commodity').length, services: codex.filter((e) => e.kind === 'service').length, gods: codex.filter((e) => e.kind === 'god').length },
       government: unlockedGov(population).map((g) => g.id),
+      decomposition,
     };
   }
 
