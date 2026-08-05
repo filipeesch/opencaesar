@@ -155,6 +155,47 @@ describe('campaign determinism (Phase 17, CAMPAIGN-01)', () => {
       expect(c.kind).not.toBe('setTradeOrder');
     }
   });
+
+  it('save → load → save → load preserves the mission (startMission record re-embeds on replay) (CR-02)', () => {
+    const def = MISSIONS['grand_city']!;
+    const r = new SimRunner(7, missionMap(def)!);
+    expect(r.startMission('grand_city').ok).toBe(true);
+    for (let i = 0; i < 40; i++) r.tick();
+
+    const save1 = r.getSaveData();
+    expect(save1.commands.some((c) => c.kind === 'startMission')).toBe(true);
+
+    const loaded1 = SimRunner.fromSaveData(save1, missionMap(def) as SimMap);
+    expect(loaded1.getMission()!.id).toBe('grand_city');
+    // A save taken from a LOADED runner must still embed the start-Mission
+    // record — otherwise the next load finds no mission at all.
+    const save2 = loaded1.getSaveData();
+    expect(save2.commands.some((c) => c.kind === 'startMission')).toBe(true);
+    expect(save2.commands).toEqual(save1.commands);
+
+    const loaded2 = SimRunner.fromSaveData(save2, missionMap(def) as SimMap);
+    expect(loaded2.getMission()).toEqual(loaded1.getMission());
+    expect(loaded2.getMission()!.id).toBe('grand_city');
+  });
+
+  it('save → load → save → load keeps a dismissed tutorial step dismissed (CR-02)', () => {
+    const r = new SimRunner(11, foodChainMap());
+    buildFoodCity(r);
+    expect(r.dismissTutorialStep('roads').ok).toBe(true);
+    r.tick();
+
+    const save1 = r.getSaveData();
+    const loaded1 = SimRunner.fromSaveData(save1, foodChainMap());
+    expect(loaded1.getTutorial().dismissed).toContain('roads');
+
+    const save2 = loaded1.getSaveData();
+    expect(save2.commands.some((c) => c.kind === 'dismissTutorialStep')).toBe(true);
+
+    const loaded2 = SimRunner.fromSaveData(save2, foodChainMap());
+    expect(loaded2.getTutorial().dismissed).toContain('roads');
+    expect(loaded2.getTutorial().current?.step).toBe('housing'); // still no re-eligibilize
+    expect(loaded2.getTutorial()).toEqual(loaded1.getTutorial());
+  });
 });
 
 describe('no Math.random / wall-clock in the Phase 17 sim chain (determinism audit)', () => {

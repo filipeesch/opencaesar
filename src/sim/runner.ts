@@ -2280,8 +2280,13 @@ export class SimRunner {
     this.missionTracker = null;
     this.commandLog.push({ tick: this.tickCount, command: `startMission ${id}`, result: 'ok' });
     // The single deterministic replay record for the whole mission start.
-    // Guarded during replay so a save → load → save cycle never duplicates it.
-    if (!this.replaying) this.saveCommands.push({ kind: 'startMission', id, year });
+    // Pushed UNCONDITIONALLY — including on replay — so a replayed startMission
+    // re-embeds its own record (CR-02: the standard SaveCommand pattern, cf.
+    // placeBuilding/openTradeRoute). Without it, a save taken from a LOADED
+    // runner drops the record and a later load finds no mission at all; with it,
+    // a save → load → save cycle reproduces the command stream exactly once
+    // (sub-effects stay suppressed by suppressCommandRecording on both paths).
+    this.saveCommands.push({ kind: 'startMission', id, year });
 
     // Per-mission sub-effects (CAMPAIGN-01): treasury credit, policy override,
     // preplaced starter buildings, and routes are applied deterministically. All
@@ -2382,7 +2387,10 @@ export class SimRunner {
     }
     this.commandLog.push({ tick: this.tickCount, command: `dismissTutorialStep ${step}`, result: 'ok' });
     this.dismissedTutorialSteps.add(step);
-    if (!this.replaying) this.saveCommands.push({ kind: 'dismissTutorialStep', step });
+    // Pushed UNCONDITIONALLY (CR-02: standard SaveCommand pattern) so a replayed
+    // dismissal re-embeds itself and a save taken from a LOADED runner keeps the
+    // dismissal — otherwise a second round-trip would silently drop it.
+    this.saveCommands.push({ kind: 'dismissTutorialStep', step });
     return { ok: true };
   }
 
