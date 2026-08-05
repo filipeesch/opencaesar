@@ -130,6 +130,17 @@ export function validateCatalogs(tradeCatalog: Record<string, TradeCityDef> = TR
     if (m.targetPopulation <= 0) {
       issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: missing positive population target` });
     }
+    // RATE-02 extension: sustainChecks must be a positive integer when present;
+    // the new target fields must be finite non-negative numbers.
+    if (m.sustainChecks !== undefined && (!Number.isInteger(m.sustainChecks) || m.sustainChecks <= 0)) {
+      issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: sustainChecks must be a positive integer` });
+    }
+    for (const key of ['targetFavor', 'targetTreasury', 'targetAnnualExports'] as const) {
+      const v = m[key];
+      if (v !== undefined && (typeof v !== 'number' || !Number.isFinite(v) || v < 0)) {
+        issues.push({ catalog: 'missions', message: `${(m as { id: string }).id}: ${key} must be a finite non-negative number` });
+      }
+    }
   }
 
   for (const r of REQUEST_CATALOG) {

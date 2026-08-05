@@ -17,7 +17,7 @@ import { CONFIG, HOUSE_TIERS } from './config';
 import { validateCatalogs, throwCatalogIssues } from '../../data/validate';
 import { assignedWorkers, computeRatings, tickEconomy, totalJobs, workerPool } from './economy';
 import { cityHappiness, houseHappiness } from './happiness';
-import { computeTargets, tickRatings, decomposeRatings } from './ratings';
+import { computeTargets, decomposeRatings } from './ratings';
 import type { CityStats, RatingDecomposition } from './ratings';
 import { createGovernor, donate, payGovernor, GOVERNOR_SALARY_LEVELS } from './governor';
 import type { GovernorState } from './governor';
@@ -31,7 +31,7 @@ import {
 import { COMMODITIES } from '../../data/commodities';
 import { TRADE_CITIES, type TradeCityDef } from '../../data/trade';
 import { CARAVAN_CAPACITY, SHIP_CAPACITY } from './transport';
-import { tickMission } from './missions';
+import { MISSIONS, EXTRA_MISSIONS } from '../../data/missions';
 import { computeServiceCoverage, GODS, computeFavor, FESTIVAL_TIERS, startFestival, tickFestival } from './services';
 import type { FestivalPlan, FestivalTier } from './services';
 import { TEMPLE_COVERAGE_FACTOR, GRAND_TEMPLE_COVERAGE_FACTOR, FESTIVAL_BOOST_WINDOW_TICKS, MONTH_TICKS } from '../../data/religion';
@@ -449,8 +449,20 @@ export class SimRunner {
   private tickDerivedSystems(): void {
     const snapshot = this.derivedSnapshot();
     this.derived = snapshot;
-    if (this.objective) {
-      this.objective.update({ population: snapshot.population, culture: snapshot.culture, prosperity: snapshot.prosperity, stability: snapshot.stability });
+    // RATE-02 (BUG 1 fix): the objective is updated ONLY on the month cadence
+    // (tickCount % 40 === 0), so sustainChecks counts months, not ticks — and
+    // never on reads (see getObjectiveProgress). Every target metric is fed
+    // from the same snapshot.
+    if (this.tickCount % 40 === 0 && this.objective) {
+      this.objective.update({
+        population: snapshot.population,
+        culture: snapshot.culture,
+        prosperity: snapshot.prosperity,
+        stability: snapshot.stability,
+        favor: snapshot.favor,
+        treasury: snapshot.treasury,
+        annualExports: snapshot.annualExports,
+      });
     }
   }
 
@@ -1186,40 +1198,67 @@ export class SimRunner {
     return notes;
   }
 
-  /** Set an objective/win-condition to evaluate each tick. */
-  setObjective(target: { population?: number; culture?: number; prosperity?: number; stability?: number; sustainChecks: number }): void {
+  /** Set an objective/win-condition to evaluate on the month cadence. Each
+   *  target may be undefined (= not required); sustainChecks defaults to 3. */
+  setObjective(target: { population?: number; culture?: number; prosperity?: number; stability?: number; favor?: number; treasury?: number; annualExports?: number; sustainChecks?: number }): void {
     this.objective = new ObjectiveTracker(target);
   }
 
-  getObjectiveProgress(): { won: boolean; progress: number } | null {
+  /** RATE-02 (BUG 1 fix): a PURE read of the last monthly objective update —
+   *  calling this never advances the sustain counter. Returns progress as
+   *  sustained/sustainChecks clamped 0..1. */
+  getObjectiveProgress(): { won: boolean; progress: number; sustained: number; sustainChecks: number } | null {
     if (!this.objective) return null;
-    const d = this.derived ?? this.derivedSnapshot();
-    const r = this.objective.update({ population: d.population, culture: d.culture, prosperity: d.prosperity, stability: d.stability });
-    return { won: r.won, progress: this.objective.progress() };
+    const o = this.objective;
+    const r = o.lastResult();
+    return {
+      won: r.won,
+      progress: Math.min(1, r.sustained / o.sustainChecks),
+      sustained: r.sustained,
+      sustainChecks: o.sustainChecks,
+    };
   }
 
+  /** RATE-02 (D-03): the mission/completion path is unified on the sustained
+   *  ObjectiveTracker — a mission wins only after ALL its targets (incl. new
+   *  treasury/favor/annualExports) are held for the sustain period (default 3
+   *  months) on the month cadence. Time-limit failure is preserved and
+   *  shortfalls stay visible (the mission reads not-complete, never failed,
+   *  while below threshold). */
   private tickMissionSystem(): void {
     if (!this.mission || this.mission.complete || this.mission.failed) return;
-    const cityStats = {
-      population: this.getPopulation(),
-      treasury: this.getTreasury(),
-      taxRate: this.policy.taxRate,
-      hasReligion: false,
-      hasEntertainment: false,
-      hasEducation: false,
-      hasHealth: false,
-      hasWater: this.buildings.some((b) => BUILDINGS[b.type].category === 'water'),
-      hasFood: this.buildings.some((b) => BUILDINGS[b.type].category === 'food'),
-    };
-    const target = computeTargets(cityStats);
-    this.missionRatings = tickRatings(this.missionRatings, target);
-    tickMission(this.mission, {
-      population: cityStats.population,
-      culture: this.missionRatings.culture,
-      prosperity: this.missionRatings.prosperity,
-      stability: this.missionRatings.stability,
-      year: Math.floor(this.tickCount / 360),
-    });
+    const def = MISSIONS[this.mission.id] ?? EXTRA_MISSIONS[this.mission.id];
+    // Time-limit failure preserved (year − start year > timeLimitYears).
+    const year = Math.floor(this.tickCount / 360);
+    if (def?.timeLimitYears && year - this.mission.year > def.timeLimitYears) {
+      this.mission.failed = true;
+      return;
+    }
+    if (!this.missionTracker) {
+      this.missionTracker = new ObjectiveTracker({
+        population: def?.targetPopulation,
+        culture: def?.targetCulture,
+        prosperity: def?.targetProsperity,
+        stability: def?.targetStability,
+        favor: def?.targetFavor,
+        treasury: def?.targetTreasury,
+        annualExports: def?.targetAnnualExports,
+        sustainChecks: def?.sustainChecks ?? 3,
+      });
+    }
+    if (this.tickCount % 40 === 0) {
+      const d = this.derived ?? this.derivedSnapshot();
+      const r = this.missionTracker.update({
+        population: d.population,
+        culture: d.culture,
+        prosperity: d.prosperity,
+        stability: d.stability,
+        favor: d.favor,
+        treasury: d.treasury,
+        annualExports: d.annualExports,
+      });
+      if (r.won) this.mission.complete = true;
+    }
   }
 
   /** Place a building at footprint anchor (x, y). Rejected commands leave state unchanged.
@@ -1773,6 +1812,7 @@ export class SimRunner {
 
   startMission(id: string): void {
     this.mission = { id, started: true, complete: false, failed: false, year: 0, objective: id };
+    this.missionTracker = null;
   }
   getMission(): MissionState | null {
     return this.mission;
@@ -1789,7 +1829,8 @@ export class SimRunner {
   }
 
   private mission: MissionState | null = null;
-  private missionRatings = { culture: 10, prosperity: 10, stability: 10, favor: 10 };
+  /** RATE-02 (D-03): sustained ObjectiveTracker driving the active mission. */
+  private missionTracker: ObjectiveTracker | null = null;
   private tradeRoutes: Record<string, TradeRoute> = {};
   private activeEvent: { id: string; remaining: number; total: number } | null = null;
   private houseHappinessInput(b: BuildingInstance) {

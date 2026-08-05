@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Map as SimMap } from '../src/sim/map';
 import { SimRunner } from '../src/sim/runner';
 import { BUILDINGS } from '../src/sim/buildings';
+import { productionChainMap, buildProductionCity } from './helpers';
 
 describe('SimRunner accessors', () => {
   it('getRatings returns the computed ratings', () => {
@@ -289,5 +290,56 @@ describe('constructionSpend separation and full decomposition (RATE-01)', () => 
     expect(typeof a).toBe('number');
     expect(a).toBeGreaterThanOrEqual(0);
     expect(Number.isFinite(a)).toBe(true);
+  });
+});
+
+describe('sustained objectives on the month cadence (RATE-02)', () => {
+  it('sustain counts on month boundaries — sustainChecks 3 wins after 3 month gates, not 3 ticks', () => {
+    const r = new SimRunner(7);
+    r.setObjective({ population: 0, sustainChecks: 3 }); // always satisfied
+    for (let i = 0; i < 39; i++) r.tick(); // ticks 1..39, no month boundary yet
+    expect(r.getObjectiveProgress()!.won).toBe(false);
+    expect(r.getObjectiveProgress()!.sustained).toBe(0);
+    r.tick(); // tick 40 — first month gate
+    expect(r.getObjectiveProgress()!.sustained).toBe(1);
+    expect(r.getObjectiveProgress()!.won).toBe(false);
+    // pure read: repeated calls between boundaries never advance sustained (BUG 1)
+    for (let i = 0; i < 5; i++) r.getObjectiveProgress();
+    expect(r.getObjectiveProgress()!.sustained).toBe(1);
+    for (let i = 0; i < 39; i++) r.tick(); // tick 79
+    expect(r.getObjectiveProgress()!.sustained).toBe(1);
+    r.tick(); // tick 80 — second month gate
+    expect(r.getObjectiveProgress()!.sustained).toBe(2);
+    expect(r.getObjectiveProgress()!.won).toBe(false);
+    for (let i = 0; i < 39; i++) r.tick(); // ticks 81..119
+    expect(r.getObjectiveProgress()!.sustained).toBe(2);
+    r.tick(); // tick 120 — third month gate → won
+    expect(r.getObjectiveProgress()!.sustained).toBe(3);
+    expect(r.getObjectiveProgress()!.won).toBe(true);
+    expect(r.getObjectiveProgress()!.progress).toBe(1);
+  });
+
+  it('objectives enforce treasury/favor/annualExports targets from live derived state', () => {
+    const r = new SimRunner(1, productionChainMap());
+    buildProductionCity(r);
+    r.openTradeRoute('massilia');
+    r.setTradeOrder('massilia', 'pottery', 'export_above_reserve', { reserve: 1 });
+    for (let i = 0; i < 200; i++) r.tick();
+    const d = r.getDerived();
+    // thresholds the city already holds → wins at the next month gate
+    r.setObjective({
+      population: 0,
+      treasury: Math.max(0, Math.floor(d.treasury * 0.5)),
+      favor: 0,
+      annualExports: Math.max(0, Math.floor(d.annualExports)),
+      sustainChecks: 1,
+    });
+    for (let i = 0; i < 40; i++) r.tick();
+    expect(r.getObjectiveProgress()!.won).toBe(true);
+    // an impossible treasury target stays a visible shortfall (never a bogus win)
+    r.setObjective({ population: 0, treasury: Number.MAX_SAFE_INTEGER, sustainChecks: 1 });
+    for (let i = 0; i < 40; i++) r.tick();
+    expect(r.getObjectiveProgress()!.won).toBe(false);
+    expect(r.getObjectiveProgress()!.sustained).toBe(0);
   });
 });

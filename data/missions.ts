@@ -14,6 +14,14 @@ export interface MissionDef {
   targetProsperity: number;
   /** Target stability rating. */
   targetStability: number;
+  /** Optional RATE-02 targets — when present the mission must hold ADVANCED
+   *  targets (favor/treasury/annual exports) too, each undefined = not
+   *  required. */
+  targetFavor?: number;
+  targetTreasury?: number;
+  targetAnnualExports?: number;
+  /** Months the targets must be held consecutively (default 3). */
+  sustainChecks?: number;
   /** Starting treasury (denarii). */
   startingDenarii: number;
   /** Time limit in years, if any. */
