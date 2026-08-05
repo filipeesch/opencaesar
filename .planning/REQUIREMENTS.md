@@ -113,9 +113,9 @@ Requirements for completing the OpenCaesar build-out. Each maps to roadmap phase
 
 ### Campaign & Tutorial (Sections 42–44)
 
-- [ ] **CAMP-01**: 10-mission campaign framework
-- [ ] **CAMP-02**: Contextual tutorial
-- [ ] **CAMP-03**: Codex
+- [x] **CAMP-01**: 10-mission campaign framework
+- [x] **CAMP-02**: Contextual tutorial
+- [x] **CAMP-03**: Codex
 
 ### Management UI (Sections 31–40)
 

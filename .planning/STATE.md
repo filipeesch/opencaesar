@@ -3,27 +3,27 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Complete OpenCaesar
 current_phase: 17
-current_phase_name: Campaign, Tutorial & Codex
-status: planning
-stopped_at: Completed 16-16-PLAN.md
-last_updated: "2026-08-05T16:45:10.660Z"
+current_phase_name: campaign-tutorial-codex
+status: verifying
+stopped_at: Completed 17-17-PLAN.md
+last_updated: "2026-08-05T20:20:43.693Z"
 last_activity: 2026-08-05
-last_activity_desc: Phase 16 complete, transitioned to Phase 17
+last_activity_desc: Phase 17 execution started
 progress:
-  total_phases: 16
-  completed_phases: 16
-  total_plans: 30
-  completed_plans: 30
+  total_phases: 17
+  completed_phases: 17
+  total_plans: 31
+  completed_plans: 31
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 17 — Campaign, Tutorial & Codex
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-08-05 — Phase 16 complete, transitioned to Phase 17
+Phase: 17 (campaign-tutorial-codex) — COMPLETE
+Plan: 1 of 1
+Status: Phase complete — ready for verification
+Last activity: 2026-08-05 — Phase 17 execution complete
 
 ## Performance Metrics
 
@@ -31,6 +31,7 @@ Last activity: 2026-08-05 — Phase 16 complete, transitioned to Phase 17
 |------|----------|-------|-------|
 | Phase 15 P15-plan | 15900 | 7 tasks | 19 files |
 | Phase 16 P16-plan | 95 | 7 tasks | 27 files |
+| Phase 17 P17-plan | 6133 | 8 tasks | 12 files |
 
 ## Decisions
 
@@ -40,9 +41,13 @@ Last activity: 2026-08-05 — Phase 16 complete, transitioned to Phase 17
 - [Phase ?]: HOUS-01: house.level (0-20) is the single live source of truth driven by decideEvolution; house.tier is always the derived tierOfLevel bucket; economy/advisor/happiness read HOUSING_LIVE_STATS via the clamped liveStats() accessor (never a bare index)
 - [Phase ?]: HOUS-02: hysteresis devolve after toleranceTicks (90) with both counters reset on any level change (grace, no oscillation); merge runs on tickCount % 40 with a fixed placement-order scan, survivor keeps id/origin + footprint + combined population, occupiedTiles re-keyed, no new SaveCommand
 - [Phase ?]: Fresh houses place at the occupied baseline (level 1 Crude Hut) + levelTaxPerTick gets a LEVEL_TAX_PER_WORKER solvency floor so the natural economy bootstraps (regression from committed 16-01-02 liveStats routing, fixed in 16-02-02)
+- [Phase ?]: Phase 17: startMission is a replayable SaveCommand (year = floor(tickCount/360) start fix, live-only sequential gate, sub-effects under suppressCommandRecording so one command is the complete record)
+- [Phase ?]: Phase 17: tutorial = 9-step pure-total predicate catalog over DerivedSnapshot/HouseView/CityView + replayable dismissTutorialStep; getTutorial() derived; seen==dismissed until Phase 18 UI
+- [Phase ?]: Phase 17: codex = 13 kinds fully catalog-derived (ratings W exported); getCodex() cached; derived codex count stays 4-kind filtered (no golden changes)
+- [Phase ?]: Phase 17: winnability retune - RESEARCH L10-20 housing unreachable (wheat-only food caps houses at L5 in the sim building set); all missions retuned to the probe-measured envelope (pop<=300, ratings<=55, favor<=35, treasury<=4000, no export targets), arc preserved
 
 ## Session
 
-**Last session:** 2026-08-05T14:56:17.162Z
-**Stopped at:** Completed 16-16-PLAN.md
+**Last session:** 2026-08-05T20:20:43.684Z
+**Stopped at:** Completed 17-17-PLAN.md
 **Resume file:** None

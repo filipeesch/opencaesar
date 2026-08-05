@@ -31,7 +31,7 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
 - [x] **Phase 14: Governance & Requests** - forum/senate/governor; administrative requests
 - [x] **Phase 15: Ratings, Objectives, Events** - four ratings, win conditions, event responses (completed 2026-08-05)
 - [x] **Phase 16: Full Housing Evolution** - 21 levels, hysteresis, house merging (completed 2026-08-05)
-- [ ] **Phase 17: Campaign, Tutorial & Codex** - 10 missions, contextual tutorial, codex
+- [x] **Phase 17: Campaign, Tutorial & Codex** - 10 missions, contextual tutorial, codex (completed 2026-08-05)
 - [ ] **Phase 18: Management UI** - HUD, 13 advisors, overlays, inspectors
 - [ ] **Phase 19: Persistence & Options** - versioned save/load, options/accessibility
 - [ ] **Phase 20: UI Redesign — Caesar III Sidebar & Advisors** — Replace current HUD with Caesar III-style sidebar, 13 advisor panels with live sim data, overlay system (fire/danger/collapse/crime/food), building inspector, redesigned build panel. (INSERTED — ui-redesign)
@@ -318,11 +318,13 @@ Plans:
   2. Tutorial prompts appear contextually as the player encounters systems.
   3. The codex explains every building, good, service, and god.
 
-**Plans**: 1 (1 plan, 4 waves, 8 tasks)
+**Plans**: 1/1 plans executed
 
 Plans:
 
-- [ ] 17-PLAN — replayable startMission + sequential gate + mission data (map/products/routes/modifiers) + winnability (CAMPAIGN-01), state-observed tutorial with replayable dismiss (CAMPAIGN-02), catalog-derived codex + getCodex (CAMPAIGN-03)
+- [x] 17-PLAN.md
+
+- [x] 17-PLAN — replayable startMission + sequential gate + mission data (map/products/routes/modifiers) + winnability (CAMPAIGN-01), state-observed tutorial with replayable dismiss (CAMPAIGN-02), catalog-derived codex + getCodex (CAMPAIGN-03)
 
 ### Phase 18: Management UI
 
