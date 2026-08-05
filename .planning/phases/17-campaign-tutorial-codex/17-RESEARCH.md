@@ -481,19 +481,26 @@ export interface DerivedSnapshot {
 
 ## Open Questions
 
-1. **Mission progression across saves:** should winning mission N persist `campaignProgress` (next unlocked id) in save data, or is "unlocked = won in this session" enough?
+> All four questions are RESOLVED — the plan (17-PLAN.md) implements the recommendations below (cross-checked by the plan-checker, all decisions resolved in-plan).
+
+1. **Mission progression across saves:** should winning mission N persist `campaignProgress` (next unlocked id) in save data, or is "unlocked = won in this session" enough? *(RESOLVED — live-only sequential gate, derived from replay)*
    - What we know: no progression state exists anywhere; `startMission` is the only gate point; SaveCommands replay deterministically.
    - What's unclear: whether a reloaded save mid-mission N should still allow starting N+1 (requires the wins to be derivable from replay — they are: mission.complete is derived from the tracker, but the unlock *state* needs its own command or derivation).
    - Recommendation: derive unlock from replayed mission wins (scan for `startMission` commands whose tracker reached complete) OR record `{kind:'missionWon', id}`; simplest deterministic option: gate on "previous mission complete" derived at start time from replayed state.
+   - **Resolution (plan 17-01-01):** the start gate is live-only (`!this.replaying && previousWon`), so `startMission` stays replay-safe without a SaveData/schema change; no separate missionWon command needed.
 
-2. **Per-mission treasury reset:** does starting a mission grant `startingDenarii` on top of the current treasury, or reset to it?
+2. **Per-mission treasury reset:** does starting a mission grant `startingDenarii` on top of the current treasury, or reset to it? *(RESOLVED — additive credit, replayable)*
    - What we know: `startingDenarii` exists in data but is unused; `CONFIG.startingTreasury` (1000) applies at construction only.
    - Recommendation: additive credit via a replayable treasury command (or reuse the ledger); confirm with the user in discuss — CONTEXT lists "starting treasury" as a modifier, implying per-mission grants.
+   - **Resolution (plan 17-01-01):** additive credit applied through the replayable treasury/ledger path when a mission with `startingDenarii` is started.
 
-3. **Mission map size:** the 10 layouts need a fixed size — 40×40 default, smaller (e.g. 24×24) for early missions, or per-mission?
+3. **Mission map size:** the 10 layouts need a fixed size — 40×40 default, smaller (e.g. 24×24) for early missions, or per-mission? *(RESOLVED — per-mission map.width/height, small early maps)*
    - Recommendation: per-mission `map.width/height` in the layout data; small early maps teach systems faster. Planner should define the 10 layouts explicitly (agent's discretion, but the runner must be constructed with the right size).
+   - **Resolution (plan 17-01-01/03):** `missionMaps.ts` defines per-mission layouts with explicit width/height ≤40×40; the construct-time mission-map contract passes `missionMap(def)` to `new SimRunner`/`fromSaveData`.
 
-4. **Tutorial step set beyond the spec example:** which concrete steps? Recommendation (all with verified live data): roads-network-isolated, no-food, no-water, no-labor, low-desirability, housing-evolution-stuck, trade-quota, ratings-explainer, festival/favor, request-event. Confirm count/priority in discuss.
+4. **Tutorial step set beyond the spec example:** which concrete steps? *(RESOLVED — 9-step set, plan 17-02-01)*
+   - Recommendation (all with verified live data): roads-network-isolated, no-food, no-water, no-labor, low-desirability, housing-evolution-stuck, trade-quota, ratings-explainer, festival/favor, request-event. Confirm count/priority in discuss.
+   - **Resolution (plan 17-02-01):** the 9-step set implemented as pure total predicates over DerivedSnapshot/BuildingState; immigration-blocked scenario mapped to `laborConnected===false && workersRequired>0` speaking housing-evolution language (netMigration is dead code), with the ordered-introduction seed preserved.
 
 ## Environment Availability
 
