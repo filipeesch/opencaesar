@@ -29,7 +29,7 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
 - [x] **Phase 12: Health, Education, Entertainment** - doctors/infirmaries, schools/libraries, shows
 - [x] **Phase 13: Religion** - temples, grand temples, festivals, favor
 - [x] **Phase 14: Governance & Requests** - forum/senate/governor; administrative requests
-- [ ] **Phase 15: Ratings, Objectives, Events** - four ratings, win conditions, event responses
+- [x] **Phase 15: Ratings, Objectives, Events** - four ratings, win conditions, event responses (completed 2026-08-05)
 - [ ] **Phase 16: Full Housing Evolution** - 21 levels, hysteresis, house merging
 - [ ] **Phase 17: Campaign, Tutorial & Codex** - 10 missions, contextual tutorial, codex
 - [ ] **Phase 18: Management UI** - HUD, 13 advisors, overlays, inspectors
@@ -299,7 +299,11 @@ Plans:
   2. Houses devolve after tolerance loss; hysteresis prevents oscillation.
   3. Compatible adjacent houses merge into larger lots when blocks allow.
 
-**Plans**: TBD
+**Plans**: 1 plan (4 waves, 7 tasks)
+
+Plans:
+
+- [ ] 16-PLAN — bridge the 21-level catalog + decideEvolution into the live sim (housingLive.ts, house.level source of truth, derived tier, HOUSING_LIVE_STATS economy bridge), hysteresis devolution + deterministic house merging (housingMerge.ts + runner % 40 merge step), and intentional golden regeneration + timing/tier test updates (HOUS-01/HOUS-02)
 
 ### Phase 17: Campaign, Tutorial & Codex
 
