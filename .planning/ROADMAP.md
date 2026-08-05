@@ -318,7 +318,11 @@ Plans:
   2. Tutorial prompts appear contextually as the player encounters systems.
   3. The codex explains every building, good, service, and god.
 
-**Plans**: TBD
+**Plans**: 1 (1 plan, 4 waves, 8 tasks)
+
+Plans:
+
+- [ ] 17-PLAN — replayable startMission + sequential gate + mission data (map/products/routes/modifiers) + winnability (CAMPAIGN-01), state-observed tutorial with replayable dismiss (CAMPAIGN-02), catalog-derived codex + getCodex (CAMPAIGN-03)
 
 ### Phase 18: Management UI
 
