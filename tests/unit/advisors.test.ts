@@ -8,7 +8,7 @@ import {
 } from '../../src/sim/advisors';
 import { SimRunner } from '../../src/sim/runner';
 import { Map as SimMap } from '../../src/sim/map';
-import { productionChainMap, buildProductionCity, place } from '../helpers';
+import { productionChainMap, buildProductionCity, foodChainMap, buildFoodCity, place } from '../helpers';
 import type { BuildingInstance } from '../../src/sim/walkers';
 import {
   WaterSystem, FOUNTAIN_DESIRABILITY_BONUS, WELL_DESIRABILITY_PENALTY, RESERVOIR_STORAGE_CAPACITY,
@@ -172,12 +172,18 @@ describe('food HUD months-of-food & advisor data (AGRI-03, spec §15/§21)', () 
   });
 
   it('derives the HUD indicator from a live sim state — never fabricated', () => {
-    const map = SimMap.fromLayout(12, 12, (x, y) => ((x === 0 || x === 1) && (y === 1 || y === 2) ? 'fertile' : 'earth'));
-    map.set(5, 6, 'road');
-    const r = new SimRunner(42, map);
-    // a populated city with houses that need food but zero granary stock → red
-    r.placeBuilding('house', 5, 5);
-    for (let i = 0; i < 30; i++) r.tick();
+    // A real live city (farm → granary → market feeds, well waters): under the
+    // 21-level ladder a house leaves the Vacant-Lot floor only after the level-1
+    // `well` requirement and minSatisfiedTicks are met, so this genuinely
+    // EVOLVES a live house to level 1 (population 20+) — no fabricated tier.
+    const r = new SimRunner(42, foodChainMap());
+    buildFoodCity(r);
+    for (let i = 0; i < 400; i++) r.tick();
+    // Demolish the food chain: the HUD must read a populated city with houses
+    // that need food and zero available units — red comes from live state.
+    for (const [x, y] of [[0, 1], [2, 1], [4, 1]] as const) {
+      expect(r.demolish(x, y)).toBe(true);
+    }
     const ind = foodHudFromState(r.getState());
     expect(ind.availableUnits).toBe(0);
     expect(ind.band).toBe('red');
@@ -185,12 +191,9 @@ describe('food HUD months-of-food & advisor data (AGRI-03, spec §15/§21)', () 
   });
 
   it('produces the per-food advisor table and bottlenecks from live buildings', () => {
-    const map = SimMap.fromLayout(12, 12, () => 'earth');
-    map.set(5, 6, 'road');
-    const r = new SimRunner(7, map);
-    r.placeBuilding('granary', 2, 2);
-    r.placeBuilding('house', 5, 5);
-    for (let i = 0; i < 20; i++) r.tick();
+    const r = new SimRunner(7, foodChainMap());
+    buildFoodCity(r);
+    for (let i = 0; i < 400; i++) r.tick();
     const a = foodAdvisorFromState(r.getState());
     expect(a.rows.length).toBe(5);
     expect(a.rows.map((row) => row.food)).toEqual(['wheat', 'vegetables', 'fruit', 'meat', 'fish']);
@@ -276,7 +279,7 @@ describe('food HUD months-of-food & advisor data (AGRI-03, spec §15/§21)', () 
     const heavy = houseBuilding(2, 4, 4, 0, { wheat: 100, vegetables: 50 });
     const empty = houseBuilding(3, 7, 7, 0, undefined, 0); // no inventory, unfed → proxy 0
     const grids = foodOverlayGrids(mkFoodState([light, heavy, empty], 100));
-    // Tier-0 house population is 5 → daily need 0.15 → 100 units ≈ 666.7 days.
+    // Level-2 house population is 40 → daily need 1.2 → 100 units ≈ 83.3 days.
     const lightDays = grids.supplyDays[1][1];
     const heavyDays = grids.supplyDays[4][4];
     expect(lightDays).toBeGreaterThan(0);

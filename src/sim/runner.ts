@@ -1593,7 +1593,7 @@ export class SimRunner {
       this.buildings
         .filter((b) => b.house)
         .map((b) => ({
-          population: HOUSE_TIERS[b.house!.tier].population,
+          population: liveStats(b.house!.level ?? 0).population,
           happiness: houseHappiness(this.houseHappinessInput(b)),
         })),
     );

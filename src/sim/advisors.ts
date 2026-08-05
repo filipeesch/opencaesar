@@ -8,7 +8,7 @@ import { computeServiceCoverage } from './services';
 import { type CityStats, computeTargets, type RatingDecomposition } from './ratings';
 import type { TileWater, ReservoirState } from './water';
 import { BUILDINGS } from './buildings';
-import { HOUSE_TIERS } from './config';
+import { liveStats } from './housingLive';
 import { dailyFoodConsumption, foodVariety, houseFoodDays, houseFoodFromUnits } from './housing';
 import {
   EXTRACTION_SITES, WORKSHOPS,
@@ -579,7 +579,7 @@ export function foodOverlayGrids(state: SimState): Record<string, number[][]> {
     const inventory = b.house.foodInventory;
     if (inventory && Object.keys(inventory).length > 0) {
       const inv = houseFoodFromUnits(inventory, 'wheat');
-      const pop = HOUSE_TIERS[Math.max(0, Math.min(HOUSE_TIERS.length - 1, b.house.tier))].population;
+      const pop = liveStats(b.house.level).population;
       days = houseFoodDays(inv, dailyFoodConsumption(pop));
       varietyCount = foodVariety(inv);
     } else {

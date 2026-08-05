@@ -4,6 +4,7 @@
  */
 
 import { CONFIG, HOUSE_TIERS } from './config';
+import { liveStats } from './housingLive';
 import type { Policy, Ratings } from './types';
 import type { BuildingInstance } from './walkers';
 
@@ -14,11 +15,13 @@ export interface EconomyResult {
   wagesUnpaid: number;
 }
 
-/** Worker pool: workers contributed by houses whose labor walker is out. */
+/** Worker pool: workers contributed by houses whose labor walker is out.
+ *  Workers are read from the 21-level stats via the clamped liveStats accessor
+ *  (HOUS-01) — never a bare index (NaN guard). */
 export function workerPool(buildings: BuildingInstance[]): number {
   let total = 0;
   for (const b of buildings) {
-    if (b.house && b.house.laborCooldown > 0) total += HOUSE_TIERS[b.house.tier].workers;
+    if (b.house && b.house.laborCooldown > 0) total += liveStats(b.house.level).workers;
   }
   return total;
 }
@@ -49,7 +52,7 @@ export function tickEconomy(
 ): { treasury: number; result: EconomyResult } {
   let taxIncome = 0;
   for (const b of buildings) {
-    if (b.house) taxIncome += HOUSE_TIERS[b.house.tier].taxPerTick * policy.taxRate;
+    if (b.house) taxIncome += liveStats(b.house.level).taxPerTick * policy.taxRate;
   }
 
   const pool = workerPool(buildings);
@@ -66,11 +69,11 @@ export function tickEconomy(
   };
 }
 
-/** Population = sum of house tier capacities. */
+/** Population = sum of house level capacities (via clamped liveStats). */
 export function populationOf(buildings: BuildingInstance[]): number {
   let total = 0;
   for (const b of buildings) {
-    if (b.house) total += HOUSE_TIERS[b.house.tier].population;
+    if (b.house) total += liveStats(b.house.level).population;
   }
   return total;
 }

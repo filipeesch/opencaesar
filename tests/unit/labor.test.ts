@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { CONFIG, HOUSE_TIERS } from '../../src/sim/config';
+import { CONFIG } from '../../src/sim/config';
 import { workerPool } from '../../src/sim/economy';
+import { HOUSING_LIVE_STATS } from '../../src/sim/housingLive';
 import { Map as SimMap } from '../../src/sim/map';
 import { SimRunner } from '../../src/sim/runner';
 import type { BuildingType } from '../../src/sim/types';
@@ -43,14 +44,14 @@ function staffedOverWindow(r: SimRunner, ticks: number, window: number): { full:
 }
 
 describe('worker pool contribution', () => {
-  it('sums tier workers only for houses whose labor walker is out', () => {
-    // tier 0 = 1, tier 2 = 4 workers; the idle house contributes none.
+  it('sums level workers only for houses whose labor walker is out', () => {
+    // level 2 = 8, level 8 = 36 workers; the idle house contributes none.
     const houses = [
-      { id: 1, type: 'house' as const, house: { tier: 0, laborCooldown: 120 } as never },
-      { id: 2, type: 'house' as const, house: { tier: 2, laborCooldown: 120 } as never },
-      { id: 3, type: 'house' as const, house: { tier: 1, laborCooldown: 0 } as never },
+      { id: 1, type: 'house' as const, house: { tier: 0, level: 2, laborCooldown: 120 } as never },
+      { id: 2, type: 'house' as const, house: { tier: 2, level: 8, laborCooldown: 120 } as never },
+      { id: 3, type: 'house' as const, house: { tier: 1, level: 4, laborCooldown: 0 } as never },
     ];
-    expect(workerPool(houses as never[])).toBe(1 + HOUSE_TIERS[2].workers);
+    expect(workerPool(houses as never[])).toBe(HOUSING_LIVE_STATS[2].workers + HOUSING_LIVE_STATS[8].workers);
   });
 });
 
