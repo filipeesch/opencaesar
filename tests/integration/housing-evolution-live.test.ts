@@ -103,13 +103,15 @@ function maxLevel(r: SimRunner): number {
  * services, god access and the per-house food inventory continuous. `meat`
  * gates the level-12+ food requirement so a house can be held exactly at a
  * given level (used to hold a merge-eligible level until the month merge step).
+ * `god` gates grand_temple/temple reach (used to lapse the WR-01 top-of-ladder
+ * requirement at level 20 while food/water/labor/services stay satisfied).
  */
-function pumpHouse(h: HouseInstance, opts: { meat?: boolean } = {}): void {
+function pumpHouse(h: HouseInstance, opts: { meat?: boolean; god?: boolean } = {}): void {
   h.foodCooldown = 120;
   h.waterCooldown = 120;
   h.laborCooldown = 120;
   h.services = { health: 120, literacy: 120, entertainment: 120 };
-  h.godAccess = { jupiter: 120 };
+  h.godAccess = (opts.god ?? true) ? { jupiter: 120 } : {};
   h.foodInventory = { wheat: 50, vegetables: 50, fruit: 50, fish: 50, meat: opts.meat ? 50 : 0 };
 }
 
@@ -202,6 +204,29 @@ describe('devolve (HOUS-02 hysteresis + tolerance)', () => {
     for (let i = 0; i < 100; i++) r.tick();
     house = (r['buildings'] as BuildingInstance[]).find((b) => b.id === target.id)!;
     expect(house.house!.level ?? 0).toBeLessThanOrEqual(floorAfter);
+  });
+
+  it('WR-01: a level-20 house devolves after losing a CURRENT-level requirement (top-of-ladder baseOk not vacuous)', () => {
+    const r = serviceCity([[0, 29], [4, 29]]);
+    const target = housesOf(r)[0];
+    // Plant the Luxury Villa at 20 directly; hold it there fully satisfied with
+    // god access (grand_temple reach) so it never evolves (next level is 21,
+    // undefined) or devolves.
+    target.house!.level = 20;
+    pumpAndTick(r, [target.id], (h) => pumpHouse(h, { meat: true }), 100);
+    expect((r['buildings'] as BuildingInstance[]).find((b) => b.id === target.id)!.house!.level).toBe(20);
+
+    // Lapse ONLY the grand_temple requirement (stop god access while food/
+    // water/labor/services/goods stay satisfied). At level 20 nextDef is
+    // undefined, so the old baseOk check was vacuous (requirementsMet(21) ===
+    // true) and unsatisfiedTicks never accumulated. The fix falls back to the
+    // current level's requirements so the counter accumulates and the devolve
+    // branch (toleranceTicks = 90) fires.
+    pumpAndTick(r, [target.id], (h) => pumpHouse(h, { meat: true, god: false }), 100);
+
+    const house = (r['buildings'] as BuildingInstance[]).find((b) => b.id === target.id)!;
+    expect(house.house!.level ?? 0).toBeLessThan(20);
+    expect(r.getState().messages.some((m) => m.type === 'house-devolved')).toBe(true);
   });
 });
 

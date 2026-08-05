@@ -162,9 +162,17 @@ export function tickHousing(
     // desirability clears the level's base requirement.
     const next = level + 1;
     const nextDef = HOUSING_LEVELS.find((l) => l.level === next);
+    // WR-01: at the top of the ladder (level 20 → next 21 is undefined),
+    // requirementsMet(21, ...) is vacuous — a level-20 Luxury Villa that lost a
+    // CURRENT-level requirement (e.g. grand_temple reach) would keep
+    // accumulating satisfiedTicks and resetting unsatisfiedTicks forever, so
+    // requirement-loss devolution was unreachable at level 20. Fall back to the
+    // current level's requirements when there is no next def so unsatisfiedTicks
+    // accumulates and decideEvolution's devolve branch stays reachable.
+    const reqTarget = nextDef ? next : level;
     const baseOk =
       hasFood && hasWater && hasLabor &&
-      requirementsMet(next, satisfied) &&
+      requirementsMet(reqTarget, satisfied) &&
       normalized >= (nextDef?.desirability ?? 0);
     if (baseOk) {
       house.satisfiedTicks = (house.satisfiedTicks ?? 0) + 1;
