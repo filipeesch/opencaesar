@@ -1334,22 +1334,28 @@ export class SimRunner {
   private tickMissionSystem(): void {
     if (!this.mission || this.mission.complete || this.mission.failed) return;
     const def = MISSIONS[this.mission.id] ?? EXTRA_MISSIONS[this.mission.id];
+    if (!def) {
+      // WR-06 (legacy semantics): an unknown mission id FAILS rather than
+      // auto-completing via an all-undefined ObjectiveTracker ok-chain.
+      this.mission.failed = true;
+      return;
+    }
     // Time-limit failure preserved (year − start year > timeLimitYears).
     const year = Math.floor(this.tickCount / 360);
-    if (def?.timeLimitYears && year - this.mission.year > def.timeLimitYears) {
+    if (def.timeLimitYears && year - this.mission.year > def.timeLimitYears) {
       this.mission.failed = true;
       return;
     }
     if (!this.missionTracker) {
       this.missionTracker = new ObjectiveTracker({
-        population: def?.targetPopulation,
-        culture: def?.targetCulture,
-        prosperity: def?.targetProsperity,
-        stability: def?.targetStability,
-        favor: def?.targetFavor,
-        treasury: def?.targetTreasury,
-        annualExports: def?.targetAnnualExports,
-        sustainChecks: def?.sustainChecks ?? 3,
+        population: def.targetPopulation,
+        culture: def.targetCulture,
+        prosperity: def.targetProsperity,
+        stability: def.targetStability,
+        favor: def.targetFavor,
+        treasury: def.targetTreasury,
+        annualExports: def.targetAnnualExports,
+        sustainChecks: def.sustainChecks ?? 3,
       });
     }
     if (this.tickCount % 40 === 0) {
