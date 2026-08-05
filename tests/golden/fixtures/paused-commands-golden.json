@@ -539,7 +539,9 @@
       "house": {
         "tier": 0,
         "tierName": "Shack",
-        "populationCapacity": 5,
+        "level": 0,
+        "levelName": "Vacant Lot",
+        "populationCapacity": 0,
         "foodCooldown": 118,
         "waterCooldown": 0,
         "laborCooldown": 60,
@@ -561,7 +563,9 @@
       "house": {
         "tier": 0,
         "tierName": "Shack",
-        "populationCapacity": 5,
+        "level": 0,
+        "levelName": "Vacant Lot",
+        "populationCapacity": 0,
         "foodCooldown": 114,
         "waterCooldown": 0,
         "laborCooldown": 60,
@@ -583,7 +587,9 @@
       "house": {
         "tier": 0,
         "tierName": "Shack",
-        "populationCapacity": 5,
+        "level": 0,
+        "levelName": "Vacant Lot",
+        "populationCapacity": 0,
         "foodCooldown": 114,
         "waterCooldown": 0,
         "laborCooldown": 60,
@@ -605,7 +611,9 @@
       "house": {
         "tier": 0,
         "tierName": "Shack",
-        "populationCapacity": 5,
+        "level": 0,
+        "levelName": "Vacant Lot",
+        "populationCapacity": 0,
         "foodCooldown": 118,
         "waterCooldown": 0,
         "laborCooldown": 60,
@@ -844,15 +852,15 @@
       "carryingGood": "wheat"
     }
   ],
-  "treasury": 2020.0000000000546,
+  "treasury": 2343.99999999999,
   "policy": {
     "taxRate": 0.2,
     "wageRate": 0.35
   },
   "ratings": {
-    "population": 20,
+    "population": 0,
     "prosperity": 61,
-    "happiness": 66
+    "happiness": 0
   },
   "totalWorkers": 4,
   "assignedWorkers": 3,
@@ -877,6 +885,26 @@
       "tick": 34,
       "type": "building-active",
       "text": "Farm staffed and operational"
+    },
+    {
+      "tick": 90,
+      "type": "house-devolved",
+      "text": "House devolved to Vacant Lot"
+    },
+    {
+      "tick": 90,
+      "type": "house-devolved",
+      "text": "House devolved to Vacant Lot"
+    },
+    {
+      "tick": 90,
+      "type": "house-devolved",
+      "text": "House devolved to Vacant Lot"
+    },
+    {
+      "tick": 90,
+      "type": "house-devolved",
+      "text": "House devolved to Vacant Lot"
     }
   ],
   "lastTickWagesUnpaid": false

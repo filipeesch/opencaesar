@@ -549,14 +549,16 @@
       "laborConnected": false,
       "stock": {},
       "house": {
-        "tier": 2,
-        "tierName": "Insula",
+        "tier": 0,
+        "tierName": "Shack",
+        "level": 1,
+        "levelName": "Crude Hut",
         "populationCapacity": 20,
         "foodCooldown": 58,
         "waterCooldown": 120,
         "laborCooldown": 60,
-        "desirability": 75,
-        "happiness": 69
+        "desirability": 0,
+        "happiness": 60
       }
     },
     {
@@ -571,14 +573,16 @@
       "laborConnected": false,
       "stock": {},
       "house": {
-        "tier": 2,
-        "tierName": "Insula",
+        "tier": 0,
+        "tierName": "Shack",
+        "level": 1,
+        "levelName": "Crude Hut",
         "populationCapacity": 20,
         "foodCooldown": 86,
         "waterCooldown": 116,
         "laborCooldown": 60,
-        "desirability": 75,
-        "happiness": 69
+        "desirability": 0,
+        "happiness": 60
       }
     },
     {
@@ -593,14 +597,16 @@
       "laborConnected": false,
       "stock": {},
       "house": {
-        "tier": 2,
-        "tierName": "Insula",
+        "tier": 0,
+        "tierName": "Shack",
+        "level": 1,
+        "levelName": "Crude Hut",
         "populationCapacity": 20,
         "foodCooldown": 90,
         "waterCooldown": 120,
         "laborCooldown": 60,
-        "desirability": 75,
-        "happiness": 69
+        "desirability": 0,
+        "happiness": 60
       }
     },
     {
@@ -615,14 +621,16 @@
       "laborConnected": false,
       "stock": {},
       "house": {
-        "tier": 2,
-        "tierName": "Insula",
+        "tier": 0,
+        "tierName": "Shack",
+        "level": 1,
+        "levelName": "Crude Hut",
         "populationCapacity": 20,
         "foodCooldown": 118,
         "waterCooldown": 116,
         "laborCooldown": 60,
-        "desirability": 75,
-        "happiness": 69
+        "desirability": 0,
+        "happiness": 60
       }
     },
     {
@@ -935,8 +943,8 @@
   },
   "ratings": {
     "population": 80,
-    "prosperity": 32,
-    "happiness": 69
+    "prosperity": 16,
+    "happiness": 60
   },
   "totalWorkers": 16,
   "assignedWorkers": 4,
@@ -968,44 +976,44 @@
       "text": "Well staffed and operational"
     },
     {
-      "tick": 143,
-      "type": "house-evolved",
-      "text": "House evolved to Hovel"
+      "tick": 90,
+      "type": "house-devolved",
+      "text": "House devolved to Vacant Lot"
     },
     {
-      "tick": 149,
-      "type": "house-evolved",
-      "text": "House evolved to Hovel"
+      "tick": 90,
+      "type": "house-devolved",
+      "text": "House devolved to Vacant Lot"
     },
     {
       "tick": 161,
       "type": "house-evolved",
-      "text": "House evolved to Hovel"
-    },
-    {
-      "tick": 203,
-      "type": "house-evolved",
-      "text": "House evolved to Insula"
-    },
-    {
-      "tick": 209,
-      "type": "house-evolved",
-      "text": "House evolved to Insula"
-    },
-    {
-      "tick": 221,
-      "type": "house-evolved",
-      "text": "House evolved to Insula"
+      "text": "House evolved to Crude Hut"
     },
     {
       "tick": 251,
       "type": "house-evolved",
-      "text": "House evolved to Hovel"
+      "text": "House evolved to Crude Hut"
     },
     {
-      "tick": 311,
+      "tick": 458,
+      "type": "house-devolved",
+      "text": "House devolved to Vacant Lot"
+    },
+    {
+      "tick": 541,
       "type": "house-evolved",
-      "text": "House evolved to Insula"
+      "text": "House evolved to Crude Hut"
+    },
+    {
+      "tick": 858,
+      "type": "house-devolved",
+      "text": "House devolved to Vacant Lot"
+    },
+    {
+      "tick": 939,
+      "type": "house-evolved",
+      "text": "House evolved to Crude Hut"
     }
   ],
   "lastTickWagesUnpaid": true
