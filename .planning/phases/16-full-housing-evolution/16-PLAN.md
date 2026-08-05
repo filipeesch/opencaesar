@@ -322,7 +322,7 @@ Output: new `housingLive.ts` + `housingMerge.ts`, rewired `housing.ts`/`runner.t
   </read_first>
   <behavior>
     - Test 1 (merge): two adjacent same-level houses at a footprint-gated level merge on the month cadence — survivor footprint grows, combinedPopulation doubles, occupiedTiles re-keyed so buildingAt resolves the survivor on both tiles, absorbed instance removed, 'house-merged' emitted (housing-evolution-live.test.ts 'merge' describe).
-    - Test 2 (devolve): removing a required service/good + holding past toleranceTicks devolves the house and it does not oscillate immediately after (grace — both counters reset) (housing-evolution-live.test.ts 'devolve' describe).
+    - Test 2 (devolve): removing a required SERVICE key (or collapsing desirability below tolerance) + holding past toleranceTicks devolves the house and it does not oscillate immediately after (grace — both counters reset); do NOT remove a goods key — goods-derived satisfied is sticky this phase (foodInventory never decays, cityGoodsAccess is city-stock), so the devolve scenario must invert a service or desirability key (housing-evolution-live.test.ts 'devolve' describe).
     - Test 3 (determinism): a city that evolves AND merges yields byte-identical getStateJson() across chunks 1/7/50 and a save->load round-trip, merged combined population included (housing-evolution-determinism.test.ts).
   </behavior>
   <action>
