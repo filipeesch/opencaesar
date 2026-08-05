@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Map as SimMap } from '../src/sim/map';
 import { SimRunner } from '../src/sim/runner';
+import { BUILDINGS } from '../src/sim/buildings';
 
 describe('SimRunner accessors', () => {
   it('getRatings returns the computed ratings', () => {
@@ -241,5 +242,43 @@ describe('ratings decomposition wired into DerivedSnapshot (RATE-01 tracer)', ()
     expect(d.decomposition.culture.education).toBe(0);
     expect(d.decomposition.culture.entertainment).toBe(0);
     expect(d.decomposition.culture.religion).toBe(0);
+  });
+});
+
+describe('constructionSpend separation and full decomposition (RATE-01)', () => {
+  it('a costly build raises constructionSpend by exactly its cost; operating-balance stays treasury-derived', () => {
+    const m = SimMap.fromLayout(24, 24, () => 'earth');
+    const r = new SimRunner(7, m);
+    for (let x = 0; x <= 8; x++) r.placeBuilding('road', x, 0);
+    r.placeBuilding('road', 0, 1);
+    r.requestRoyalSubsidy();
+    r.tick();
+    const cost = BUILDINGS['library'].cost; // sim-core catalog cost
+    expect(cost).toBeGreaterThan(0);
+    const beforeSpend = r.getDerived().constructionSpend;
+    const res = r.placeBuilding('library', 6, 1);
+    expect(res.ok, JSON.stringify(res)).toBe(true);
+    r.tick(); // let tickDerivedSystems recompute the derived snapshot
+    const after = r.getDerived();
+    expect(after.constructionSpend).toBe(beforeSpend + cost);
+    // The construction bucket carries the spend...
+    expect(after.decomposition.prosperity.construction).toBeGreaterThan(0);
+    // ...while the operating-balance bucket stays purely treasury-health derived
+    // (one-time build cost is never folded in as a second penalty).
+    expect(after.decomposition.prosperity.operatingBalance)
+      .toBe(Math.round(Math.min(1, r.getTreasury() / 2000) * 20));
+  });
+
+  it('getDerived().decomposition exposes all four ratings with buckets clamped 0..100', () => {
+    const r = new SimRunner(55);
+    for (let i = 0; i < 30; i++) r.tick();
+    const D = r.getDerived().decomposition;
+    expect(D).toBeDefined();
+    for (const rating of ['culture', 'prosperity', 'stability', 'favor'] as const) {
+      for (const bucket of Object.values(D[rating])) {
+        expect(bucket).toBeGreaterThanOrEqual(0);
+        expect(bucket).toBeLessThanOrEqual(100);
+      }
+    }
   });
 });

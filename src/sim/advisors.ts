@@ -5,7 +5,7 @@
  * safety, trade). Self-contained and unit-testable.
  */
 import { computeServiceCoverage } from './services';
-import { type CityStats, computeTargets } from './ratings';
+import { type CityStats, computeTargets, type RatingDecomposition } from './ratings';
 import type { TileWater, ReservoirState } from './water';
 import { BUILDINGS } from './buildings';
 import { HOUSE_TIERS } from './config';
@@ -41,6 +41,11 @@ export interface SimSnapshot {
   doctorCoverage: number;
   educationCoverage: number;
   entertainmentCoverage: number;
+  /** RATE-01: live rating decomposition (from getDerived()) — surfaced as a
+   *  pure transform, never a second recompute. */
+  decomposition?: RatingDecomposition;
+  /** RATE-01: lifetime construction spend (from getDerived()). */
+  constructionSpend?: number;
 }
 
 export interface AdvisorDataset {
@@ -113,7 +118,7 @@ export function advisorsFrom(s: SimSnapshot): AdvisorDataset[] {
     doctorCoverage: s.doctorCoverage, educationCoverage: s.educationCoverage,
     entertainmentCoverage: s.entertainmentCoverage, godWorship: s.godWorship,
   });
-  return [
+  const datasets: AdvisorDataset[] = [
     { name: 'population', data: { population: s.population } },
     { name: 'labor', data: { employed: s.employed, jobs: s.jobs, unemployment: Math.max(0, s.jobs - s.employed) } },
     { name: 'finance', data: { treasury: s.treasury, taxRate: s.taxRate, wageRate: s.wageRate } },
@@ -123,6 +128,22 @@ export function advisorsFrom(s: SimSnapshot): AdvisorDataset[] {
     { name: 'education', data: { literacy: Math.round(services.literacy * 100) } },
     { name: 'entertainment', data: { coverage: Math.round(services.entertainment * 100) } },
   ];
+  // RATE-01: surface the decomposition as a flattened pure transform of
+  // getDerived() — never a second recompute.
+  if (s.decomposition) {
+    const buckets: Record<string, number> = {};
+    for (const [rating, factors] of Object.entries(s.decomposition)) {
+      for (const [factor, value] of Object.entries(factors)) {
+        buckets[`${rating}.${factor}`] = value as number;
+      }
+    }
+    datasets.push({ name: 'ratings-decomposition', data: buckets });
+  }
+  if (s.constructionSpend !== undefined) {
+    const ratings = datasets.find((d) => d.name === 'ratings');
+    if (ratings) ratings.data.constructionSpend = s.constructionSpend;
+  }
+  return datasets;
 }
 
 /** Per-tile overlay values keyed by name (task 11.4). */

@@ -191,18 +191,103 @@ function cultureScore(s: CityStats): { value: number; buckets: CultureDecomposit
   };
 }
 
+/**
+ * ONE Prosperity computation. `constructionSpend` is deliberately NOT part of
+ * the operating-balance factor: one-time build cost lands only in the separate
+ * construction bucket (D-02), so expansion is never double-penalized. computeTargets
+ * computes the rating with construction neutral (spend 0); decomposeRatings
+ * supplies the real constructionSpend so the bucket renders.
+ */
+function prosperityScore(s: CityStats, constructionSpend: number): { value: number; buckets: ProsperityDecomposition } {
+  const housing = f(s.housingLevel, false);
+  const patricians = f(s.patricianShare, false);
+  const operatingBalance = f(s.operatingBalance, false);
+  const unemployment = f(s.unemployment, false);
+  const wages = f(s.wagesPaid, false);
+  const trade = f(s.tradeActivity, false);
+  const stability = f(s.longTermStability, false);
+  const debt = f(s.debtBurden, false);
+  const construction = Math.min(15, Math.floor(constructionSpend / 100));
+  const value = clampRating(
+    W.prosperity.base
+      + housing * W.prosperity.housing
+      + patricians * W.prosperity.patricians
+      + operatingBalance * W.prosperity.operatingBalance
+      + (1 - unemployment) * W.prosperity.unemployment
+      + wages * W.prosperity.wages
+      + trade * W.prosperity.trade
+      + stability * W.prosperity.stability
+      + (1 - debt) * W.prosperity.debt
+      + construction,
+  );
+  return {
+    value,
+    buckets: {
+      base: W.prosperity.base,
+      economy: Math.min(20, Math.floor(s.population / 50)),
+      construction,
+      trade: Math.round(trade * W.prosperity.trade),
+      housing: Math.round(housing * W.prosperity.housing),
+      patricians: Math.round(patricians * W.prosperity.patricians),
+      operatingBalance: Math.round(operatingBalance * W.prosperity.operatingBalance),
+      unemployment: Math.round((1 - unemployment) * W.prosperity.unemployment),
+      wages: Math.round(wages * W.prosperity.wages),
+      stability: Math.round(stability * W.prosperity.stability),
+      debt: Math.round((1 - debt) * W.prosperity.debt),
+    },
+  };
+}
+
+/** ONE Stability computation: worse-when-high factors are inverted (1 − factor),
+ *  good-when-high factors credited directly; clamped 0..100. */
+function stabilityScore(s: CityStats): { value: number; buckets: StabilityDecomposition } {
+  const fire = f(s.fireRiskFactor, false);
+  const homelessness = f(s.homelessness, false);
+  const crime = f(s.crimeFactor, false);
+  const protests = f(s.protestFactor, false);
+  const health = f(s.healthCoverage, s.hasHealth);
+  const supply = f(s.supplyLevel, false);
+  const employment = f(s.employmentLevel, false);
+  const collapses = f(s.collapseRiskFactor, false);
+  const residential = f(s.residentialStability, false);
+  const peace = s.hasFood && s.hasWater ? 10 : 0;
+  const value = clampRating(
+    W.stability.base
+      + (1 - fire) * W.stability.fire
+      + (1 - homelessness) * W.stability.homelessness
+      + (1 - crime) * W.stability.crime
+      + (1 - protests) * W.stability.protests
+      + health * W.stability.health
+      + supply * W.stability.supply
+      + employment * W.stability.employment
+      + (1 - collapses) * W.stability.collapses
+      + residential * W.stability.residentialStability
+      + peace,
+  );
+  return {
+    value,
+    buckets: {
+      base: W.stability.base,
+      peace,
+      fire: Math.round((1 - fire) * W.stability.fire),
+      homelessness: Math.round((1 - homelessness) * W.stability.homelessness),
+      crime: Math.round((1 - crime) * W.stability.crime),
+      protests: Math.round((1 - protests) * W.stability.protests),
+      health: Math.round(health * W.stability.health),
+      supply: Math.round(supply * W.stability.supply),
+      employment: Math.round(employment * W.stability.employment),
+      collapses: Math.round((1 - collapses) * W.stability.collapses),
+      residentialStability: Math.round(residential * W.stability.residentialStability),
+    },
+  };
+}
+
 export function computeTargets(s: CityStats): Ratings {
   const culture = cultureScore(s).value;
-  const prosperity =
-    10 +
-    (s.hasFood ? 5 : 0) +
-    (s.hasWater ? 5 : 0) +
-    Math.min(20, Math.floor(s.population / 50)) +
-    (s.treasury > 1000 ? 10 : 0);
-  const stability =
-    10 +
-    (s.hasFood && s.hasWater ? 10 : 0) +
-    (s.hasHealth ? 5 : 0);
+  const prosperity = prosperityScore(s, 0).value;
+  const stability = stabilityScore(s).value;
+  // Favor keeps its legacy additive formula (pinned by the religion/governance
+  // integration tests); its per-factor breakdown is surfaced via decomposeRatings.
   const favor =
     10 + Math.max(0, 20 - Math.floor(s.taxRate * 100));
   return { culture, prosperity, stability, favor };
@@ -230,9 +315,12 @@ export function clampRating(v: number): number {
  * from the running economy for Prosperity (per spec): constructionSpend lands
  * only in the construction bucket, never the operating-balance factor.
  *
- * Culture is computed in the SAME pass as computeTargets (cultureScore). The
- * remaining three ratings' factor buckets are derived from the same CityStats
- * inputs; every value is clamped 0..100 by construction.
+ * Culture/Prosperity/Stability buckets are computed in the SAME pass as
+ * computeTargets (shared score helpers — one computation, never a second
+ * recompute). Favor is broken into its per-spec factors; its rating value is
+ * pinned to the legacy formula plus the run-time worship/festival/governor
+ * bonuses computed by the runner. Every bucket is clamped 0..100 by
+ * construction.
  */
 export function decomposeRatings(
   s: CityStats,
@@ -240,33 +328,8 @@ export function decomposeRatings(
 ): RatingDecomposition {
   return {
     culture: cultureScore(s).buckets,
-    prosperity: {
-      base: W.prosperity.base,
-      economy: Math.min(20, Math.floor(s.population / 50)),
-      construction: Math.min(15, Math.floor(constructionSpend / 100)),
-      trade: s.treasury > 1000 ? 10 : 0,
-      // RATE-01 weighted factor buckets (normalized * weight).
-      housing: Math.round(f(s.housingLevel, false) * W.prosperity.housing),
-      patricians: Math.round(f(s.patricianShare, false) * W.prosperity.patricians),
-      operatingBalance: Math.round(f(s.operatingBalance, true) * W.prosperity.operatingBalance),
-      unemployment: Math.round((1 - f(s.unemployment, false)) * W.prosperity.unemployment),
-      wages: Math.round(f(s.wagesPaid, true) * W.prosperity.wages),
-      stability: Math.round(f(s.longTermStability, true) * W.prosperity.stability),
-      debt: Math.round((1 - f(s.debtBurden, false)) * W.prosperity.debt),
-    },
-    stability: {
-      base: W.stability.base,
-      peace: s.hasFood && s.hasWater ? 10 : 0,
-      fire: Math.round((1 - f(s.fireRiskFactor, false)) * W.stability.fire),
-      homelessness: Math.round((1 - f(s.homelessness, false)) * W.stability.homelessness),
-      crime: Math.round((1 - f(s.crimeFactor, false)) * W.stability.crime),
-      protests: Math.round((1 - f(s.protestFactor, false)) * W.stability.protests),
-      health: Math.round(f(s.healthCoverage, s.hasHealth) * W.stability.health),
-      supply: Math.round(f(s.supplyLevel, true) * W.stability.supply),
-      employment: Math.round(f(s.employmentLevel, true) * W.stability.employment),
-      collapses: Math.round((1 - f(s.collapseRiskFactor, false)) * W.stability.collapses),
-      residentialStability: Math.round(f(s.residentialStability, true) * W.stability.residentialStability),
-    },
+    prosperity: prosperityScore(s, constructionSpend).buckets,
+    stability: stabilityScore(s).buckets,
     favor: {
       base: W.favor.base,
       worship: s.hasReligion ? 10 : 0,

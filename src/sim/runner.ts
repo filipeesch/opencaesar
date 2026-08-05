@@ -149,6 +149,9 @@ export interface DerivedSnapshot {
   /** RATE-01: per-factor decomposition of the four ratings (one computation
    *  with the ratings above — never a second recompute). */
   decomposition: RatingDecomposition;
+  /** RATE-01/D-02: lifetime construction spend (build + route-open costs),
+   *  separated from the Prosperity operating-balance factor. */
+  constructionSpend: number;
 }
 
 export class SimRunner {
@@ -778,6 +781,7 @@ export class SimRunner {
       this.tradeRoutes[cityId] = route;
     }
     this.treasuryAccount.addExpense('other', cost);
+    this.constructionSpend += cost;
     route.enabled = true;
     route.orders = route.orders ?? {};
     route.openYear = Math.floor(this.tickCount / 360);
@@ -842,6 +846,51 @@ export class SimRunner {
     return worship;
   }
 
+  /** RATE-01: average house tier / max tier (0..1) — the Prosperity housing factor. */
+  private avgHousingLevel(): number {
+    const houses = this.buildings.filter((b) => b.house);
+    if (houses.length === 0) return 0;
+    let sum = 0;
+    for (const b of houses) sum += b.house!.tier;
+    return sum / houses.length / Math.max(1, HOUSE_TIERS.length - 1);
+  }
+
+  /** RATE-01: share of high-tier housing (Domus+) — the Prosperity patricians factor. */
+  private patricianShare(): number {
+    const houses = this.buildings.filter((b) => b.house);
+    if (houses.length === 0) return 0;
+    let high = 0;
+    for (const b of houses) if (b.house!.tier >= 3) high += 1;
+    return high / houses.length;
+  }
+
+  /** RATE-01: fraction of trade cities with an enabled route — the Prosperity trade factor. */
+  private tradeActivity(): number {
+    const total = Object.keys(TRADE_CITIES).length;
+    if (total === 0) return 0;
+    let enabled = 0;
+    for (const route of Object.values(this.tradeRoutes)) if (route.enabled) enabled += 1;
+    return Math.min(1, enabled / total);
+  }
+
+  /** RATE-01: granary/farm wheat stock as a fraction of aggregate capacity (0..1). */
+  private supplyLevelFactor(): number {
+    const hosts = this.buildings.filter((b) => b.type === 'granary' || b.type === 'farm');
+    if (hosts.length === 0) return 0;
+    let stock = 0;
+    for (const b of hosts) stock += (b.stock?.wheat ?? 0);
+    const capacity = hosts.length * CONFIG.granaryCapacity;
+    return Math.min(1, stock / Math.max(1, capacity));
+  }
+
+  /** RATE-01: share of settled administrative requests that were rewarded (0..1). */
+  private requestFulfillment(): number {
+    if (this.requestHistory.length === 0) return 0;
+    let rewards = 0;
+    for (const h of this.requestHistory) if (h.outcome === 'reward') rewards += 1;
+    return rewards / this.requestHistory.length;
+  }
+
   private derivedSnapshot(): DerivedSnapshot {
     const population = this.getPopulation();
     const employment = this.getEmployment();
@@ -860,25 +909,6 @@ export class SimRunner {
     // factor inputs so the decomposition reflects real buildings, and
     // decomposeRatings consumes the SAME CityStats — one computation, never a
     // second recompute of the rating.
-    let religionCoverage = 0;
-    for (const v of Object.values(godWorship)) religionCoverage = Math.max(religionCoverage, v ?? 0);
-    const cityStats: CityStats = {
-      population, treasury: this.getTreasury(), taxRate: this.policy.taxRate,
-      hasReligion: has('religion'), hasEntertainment: has('entertainment'), hasEducation: has('education'),
-      hasHealth: has('health'), hasWater: has('water'), hasFood: has('food'),
-      educationCoverage: serviceCoverage.literacy,
-      entertainmentCoverage: serviceCoverage.entertainment,
-      religionCoverage,
-      festivalBoost: this.festivalBoost ? 1 : 0,
-    };
-    const targets = computeTargets(cityStats);
-    const water = new WaterSystem();
-    const well = this.buildings.find((b) => b.type === 'well' || b.type === 'fountain');
-    water.setSources(well ? [{ x: well.x, y: well.y, kind: 'well', active: true, radius: 2 }] : []);
-    const grid = water.compute(this.width, this.height, () => 0);
-    let coveredTiles = 0;
-    for (let y = 0; y < this.height; y++) for (let x = 0; x < this.width; x++) if (grid[y][x].coveredByWell) coveredTiles++;
-
     let fireRisk = 0; let collapseRisk = 0; let crime = 0;
     for (const b of this.buildings) {
       const r = computeRisks({
@@ -890,6 +920,54 @@ export class SimRunner {
       });
       fireRisk = Math.max(fireRisk, r.fireRisk); collapseRisk = Math.max(collapseRisk, r.collapseRisk); crime = Math.max(crime, r.crime);
     }
+    let religionCoverage = 0;
+    for (const v of Object.values(godWorship)) religionCoverage = Math.max(religionCoverage, v ?? 0);
+    const unemploymentRate = population > 0
+      ? Math.max(0, Math.min(1, (population - employment.employed) / population))
+      : 0;
+    const cityStats: CityStats = {
+      population, treasury: this.getTreasury(), taxRate: this.policy.taxRate,
+      hasReligion: has('religion'), hasEntertainment: has('entertainment'), hasEducation: has('education'),
+      hasHealth: has('health'), hasWater: has('water'), hasFood: has('food'),
+      // Culture.
+      educationCoverage: serviceCoverage.literacy,
+      entertainmentCoverage: serviceCoverage.entertainment,
+      religionCoverage,
+      festivalBoost: this.festivalBoost ? 1 : 0,
+      // Prosperity.
+      housingLevel: this.avgHousingLevel(),
+      patricianShare: this.patricianShare(),
+      operatingBalance: Math.min(1, this.getTreasury() / 2000),
+      unemployment: unemploymentRate,
+      wagesPaid: this.lastWagesUnpaid > 0 ? 0 : this.policy.wageRate,
+      tradeActivity: this.tradeActivity(),
+      longTermStability: this.lastWagesUnpaid > 0 ? 0.4 : 0.8,
+      debtBurden: Math.min(1, this.getDebt() / 2000),
+      // Stability.
+      healthCoverage: serviceCoverage.health,
+      fireRiskFactor: fireRisk,
+      crimeFactor: crime,
+      supplyLevel: this.supplyLevelFactor(),
+      employmentLevel: 1 - unemploymentRate,
+      collapseRiskFactor: collapseRisk,
+      residentialStability: this.lastWagesUnpaid > 0 ? 0.3 : 0.7,
+      // Favor (factors without a live source yet keep a neutral baseline so the
+      // bucket always renders).
+      requestsFulfilled: this.requestFulfillment(),
+      giftsGiven: this.governorFavorBonus > 0 ? 0.5 : 0,
+      objectivesMet: this.objective ? 0.5 : 0,
+      tributePaid: 0.5,
+      salaryLevel: this.governor.salaryLevel / Math.max(1, GOVERNOR_SALARY_LEVELS.length - 1),
+      performance: this.lastWagesUnpaid > 0 ? 0.3 : 0.7,
+    };
+    const targets = computeTargets(cityStats);
+    const water = new WaterSystem();
+    const well = this.buildings.find((b) => b.type === 'well' || b.type === 'fountain');
+    water.setSources(well ? [{ x: well.x, y: well.y, kind: 'well', active: true, radius: 2 }] : []);
+    const grid = water.compute(this.width, this.height, () => 0);
+    let coveredTiles = 0;
+    for (let y = 0; y < this.height; y++) for (let x = 0; x < this.width; x++) if (grid[y][x].coveredByWell) coveredTiles++;
+
     const taxes = taxCollected(population, 2, this.policy.taxRate, 1);
     const wages = employment.employed * CONFIG.wagePerWorkerPerTick * this.policy.wageRate;
     const codex = buildCodex();
@@ -905,6 +983,7 @@ export class SimRunner {
       codex: { buildings: codex.filter((e) => e.kind === 'building').length, goods: codex.filter((e) => e.kind === 'commodity').length, services: codex.filter((e) => e.kind === 'service').length, gods: codex.filter((e) => e.kind === 'god').length },
       government: unlockedGov(population).map((g) => g.id),
       decomposition,
+      constructionSpend: this.constructionSpend,
     };
   }
 
@@ -1126,6 +1205,7 @@ export class SimRunner {
     }
 
     this.treasuryAccount.addExpense('other', def.cost);
+    this.constructionSpend += def.cost;
 
     const id = this.nextBuildingId++;
     const building: BuildingInstance = {
