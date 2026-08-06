@@ -240,12 +240,12 @@ describe('food HUD months-of-food & advisor data (AGRI-03, spec §15/§21)', () 
     expect(foodBand(2, true)).toBe('orange');
     expect(foodBand(0.5, true)).toBe('red');
     expect(foodBand(4, false)).toBe('gray');
-      const ind = foodHudIndicator({ availableUnits: 2320, projectedMonthlyConsumption: 400, hasPopulation: true });
-      expect(ind.months).toBeCloseTo(5.8, 5);
-      expect(ind.band).toBe('yellow');
-      expect(ind.icon.length).toBeGreaterThan(0);
-      expect(ind.text).toMatch(/months/);
-    });
+    const ind = foodHudIndicator({ availableUnits: 2320, projectedMonthlyConsumption: 400, hasPopulation: true });
+    expect(ind.months).toBeCloseTo(5.8, 5);
+    expect(ind.band).toBe('yellow');
+    expect(ind.icon.length).toBeGreaterThan(0);
+    expect(ind.text).toMatch(/months/);
+  });
 
   it('derives the HUD indicator from a live sim state — never fabricated', () => {
     // A real live city (farm → granary → market feeds, well waters): under the
