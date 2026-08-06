@@ -49,7 +49,7 @@ import type { CodexEntry, CodexKind, HouseView, CityView, TutorialStepId, Tutori
 import { desirabilityOf, tickHousing } from './housing';
 import { housingLevelName } from '../../data/housing';
 import { effectivePopulation, effectiveWorkers, deriveSatisfied } from './housingLive';
-import { ageOnMonth, netMigration, residentsForHouse, allocateWorkers, wageBand, unemploymentBand, IMPERIAL_WAGE_REFERENCE } from './population';
+import { ageOnMonth, netMigration, residentsForHouse, wageBand, unemploymentBand, IMPERIAL_WAGE_REFERENCE } from './population';
 import { buildLaborSectors, applySectorAssignments, SECTOR_IDS } from './labor';
 import { foodShortageEffects } from './housing';
 import { findMergePartner, mergeProposal, targetFootprint } from './housingMerge';
@@ -2957,8 +2957,10 @@ export class SimRunner {
    * by sector priority 1..5 (LABOR_SECTOR_PRIORITY) — replacing the legacy
    * greedy placement-order loop. Pinned sectors get a RUNNER-LEVEL reserve
    * (their prior staffing is set aside before the general pool split — the weak
-   * pure-function pinned branch of allocateWorkers is NOT relied on, Pitfall 2);
-   * paused sectors report needed=0 and their workers spill to other sectors.
+   * pure-function pinned branch of allocateWorkers is NOT relied on, Pitfall 2)
+   * and then participate in the general pass, so pinning is a guaranteed floor,
+   * never an upper cap (WR-01); paused sectors report needed=0 and their
+   * workers spill to other sectors.
    * Every labor.test.ts invariant is preserved: assigned ≤ pool, per-building
    * assigned ≤ required, surplus pool fills all jobs (activation via setActive
    * exactly as before). Deterministic — placement order, no RNG/wall-clock.
@@ -2978,7 +2980,9 @@ export class SimRunner {
     // 1) Reserve-guard (Pitfall 2): a pinned sector keeps its prior assigned
     //    (bounded by its needed and the remaining pool) — set aside BEFORE the
     //    general pool split. The pure-function pinned branch of allocateWorkers
-    //    is NOT relied upon (it would go negative on an empty pool).
+    //    is NOT relied upon: it would staff a pinned sector up to needed on a
+    //    growing pool, while the runner reserve must preserve prior staffing
+    //    (the per-sector tracking the pure branch has no access to).
     const ordered = [...sectors].sort((a, b) => a.priority - b.priority);
     let remaining = pool;
     for (const s of ordered) {
@@ -2988,12 +2992,18 @@ export class SimRunner {
       s.assigned = give;
       remaining -= give;
     }
-    // 2) Allocate the leftover over the unpinned ordering (the pure function
-    //    sorts by priority 1..5); pinned sectors keep exactly their reserve.
-    allocateWorkers(
-      sectors.filter((s) => !s.pinned),
-      remaining,
-    );
+    // 2) Allocate the leftover over the priority ordering — pinned sectors
+    //    INCLUDED (WR-01): a pinned sector is a guaranteed floor, not an upper
+    //    cap, so one pinned while unstaffed regains workers once the pool grows
+    //    ("surplus fills all" holds for it too), while its reserve is never
+    //    reduced because the pass only adds to each sector's remaining demand.
+    for (const s of ordered) {
+      if (remaining <= 0) break;
+      if (s.assigned >= s.needed) continue;
+      const assign = Math.min(s.needed - s.assigned, remaining);
+      s.assigned += assign;
+      remaining -= assign;
+    }
 
     // 3) Distribute to buildings (per-building caps respected) + activate.
     applySectorAssignments(this.buildings, sectors);
