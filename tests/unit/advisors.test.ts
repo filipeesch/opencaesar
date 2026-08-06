@@ -8,6 +8,7 @@ import {
 } from '../../src/sim/advisors';
 import { SimRunner } from '../../src/sim/runner';
 import { Map as SimMap } from '../../src/sim/map';
+import { advisorPanels } from '../../src/game/advisors';
 import { productionChainMap, buildProductionCity, foodChainMap, buildFoodCity, place } from '../helpers';
 import type { BuildingInstance } from '../../src/sim/walkers';
 import {
@@ -239,12 +240,12 @@ describe('food HUD months-of-food & advisor data (AGRI-03, spec §15/§21)', () 
     expect(foodBand(2, true)).toBe('orange');
     expect(foodBand(0.5, true)).toBe('red');
     expect(foodBand(4, false)).toBe('gray');
-    const ind = foodHudIndicator({ availableUnits: 2320, projectedMonthlyConsumption: 400, hasPopulation: true });
-    expect(ind.months).toBeCloseTo(5.8, 5);
-    expect(ind.band).toBe('yellow');
-    expect(ind.icon.length).toBeGreaterThan(0);
-    expect(ind.text).toMatch(/months/);
-  });
+      const ind = foodHudIndicator({ availableUnits: 2320, projectedMonthlyConsumption: 400, hasPopulation: true });
+      expect(ind.months).toBeCloseTo(5.8, 5);
+      expect(ind.band).toBe('yellow');
+      expect(ind.icon.length).toBeGreaterThan(0);
+      expect(ind.text).toMatch(/months/);
+    });
 
   it('derives the HUD indicator from a live sim state — never fabricated', () => {
     // A real live city (farm → granary → market feeds, well waters): under the
@@ -483,5 +484,45 @@ describe('production advisor (PROD-02)', () => {
     expect(row.destinationKind).toBe('warehouse');
     expect(row.destination).toBe(String(warehouse.id));
     expect(warehouse.stock.pottery).toBe(40);
+  });
+});
+
+// ============================================================================
+// Phase 19.1 (POP-04) — labor advisor wage/unemployment rows (Wave 0 scaffold;
+// RED until 19.1-04-01 lands the DerivedSnapshot wageBand/unemploymentBand).
+// ============================================================================
+describe('labor panel wage + unemployment band rows (POP-04, 19.1-04-01 target API)', () => {
+  it('renders Wage vs Imperial + Unemployment Band rows traced to getDerived()', () => {
+    const r = new SimRunner(42, foodChainMap());
+    buildFoodCity(r);
+    r.setPolicy(0.1, 0.2);
+    for (let i = 0; i < 120; i++) r.tick();
+    const derived = r.getDerived();
+    expect(typeof derived.wageBand).toBe('object');
+    expect(typeof derived.unemploymentBand).toBe('object');
+
+    const panels = advisorPanels(r);
+    const labor = panels.find((p) => p.id === 'labor');
+    expect(labor).toBeDefined();
+    const wage = labor!.rows.find((row) => row.label === 'Wage vs Imperial');
+    const unemp = labor!.rows.find((row) => row.label === 'Unemployment Band');
+    expect(wage).toBeDefined();
+    expect(unemp).toBeDefined();
+    // Values derive from getDerived() — never fabricated strings (composer rule).
+    const computedBand = derived.wageBand.band;
+    const computedPct = Math.round(derived.wageBand.relative * 100);
+    expect(wage!.value).toBe(`${computedBand} (${computedPct}%)`);
+    expect(unemp!.value).toBe(derived.unemploymentBand.label);
+  });
+
+  it('composes without throwing for an empty city (population === 0, Pitfall 5)', () => {
+    const r = new SimRunner(42, foodChainMap());
+    for (let i = 0; i < 40; i++) r.tick(); // no buildings
+    expect(r.getDerived().population).toBe(0);
+    const panels = advisorPanels(r); // must not throw
+    const labor = panels.find((p) => p.id === 'labor');
+    expect(labor).toBeDefined();
+    expect(labor!.rows.map((row) => row.label)).toContain('Wage vs Imperial');
+    expect(labor!.rows.map((row) => row.label)).toContain('Unemployment Band');
   });
 });
