@@ -189,6 +189,13 @@ export function advisorPanels(source: AdvisorSource): AdvisorPanel[] {
   const emp = source.getEmployment();
   const fillPct = emp.totalJobs > 0 ? Math.round((emp.employed / emp.totalJobs) * 100) : 0;
   const unstaffed = state.buildings.find((b) => b.workersRequired > 0 && b.workersAssigned === 0);
+  // POP-04: urban wage/unemployment-band rows — pure projections of
+  // source.getDerived() (composer rule: never fabricate a value). Guarded with
+  // optional chaining so empty cities (no buildings, population 0) compose
+  // without throwing (Pitfall 5), and the wageBand total function still yields
+  // below/at/above vs IMPERIAL_WAGE_REFERENCE.
+  const wageBand = derived.wageBand;
+  const unemploymentBand = derived.unemploymentBand;
   const labor: AdvisorPanel = {
     id: 'labor',
     title: 'Labor',
@@ -197,6 +204,14 @@ export function advisorPanels(source: AdvisorSource): AdvisorPanel[] {
       { label: 'Unemployed', value: n(emp.unemployed) },
       { label: 'Total Jobs', value: n(emp.totalJobs) },
       { label: 'Fill', value: dnr(fillPct / 100), tone: fillPct >= 100 ? 'ok' : fillPct < 50 ? 'bad' : undefined },
+      ...(wageBand
+        ? [{
+            label: 'Wage vs Imperial',
+            value: `${wageBand.band} (${Math.round(wageBand.relative * 100)}%)`,
+            tone: wageBand.band === 'below' ? 'bad' : 'ok',
+          }]
+        : []),
+      ...(unemploymentBand ? [{ label: 'Unemployment Band', value: unemploymentBand.label }] : []),
     ],
     action: unstaffed ? { kind: 'locate', id: unstaffed.id } : null,
   };

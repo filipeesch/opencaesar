@@ -49,7 +49,7 @@ import type { CodexEntry, CodexKind, HouseView, CityView, TutorialStepId, Tutori
 import { desirabilityOf, tickHousing } from './housing';
 import { housingLevelName } from '../../data/housing';
 import { effectivePopulation, effectiveWorkers, deriveSatisfied } from './housingLive';
-import { ageOnMonth, netMigration, residentsForHouse, allocateWorkers } from './population';
+import { ageOnMonth, netMigration, residentsForHouse, allocateWorkers, wageBand, unemploymentBand, IMPERIAL_WAGE_REFERENCE } from './population';
 import { buildLaborSectors, applySectorAssignments, SECTOR_IDS } from './labor';
 import { foodShortageEffects } from './housing';
 import { findMergePartner, mergeProposal, targetFootprint } from './housingMerge';
@@ -182,6 +182,15 @@ export interface DerivedSnapshot {
   immigration?: number;
   emigration?: number;
   homeless?: number;
+  /** POP-04: urban wage policy vs the module-local imperial reference
+   *  (IMPERIAL_WAGE_REFERENCE) — a pure projection of this.policy.wageRate
+   *  (total function; see population.ts wageBand). Golden-safe: getStateJson
+   *  serializes getState, never this snapshot. */
+  wageBand: { band: 'below' | 'at' | 'above'; relative: number };
+  /** POP-04: the derived unemployment rate bucketed into labelled tiers
+   *  (population.ts unemploymentBand) — a pure projection of the already
+   *  computed unemploymentRate, never a second recompute. */
+  unemploymentBand: { label: string; rate: number };
 }
 
 export class SimRunner {
@@ -1541,6 +1550,14 @@ export class SimRunner {
       immigration: this.lastMigration.immigration,
       emigration: this.lastMigration.emigration,
       homeless: this.lastMigration.homeless,
+      // POP-04: urban wage/employment-band reports — pure projections of the
+      // live policy + this tick's already-computed unemploymentRate (never a
+      // second recompute), both total functions (empty-city safe).
+      wageBand: wageBand({
+        wageRate: this.policy.wageRate,
+        imperialReference: IMPERIAL_WAGE_REFERENCE,
+      }),
+      unemploymentBand: unemploymentBand(unemploymentRate),
     };
   }
 
