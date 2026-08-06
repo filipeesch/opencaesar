@@ -351,4 +351,8 @@ Plans:
   1. Saves round-trip deterministically with migration and validation.
   2. Graphics/audio/gameplay/accessibility options are functional and persisted.
 
-**Plans**: TBD
+**Plans**: 1 (1 planned)
+
+Plans:
+
+- [ ] 19-PLAN — versioned save/load (SAVE_VERSION + additive migrateSave + typed validateSave via src/sim/saveCodec.ts, loadSavedGame() + HomeScene/MainScene hookup, determinism round-trip with the codec) + functional persisted options/accessibility (src/game/options.ts rcb.options, RenderConfig at boot, gameSpeedDefault boot speed, text-size/reduced-motion CSS seams, thin audio seam, Settings drawer in the HUD, settings e2e) (PERS-01/PERS-02)
