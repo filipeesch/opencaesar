@@ -6,14 +6,22 @@
 import Phaser from 'phaser';
 import { BUILDINGS } from '../../sim/buildings';
 import { HOUSE_TIERS } from '../../sim/config';
-import { foodHudFromState } from '../../sim/advisors';
+import { housingLevelName } from '../../../data/housing';
+import {
+  foodHudFromState, residenceInspection, productionInspection,
+  storageInspection, marketInspection, walkerInspection,
+} from '../../sim/advisors';
+import { WORKSHOP_BUILDING_TYPES, EXTRACTION_BUILDING_TYPES } from '../../sim/production';
 import { advisorPanels, ADVISOR_TAB_ORDER } from '../advisors';
 import type { AdvisorAction, OverlayId } from '../advisors';
 import { OVERLAY_RAMPS } from '../palette';
 import type { SimRunner } from '../../sim/runner';
-import type { BuildingCategory, BuildingState, BuildingType } from '../../sim/types';
+import type { BuildingCategory, BuildingState, BuildingType, SimState, Vec2, WalkerState } from '../../sim/types';
+import type { BuildingInstance, WalkerInstance } from '../../sim/walkers';
 import { writeSave } from '../save';
 import type { MainScene } from './MainScene';
+
+type InspectorKind = 'house' | 'production' | 'storage' | 'market' | 'other';
 
 const BUILD_ORDER: readonly BuildingType[] = ['road', 'house', 'garden', 'well', 'fountain', 'farm', 'orchard', 'granary', 'market', 'engineer_post', 'fire_station', 'clinic', 'school', 'library', 'temple', 'theatre', 'forum'];
 const CATEGORIES: readonly BuildingCategory[] = ['roads', 'housing', 'food', 'water', 'infrastructure', 'engineering', 'safety', 'health', 'education', 'entertainment', 'religion', 'government', 'ornament'];
@@ -27,6 +35,10 @@ export class HUDScene extends Phaser.Scene {
   private activeCategory: CategoryFilter = 'all';
   /** Building id currently shown in the detail popup, or null when closed. */
   private inspectId: number | null = null;
+  /** Same-kind entity ids for the inspector Next/Prev cycling (stable id order). */
+  private inspectList: number[] = [];
+  /** Index into inspectList of the currently shown entity (-1 for 'other'). */
+  private inspectIndex = -1;
   /** Build-palette buttons, tracked for the live unaffordable-disabled state. */
   private buildBtns: HTMLButtonElement[] = [];
   /** Whether the advisors drawer is open (control bar → drawer). */
@@ -417,6 +429,24 @@ export class HUDScene extends Phaser.Scene {
         if (building) this.renderPopup(building);
       }
     });
+    this.game.events.on('hud-walker-inspect', (id: number | null) => {
+      if (id === null) {
+        this.closePopup();
+      } else {
+        this.inspectId = null;
+        const inspector = this.main?.runner.getInspector(id);
+        if (inspector?.kind === 'walker' && inspector.walker) {
+          const state = this.main!.runner.getState();
+          // Same-kind cycling (UI-04): walkers of the same type, stable id order.
+          this.inspectList = state.walkers
+            .filter((w) => w.type === inspector.walker!.type)
+            .map((w) => w.id)
+            .sort((a, b) => a - b);
+          this.inspectIndex = this.inspectList.indexOf(id);
+          this.renderWalkerInspector(inspector.walker);
+        }
+      }
+    });
     this.game.events.on('hud-build-mode', () => {
       this.closePopup();
       this.els.build.querySelectorAll('.hud-build-btn').forEach((btn) => {
@@ -612,8 +642,10 @@ export class HUDScene extends Phaser.Scene {
 
   private closePopup(): void {
     this.inspectId = null;
+    this.inspectList = [];
+    this.inspectIndex = -1;
     this.els.popup.style.display = 'none';
-    this.els.popup.innerHTML = '';
+    this.els.popup.textContent = '';
   }
 
   private saveGame(): void {
@@ -628,80 +660,260 @@ export class HUDScene extends Phaser.Scene {
       this.closePopup();
       return;
     }
+    const kind = this.inspectorKindOf(building);
+    const state = this.main!.runner.getState();
+    // Same-kind cycling (UI-04): stable entity-id order.
+    this.inspectList = this.kindEntityIds(state, kind);
+    this.inspectIndex = kind === 'other' ? -1 : this.inspectList.indexOf(building.id);
+    this.renderInspectorShell(this.inspectorTitle(building), (body) => this.renderBuildingRows(building, body));
+  }
+
+  /** Render the walker inspector popup (opened via hud-walker-inspect). */
+  private renderWalkerInspector(walker: WalkerState): void {
+    const inspector = this.main?.runner.getInspector(walker.id);
+    const internals = inspector?.kind === 'walker' ? (inspector.internals as WalkerInstance | undefined) : undefined;
+    const stepsUsed = internals?.stepsTaken ?? 0;
+    const maxSteps = Math.max(1, walker.lifetime);
+    const insp = walkerInspection(
+      walker.id, walker.x, walker.y, walker.state, stepsUsed, maxSteps, internals,
+    ) as Record<string, unknown>;
+    this.renderInspectorShell(`Walker ${walker.type}`, (body) => {
+      const rows: [string, unknown][] = [
+        ['State', insp.status ?? walker.state],
+        ['Type', insp.type ?? walker.type],
+        ['Origin', insp.origin ? `${(insp.origin as Vec2).x},${(insp.origin as Vec2).y}` : '—'],
+        ['Path Length', insp.path ? String((insp.path as unknown[]).length) : '0'],
+        ['Carried', String(insp.carriedAmount ?? 0)],
+        ['Target', String(insp.targetBuildingId ?? '—')],
+      ];
+      for (const [label, value] of rows) appendRow(body, label, String(value));
+    });
+  }
+
+  /** Build the shared popup shell (header + body + inspector nav). The header
+   *  title/close and every body row are created via createElement/textContent —
+   *  sim-derived strings never hit innerHTML (T-18-01). */
+  private renderInspectorShell(
+    title: string,
+    bodyFn: (body: HTMLElement) => void,
+  ): void {
     const popup = this.els.popup;
-    const rows: string[] = [];
-    const status = (ok: boolean) => (ok ? '<span class="ok">Yes</span>' : '<span class="bad">No</span>');
+    popup.textContent = '';
+
+    const header = document.createElement('div');
+    header.className = 'hud-popup-header';
+    const titleEl = document.createElement('span');
+    titleEl.className = 'hud-popup-title';
+    titleEl.textContent = title;
+    const close = document.createElement('button');
+    close.className = 'hud-popup-close';
+    close.dataset.testid = 'popup-close';
+    close.setAttribute('aria-label', 'Close');
+    close.textContent = '×';
+    close.addEventListener('click', () => this.closePopup());
+    header.append(titleEl, close);
+    popup.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'hud-popup-body';
+    bodyFn(body);
+    popup.appendChild(body);
+
+    popup.appendChild(this.buildInspectorNav());
+    popup.style.display = 'block';
+  }
+
+  /** Enriched rows per inspector kind, fed from getInspector internals. */
+  private renderBuildingRows(building: BuildingState, body: HTMLElement): void {
+    const inspector = this.main?.runner.getInspector(building.id);
+    const internals = inspector?.internals as BuildingInstance | undefined;
+    const ok = (b: boolean): string => (b ? 'Yes' : 'No');
+    const cap = (v: number): string => String(Math.round(v * 100)) + '%';
 
     if (building.house) {
       const h = building.house;
-      rows.push(row('Tier', `${HOUSE_TIERS[h.tier].name} (${h.tier + 1}/5)`));
-      rows.push(row('Population', `${h.populationCapacity}`));
-      rows.push(row('Food', status(h.foodCooldown > 0)));
-      rows.push(row('Water', status(h.waterCooldown > 0)));
-      rows.push(row('Labor', status(h.laborCooldown > 0)));
-      rows.push(row('Desirability', `${h.desirability}`));
-      const happiness = (h as { happiness?: number }).happiness;
-      if (typeof happiness === 'number') {
-        rows.push(row('Happiness', `${happiness}`));
+      const houseInternals = internals?.house;
+      const safety = internals?.safety;
+      const insp = residenceInspection(
+        h.populationCapacity, h.populationCapacity, 'plebeian', [],
+        {},
+        { house: houseInternals, safety, happiness: h.happiness, desirability: h.desirability },
+      );
+      const lvl = insp.level != null ? Number(insp.level) : h.level;
+      appendRow(body, 'Level', `${lvl} — ${housingLevelName(lvl)}`);
+      appendRow(body, 'Tier', `${HOUSE_TIERS[h.tier].name} (${h.tier + 1}/5)`);
+      if (typeof insp.satisfiedTicks === 'number') appendRow(body, 'Satisfied Ticks', String(insp.satisfiedTicks));
+      appendRow(body, 'Population', String(h.populationCapacity));
+      appendRow(body, 'Food', ok(h.foodCooldown > 0));
+      appendRow(body, 'Water', ok(h.waterCooldown > 0));
+      appendRow(body, 'Labor', ok(h.laborCooldown > 0));
+      if (houseInternals?.civic) {
+        appendRow(body, 'Health', String(Math.round(houseInternals.civic.health)));
+        appendRow(body, 'Literacy', String(Math.round(houseInternals.civic.literacy)));
+        appendRow(body, 'Entertainment', String(Math.round(houseInternals.civic.entertainment)));
       }
-    } else {
-      rows.push(row('Workers', `${building.workersAssigned}/${building.workersRequired}`));
-      rows.push(row('Active', status(building.active)));
-      const stock = building.stock.wheat;
-      if (building.type === 'granary') {
-        rows.push(row('Wheat', `${stock ?? 0}/${BUILDINGS.granary.storageCapacity ?? 0}`));
-      } else if (building.type === 'farm') {
-        rows.push(row('Wheat', `${Math.floor(stock ?? 0)}/${BUILDINGS.farm.production?.localCapacity ?? 0}`));
+      if (insp.foodInventory && typeof insp.foodInventory === 'object') {
+        const fi = insp.foodInventory as Record<string, number>;
+        for (const [g, v] of Object.entries(fi)) appendRow(body, `${g} stock`, String(Math.floor(v)));
       }
+      if (safety) {
+        appendRow(body, 'Fire', safety.fire);
+        appendRow(body, 'Danger', ok(safety.danger));
+        appendRow(body, 'Collapse Risk', cap(safety.collapseRisk));
+        appendRow(body, 'Crime', cap(safety.crime));
+      }
+      appendRow(body, 'Desirability', String(h.desirability));
+      if (typeof insp.happiness === 'number') appendRow(body, 'Happiness', String(insp.happiness));
+      return;
     }
 
-    popup.innerHTML = `
-      <div class="hud-popup-header">
-        <span class="hud-popup-title">${BUILDINGS[building.type].name}</span>
-        <button class="hud-popup-close" data-testid="popup-close" aria-label="Close">×</button>
-      </div>
-      ${rows.join('')}
-    `;
-    popup.style.display = 'block';
-    popup.querySelector('.hud-popup-close')?.addEventListener('click', () => this.closePopup());
-    popup.appendChild(this.buildInspectorNav(building));
+    if (WORKSHOP_BUILDING_TYPES[building.type] || EXTRACTION_BUILDING_TYPES[building.type]) {
+      const insp = productionInspection(
+        {}, { ...building.stock }, building.active ? 'working' : 'blocked',
+        {
+          production: internals?.production, active: building.active,
+          workersAssigned: building.workersAssigned, workersRequired: building.workersRequired,
+          laborConnected: building.laborConnected,
+        },
+      );
+      appendRow(body, 'Workers', `${building.workersAssigned}/${building.workersRequired}`);
+      appendRow(body, 'Active', ok(building.active));
+      appendRow(body, 'Labor Connected', ok(building.laborConnected));
+      appendRow(body, 'Status', String(insp.status ?? (building.active ? 'working' : 'blocked')));
+      appendRow(body, 'Blocked', String(insp.blocked ?? false));
+      for (const [g, v] of Object.entries(insp.inputs ?? {})) appendRow(body, `In ${g}`, String(Math.floor(Number(v))));
+      for (const [g, v] of Object.entries(insp.output ?? {})) appendRow(body, `Out ${g}`, String(Math.floor(Number(v))));
+      return;
+    }
+
+    if (building.type === 'market') {
+      const insp = marketInspection(
+        { ...building.stock }, 2,
+        { workersAssigned: building.workersAssigned, housesServed: 0, enabled: [] },
+      );
+      appendRow(body, 'Workers', `${building.workersAssigned}/${building.workersRequired}`);
+      appendRow(body, 'Active', ok(building.active));
+      for (const [g, v] of Object.entries(insp.inventory ?? {})) appendRow(body, g, String(Math.floor(Number(v))));
+      return;
+    }
+
+    if (building.type === 'granary' || building.type === 'warehouse') {
+      const slotCap = BUILDINGS[building.type]?.storageCapacity ?? 0;
+      const used = Object.values(building.stock).reduce((a, v) => a + (v ?? 0), 0);
+      storageInspection({ ...building.stock }, Math.min(slotCap, Math.floor(used)), slotCap);
+      appendRow(body, 'Workers', `${building.workersAssigned}/${building.workersRequired}`);
+      appendRow(body, 'Active', ok(building.active));
+      appendRow(body, 'Used', String(Math.floor(used)));
+      appendRow(body, 'Capacity', String(slotCap));
+      for (const [g, v] of Object.entries(building.stock)) appendRow(body, g, String(Math.floor(v)));
+      return;
+    }
+
+    // Generic fallback (farm, garden, well, service buildings…).
+    appendRow(body, 'Workers', `${building.workersAssigned}/${building.workersRequired}`);
+    appendRow(body, 'Active', ok(building.active));
+    const stock = building.stock;
+    if (building.type === 'farm') {
+      appendRow(body, 'Wheat', `${Math.floor(stock.wheat ?? 0)}/${BUILDINGS.farm.production?.localCapacity ?? 0}`);
+    }
+    for (const [g, v] of Object.entries(stock)) if (g !== 'wheat') appendRow(body, g, String(Math.floor(v)));
   }
 
-  /**
-   * The inspector Next ◀/▶ controller row. Populated as placeholder buttons that
-   * are disabled while no same-kind navigation exists; 18-04-02 wires the
-   * same-kind cycling handlers. Rendered via createElement/textContent — no
-   * interpolation of sim-derived strings.
-   */
-  private buildInspectorNav(building: BuildingState): HTMLElement {
+  /** The inspector Next ◀/▶ controller row (wired cycling, UI-04). */
+  private buildInspectorNav(): HTMLElement {
     const nav = document.createElement('div');
     nav.className = 'inspector-nav';
     const prev = document.createElement('button');
     prev.dataset.testid = 'inspector-prev';
     prev.textContent = '◀';
     prev.setAttribute('aria-label', 'Previous');
-    prev.disabled = true;
+    prev.addEventListener('click', () => this.navInspector(-1));
     const label = document.createElement('span');
     label.className = 'inspector-nav-label';
-    label.textContent = this.inspectorNavLabel(building);
+    label.dataset.testid = 'inspector-nav-label';
+    label.textContent = this.inspectorNavLabel();
     const next = document.createElement('button');
     next.dataset.testid = 'inspector-next';
     next.textContent = '▶';
     next.setAttribute('aria-label', 'Next');
-    next.disabled = true;
+    next.addEventListener('click', () => this.navInspector(1));
     nav.append(prev, label, next);
+    prev.disabled = this.inspectList.length < 2 || this.inspectIndex <= 0;
+    next.disabled = this.inspectList.length < 2 || this.inspectIndex < 0 || this.inspectIndex >= this.inspectList.length - 1;
     return nav;
   }
 
-  /** The same-kind descriptor shown between the inspector nav buttons. */
-  private inspectorNavLabel(building: BuildingState): string {
-    if (building.house) return `Residence ${building.id}`;
-    return `${BUILDINGS[building.type].name} ${building.id}`;
+  /** The same-kind position shown between the inspector nav buttons. */
+  private inspectorNavLabel(): string {
+    if (this.inspectList.length === 0 || this.inspectIndex < 0) return '—';
+    return `${this.inspectIndex + 1}/${this.inspectList.length}`;
+  }
+
+  /** Cycle to the previous/next same-kind entity and re-render. */
+  private navInspector(dir: number): void {
+    if (this.inspectList.length === 0) return;
+    const nextIndex = this.inspectIndex + dir;
+    if (nextIndex < 0 || nextIndex >= this.inspectList.length) return;
+    const id = this.inspectList[nextIndex];
+    const inspector = this.main?.runner.getInspector(id);
+    if (!inspector) return;
+    if (inspector.kind === 'building' && inspector.building) {
+      this.inspectId = id;
+      this.inspectIndex = nextIndex;
+      this.renderPopup(inspector.building);
+    } else if (inspector.kind === 'walker' && inspector.walker) {
+      this.inspectId = null;
+      this.inspectIndex = nextIndex;
+      this.renderWalkerInspector(inspector.walker);
+    }
+  }
+
+  /** Same-kind entity ids in stable id order for Next/Prev cycling. */
+  private kindEntityIds(state: SimState, kind: InspectorKind): number[] {
+    switch (kind) {
+      case 'house':
+        return state.buildings.filter((b) => b.house).map((b) => b.id).sort((a, b) => a - b);
+      case 'production':
+        return state.buildings
+          .filter((b) => WORKSHOP_BUILDING_TYPES[b.type] || EXTRACTION_BUILDING_TYPES[b.type])
+          .map((b) => b.id)
+          .sort((a, b) => a - b);
+      case 'storage':
+        return state.buildings
+          .filter((b) => b.type === 'granary' || b.type === 'warehouse')
+          .map((b) => b.id)
+          .sort((a, b) => a - b);
+      case 'market':
+        return state.buildings.filter((b) => b.type === 'market').map((b) => b.id).sort((a, b) => a - b);
+      default:
+        return [];
+    }
+  }
+
+  private inspectorKindOf(building: BuildingState): InspectorKind {
+    if (building.house) return 'house';
+    if (building.type === 'market') return 'market';
+    if (building.type === 'granary' || building.type === 'warehouse') return 'storage';
+    if (WORKSHOP_BUILDING_TYPES[building.type] || EXTRACTION_BUILDING_TYPES[building.type]) return 'production';
+    return 'other';
+  }
+
+  private inspectorTitle(building: BuildingState): string {
+    return BUILDINGS[building.type].name;
   }
 }
 
-function row(label: string, value: string): string {
-  return `<div class="row"><span>${label}</span><b>${value}</b></div>`;
+/** Append a label/value row to the popup body via createElement + textContent
+ *  (sim-derived strings never hit innerHTML — T-18-01). */
+function appendRow(parent: HTMLElement, label: string, value: string): void {
+  const rowEl = document.createElement('div');
+  rowEl.className = 'row';
+  const lab = document.createElement('span');
+  lab.textContent = label;
+  const val = document.createElement('b');
+  val.textContent = value;
+  rowEl.append(lab, val);
+  parent.appendChild(rowEl);
 }
 
 /** Overlay bar toggle definitions (UI-03, locked shortcuts W/F/R/C/D + X). */

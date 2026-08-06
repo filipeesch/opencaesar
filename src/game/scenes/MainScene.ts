@@ -585,7 +585,9 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
-  /** Emit the building at (tx, ty) for the HUD popup, or null for empty terrain. */
+  /** Emit the building at (tx, ty) for the HUD popup, a walker on that tile, or
+   *  null for empty terrain. The single click-through path — never broken by the
+   *  overlay layer (T-18-04). */
   private emitInspect(tx: number, ty: number): void {
     const state = this.runner.getState();
     const building = state.buildings.find((b) => {
@@ -594,7 +596,19 @@ export class MainScene extends Phaser.Scene {
       return inX && inY;
     });
     // Roads have no detail popup (design D4) — treat them like empty terrain.
-    this.game.events.emit('hud-inspect', building && building.type !== 'road' ? building.id : null);
+    if (building && building.type !== 'road') {
+      this.game.events.emit('hud-inspect', building.id);
+      return;
+    }
+    // A walker on the clicked tile (or its target tile) opens the walker inspector.
+    const walker = state.walkers.find(
+      (w) => (w.x === tx && w.y === ty) || (w.next != null && w.next.x === tx && w.next.y === ty),
+    );
+    if (walker) {
+      this.game.events.emit('hud-walker-inspect', walker.id);
+      return;
+    }
+    this.game.events.emit('hud-inspect', null);
   }
 
   private updateGhost(): void {
