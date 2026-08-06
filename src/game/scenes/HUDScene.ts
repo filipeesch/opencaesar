@@ -778,10 +778,18 @@ export class HUDScene extends Phaser.Scene {
     }
 
     if (WORKSHOP_BUILDING_TYPES[building.type] || EXTRACTION_BUILDING_TYPES[building.type]) {
+      // WR-02: feed the projection the LIVE production internals (real inputs/
+      // output) instead of fabricated empties, and never relabel stock as output.
+      const p = internals?.production;
+      const liveStatus = p
+        ? (p.active ? (p.blocked ? 'blocked' : 'working') : 'blocked')
+        : (building.active ? 'working' : 'blocked');
       const insp = productionInspection(
-        {}, { ...building.stock }, building.active ? 'working' : 'blocked',
+        { ...(p?.inputs ?? {}) },
+        { ...(p?.output ?? building.stock) },
+        liveStatus,
         {
-          production: internals?.production, active: building.active,
+          production: p, active: building.active,
           workersAssigned: building.workersAssigned, workersRequired: building.workersRequired,
           laborConnected: building.laborConnected,
         },
@@ -789,7 +797,7 @@ export class HUDScene extends Phaser.Scene {
       appendRow(body, 'Workers', `${building.workersAssigned}/${building.workersRequired}`);
       appendRow(body, 'Active', ok(building.active));
       appendRow(body, 'Labor Connected', ok(building.laborConnected));
-      appendRow(body, 'Status', String(insp.status ?? (building.active ? 'working' : 'blocked')));
+      appendRow(body, 'Status', String(insp.status ?? liveStatus));
       appendRow(body, 'Blocked', String(insp.blocked ?? false));
       for (const [g, v] of Object.entries(insp.inputs ?? {})) appendRow(body, `In ${g}`, String(Math.floor(Number(v))));
       for (const [g, v] of Object.entries(insp.output ?? {})) appendRow(body, `Out ${g}`, String(Math.floor(Number(v))));
