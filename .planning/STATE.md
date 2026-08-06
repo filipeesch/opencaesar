@@ -3,27 +3,27 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Complete OpenCaesar
 current_phase: 18
-current_phase_name: Management UI
-status: planning
-stopped_at: Completed 17-17-PLAN.md
-last_updated: "2026-08-05T22:02:07.122Z"
-last_activity: 2026-08-05
-last_activity_desc: Phase 17 complete, transitioned to Phase 18
+current_phase_name: management-ui
+status: verifying
+stopped_at: Completed 18-18-PLAN.md
+last_updated: "2026-08-06T01:00:23.802Z"
+last_activity: 2026-08-06
+last_activity_desc: Phase 18 execution started
 progress:
-  total_phases: 17
-  completed_phases: 17
-  total_plans: 31
-  completed_plans: 31
+  total_phases: 18
+  completed_phases: 18
+  total_plans: 32
+  completed_plans: 32
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 18 — Management UI
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-08-05 — Phase 17 complete, transitioned to Phase 18
+Phase: 18 (management-ui) — EXECUTING
+Plan: 1 of 1
+Status: Phase complete — ready for verification
+Last activity: 2026-08-06 — Phase 18 execution started
 
 ## Performance Metrics
 
@@ -32,6 +32,7 @@ Last activity: 2026-08-05 — Phase 17 complete, transitioned to Phase 18
 | Phase 15 P15-plan | 15900 | 7 tasks | 19 files |
 | Phase 16 P16-plan | 95 | 7 tasks | 27 files |
 | Phase 17 P17-plan | 6133 | 8 tasks | 12 files |
+| Phase 18 P18 | 91 | 10 tasks | 12 files |
 
 ## Decisions
 
@@ -45,9 +46,14 @@ Last activity: 2026-08-05 — Phase 17 complete, transitioned to Phase 18
 - [Phase ?]: Phase 17: tutorial = 9-step pure-total predicate catalog over DerivedSnapshot/HouseView/CityView + replayable dismissTutorialStep; getTutorial() derived; seen==dismissed until Phase 18 UI
 - [Phase ?]: Phase 17: codex = 13 kinds fully catalog-derived (ratings W exported); getCodex() cached; derived codex count stays 4-kind filtered (no golden changes)
 - [Phase ?]: Phase 17: winnability retune - RESEARCH L10-20 housing unreachable (wheat-only food caps houses at L5 in the sim building set); all missions retuned to the probe-measured envelope (pop<=300, ratings<=55, favor<=35, treasury<=4000, no export targets), arc preserved
+- [Phase ?]: Phase 18: UI-01 every central control is a real handler; build buttons disable live on treasury<cost; e2e no-decorative audit
+- [Phase ?]: Phase 18: advisorPanels composes 13 advisors by actual getter names (Pitfall 1); advisor drawer re-renders only under the tick-change guard
+- [Phase ?]: Phase 18: getWaterOverlay() aggregates ALL well/fountain sources (real kind: well→wellCoverage, fountain→fountainCoverage); derived water % = union so HUD==overlay
+- [Phase ?]: Phase 18: enriched inspectors fed by getInspector/getWalkerInternals read-only seam — never grow BuildingState/WalkerState (golden-byte)
+- [Phase ?]: Phase 18: MainScene.setOverlay is the single radio source of truth (overlay-toggle bus); legend is display-only pointer-events none
 
 ## Session
 
-**Last session:** 2026-08-05T20:20:43.684Z
-**Stopped at:** Completed 17-17-PLAN.md
+**Last session:** 2026-08-06T01:00:23.791Z
+**Stopped at:** Completed 18-18-PLAN.md
 **Resume file:** None

@@ -337,7 +337,9 @@ Plans:
   2. All 13 advisors read live sim queries and update.
   3. Overlays and inspectors reflect sim state with legends/heatmaps and click-through.
 
-**Plans**: TBD
+**Plans**: 1/1 plans executed
+
+- [x] 18-PLAN.md
 
 ### Phase 19: Persistence & Options
 

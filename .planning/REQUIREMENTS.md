@@ -119,10 +119,10 @@ Requirements for completing the OpenCaesar build-out. Each maps to roadmap phase
 
 ### Management UI (Sections 31–40)
 
-- [ ] **UI-01**: HUD with every control wired (no decorative buttons)
-- [ ] **UI-02**: 13 advisors reading live sim queries
-- [ ] **UI-03**: Overlays with legends, heatmaps, and click-through (water, risks, coverage, etc.)
-- [ ] **UI-04**: Residential, productive-building, warehouse/granary, market, and walker inspectors
+- [x] **UI-01**: HUD with every control wired (no decorative buttons)
+- [x] **UI-02**: 13 advisors reading live sim queries
+- [x] **UI-03**: Overlays with legends, heatmaps, and click-through (water, risks, coverage, etc.)
+- [x] **UI-04**: Residential, productive-building, warehouse/granary, market, and walker inspectors
 
 ### Persistence & Options (Sections 45–46)
 
