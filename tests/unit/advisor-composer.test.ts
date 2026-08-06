@@ -32,7 +32,8 @@ describe('advisor composer (UI-02)', () => {
     expect(finance).toBeDefined();
     const balance = finance.rows.find((row) => row.label === 'Balance');
     expect(balance).toBeDefined();
-    expect(Number(balance!.value)).toBe(r.getFinanceAdvisor().balance);
+    // Display rounds denarii; provenance = within 1 of the live getter's balance.
+    expect(Number(balance!.value)).toBeCloseTo(r.getFinanceAdvisor().balance, 0);
 
     const ratings = panels.find((p) => p.id === 'ratings')!;
     expect(ratings).toBeDefined();
