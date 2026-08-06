@@ -2544,22 +2544,31 @@ export class SimRunner {
    * golden-byte shape) PLUS its live internal instance for the enriched pure
    * *Inspection projections. Null for an unknown id. Never mutates and never
    * grows BuildingState/WalkerState.
+   *
+   * CR-01: building and walker ids come from two independent counters that
+   * BOTH start at 1, so a walker whose numeric id equals a live building id is
+   * indistinguishable by id alone. Callers that provably want a walker (the
+   * hud-walker-inspect handler, navInspector walker cycling, renderWalkerInspector)
+   * MUST pass `kind: 'walker'`; the default (undefined/'building') preserves the
+   * original building-first resolution for every existing building caller.
    */
-  getInspector(id: number): {
+  getInspector(id: number, kind?: 'building' | 'walker'): {
     kind: 'building' | 'walker';
     snapshotId: number;
     building?: BuildingState;
     walker?: WalkerState;
     internals?: BuildingInstance | WalkerInstance;
   } | null {
-    const b = this.buildingById.get(id);
-    if (b) {
-      return {
-        kind: 'building',
-        snapshotId: id,
-        building: this.getState().buildings.find((x) => x.id === id),
-        internals: b,
-      };
+    if (kind !== 'walker') {
+      const b = this.buildingById.get(id);
+      if (b) {
+        return {
+          kind: 'building',
+          snapshotId: id,
+          building: this.getState().buildings.find((x) => x.id === id),
+          internals: b,
+        };
+      }
     }
     const w = this.walkers.find((walk) => walk.id === id);
     if (w) {

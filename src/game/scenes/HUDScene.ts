@@ -39,6 +39,10 @@ export class HUDScene extends Phaser.Scene {
   private inspectList: number[] = [];
   /** Index into inspectList of the currently shown entity (-1 for 'other'). */
   private inspectIndex = -1;
+  /** Which id space inspectList holds — building ids or walker ids. Walker and
+   *  building ids overlap (both counters start at 1), so Next/Prev must know the
+   *  kind to disambiguate getInspector resolves (CR-01). */
+  private inspectKind: 'building' | 'walker' = 'building';
   /** Build-palette buttons, tracked for the live unaffordable-disabled state. */
   private buildBtns: HTMLButtonElement[] = [];
   /** Whether the advisors drawer is open (control bar → drawer). */
@@ -433,18 +437,21 @@ export class HUDScene extends Phaser.Scene {
       if (id === null) {
         this.closePopup();
       } else {
-        this.inspectId = null;
-        const inspector = this.main?.runner.getInspector(id);
-        if (inspector?.kind === 'walker' && inspector.walker) {
-          const state = this.main!.runner.getState();
-          // Same-kind cycling (UI-04): walkers of the same type, stable id order.
-          this.inspectList = state.walkers
-            .filter((w) => w.type === inspector.walker!.type)
-            .map((w) => w.id)
-            .sort((a, b) => a - b);
-          this.inspectIndex = this.inspectList.indexOf(id);
-          this.renderWalkerInspector(inspector.walker);
-        }
+      this.inspectId = null;
+      // CR-01: walker ids share the building id space — the kind must be explicit
+      // or a colliding walker would resolve to the building and never open.
+      const inspector = this.main?.runner.getInspector(id, 'walker');
+      if (inspector?.kind === 'walker' && inspector.walker) {
+        this.inspectKind = 'walker';
+        const state = this.main!.runner.getState();
+        // Same-kind cycling (UI-04): walkers of the same type, stable id order.
+        this.inspectList = state.walkers
+          .filter((w) => w.type === inspector.walker!.type)
+          .map((w) => w.id)
+          .sort((a, b) => a - b);
+        this.inspectIndex = this.inspectList.indexOf(id);
+        this.renderWalkerInspector(inspector.walker);
+      }
       }
     });
     this.game.events.on('hud-build-mode', () => {
@@ -660,6 +667,8 @@ export class HUDScene extends Phaser.Scene {
       this.closePopup();
       return;
     }
+    // Building popups always cycle the building id space (CR-01 disambiguation).
+    this.inspectKind = 'building';
     const kind = this.inspectorKindOf(building);
     const state = this.main!.runner.getState();
     // Same-kind cycling (UI-04): stable entity-id order.
@@ -670,7 +679,8 @@ export class HUDScene extends Phaser.Scene {
 
   /** Render the walker inspector popup (opened via hud-walker-inspect). */
   private renderWalkerInspector(walker: WalkerState): void {
-    const inspector = this.main?.runner.getInspector(walker.id);
+    // CR-01: the walker id may collide with a live building id — resolve by kind.
+    const inspector = this.main?.runner.getInspector(walker.id, 'walker');
     const internals = inspector?.kind === 'walker' ? (inspector.internals as WalkerInstance | undefined) : undefined;
     const stepsUsed = internals?.stepsTaken ?? 0;
     const maxSteps = Math.max(1, walker.lifetime);
@@ -725,7 +735,7 @@ export class HUDScene extends Phaser.Scene {
 
   /** Enriched rows per inspector kind, fed from getInspector internals. */
   private renderBuildingRows(building: BuildingState, body: HTMLElement): void {
-    const inspector = this.main?.runner.getInspector(building.id);
+    const inspector = this.main?.runner.getInspector(building.id, 'building');
     const internals = inspector?.internals as BuildingInstance | undefined;
     const ok = (b: boolean): string => (b ? 'Yes' : 'No');
     const cap = (v: number): string => String(Math.round(v * 100)) + '%';
@@ -855,16 +865,23 @@ export class HUDScene extends Phaser.Scene {
     const nextIndex = this.inspectIndex + dir;
     if (nextIndex < 0 || nextIndex >= this.inspectList.length) return;
     const id = this.inspectList[nextIndex];
-    const inspector = this.main?.runner.getInspector(id);
+    // CR-01: the current kind tells us whether this id space is walkers or
+    // buildings — disambiguate the resolve so Next/Prev never opens a wrong-kind
+    // popup for a colliding walker id.
+    const inspector = this.inspectKind === 'walker'
+      ? this.main?.runner.getInspector(id, 'walker')
+      : this.main?.runner.getInspector(id);
     if (!inspector) return;
-    if (inspector.kind === 'building' && inspector.building) {
-      this.inspectId = id;
-      this.inspectIndex = nextIndex;
-      this.renderPopup(inspector.building);
-    } else if (inspector.kind === 'walker' && inspector.walker) {
+    if (inspector.kind === 'walker' && inspector.walker) {
+      this.inspectKind = 'walker';
       this.inspectId = null;
       this.inspectIndex = nextIndex;
       this.renderWalkerInspector(inspector.walker);
+    } else if (inspector.kind === 'building' && inspector.building) {
+      this.inspectKind = 'building';
+      this.inspectId = id;
+      this.inspectIndex = nextIndex;
+      this.renderPopup(inspector.building);
     }
   }
 
