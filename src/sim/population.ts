@@ -98,9 +98,14 @@ export interface WagePolicy {
 
 /** Wage band reporting compared to the imperial reference. */
 export function wageBand(p: WagePolicy): { band: 'below' | 'at' | 'above'; relative: number } {
+  // IN-03: the guarded reference feeds BOTH the ratio and the band comparison,
+  // so a reference of 0 (unreachable in production — IMPERIAL_WAGE_REFERENCE is
+  // 0.3) keeps the two consistent at the boundary instead of reporting 'above'
+  // for any wageRate > 0 while dividing by 1.
+  const ref = p.imperialReference || 1;
   return {
-    relative: p.wageRate / (p.imperialReference || 1),
-    band: p.wageRate < p.imperialReference ? 'below' : p.wageRate > p.imperialReference ? 'above' : 'at',
+    relative: p.wageRate / ref,
+    band: p.wageRate < ref ? 'below' : p.wageRate > ref ? 'above' : 'at',
   };
 }
 
