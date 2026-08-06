@@ -126,8 +126,8 @@ Requirements for completing the OpenCaesar build-out. Each maps to roadmap phase
 
 ### Persistence & Options (Sections 45–46)
 
-- [ ] **PERS-01**: Versioned save/load migration covering all systems with validation and deterministic reload
-- [ ] **PERS-02**: Options and accessibility (graphics, audio, gameplay, accessibility)
+- [x] **PERS-01**: Versioned save/load migration covering all systems with validation and deterministic reload
+- [x] **PERS-02**: Options and accessibility (graphics, audio, gameplay, accessibility)
 
 ## v2 Requirements
 

@@ -3,27 +3,27 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Complete OpenCaesar
 current_phase: 19
-current_phase_name: Persistence & Options
-status: planning
-stopped_at: Completed 18-18-PLAN.md
-last_updated: "2026-08-06T09:17:28.954Z"
+current_phase_name: persistence-options
+status: verifying
+stopped_at: Completed 19-19-PLAN.md
+last_updated: "2026-08-06T11:54:17.985Z"
 last_activity: 2026-08-06
-last_activity_desc: Phase 18 complete, transitioned to Phase 19
+last_activity_desc: Phase 19 execution started
 progress:
-  total_phases: 18
-  completed_phases: 18
-  total_plans: 32
-  completed_plans: 32
+  total_phases: 19
+  completed_phases: 19
+  total_plans: 33
+  completed_plans: 33
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 19 — Persistence & Options
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-08-06 — Phase 18 complete, transitioned to Phase 19
+Phase: 19 (persistence-options) — EXECUTING
+Plan: 1 of 1
+Status: Phase complete — ready for verification
+Last activity: 2026-08-06 — Phase 19 execution started
 
 ## Performance Metrics
 
@@ -33,6 +33,7 @@ Last activity: 2026-08-06 — Phase 18 complete, transitioned to Phase 19
 | Phase 16 P16-plan | 95 | 7 tasks | 27 files |
 | Phase 17 P17-plan | 6133 | 8 tasks | 12 files |
 | Phase 18 P18 | 91 | 10 tasks | 12 files |
+| Phase 19 P19-plan | 112 | 7 tasks | 15 files |
 
 ## Decisions
 
@@ -51,9 +52,14 @@ Last activity: 2026-08-06 — Phase 18 complete, transitioned to Phase 19
 - [Phase ?]: Phase 18: getWaterOverlay() aggregates ALL well/fountain sources (real kind: well→wellCoverage, fountain→fountainCoverage); derived water % = union so HUD==overlay
 - [Phase ?]: Phase 18: enriched inspectors fed by getInspector/getWalkerInternals read-only seam — never grow BuildingState/WalkerState (golden-byte)
 - [Phase ?]: Phase 18: MainScene.setOverlay is the single radio source of truth (overlay-toggle bus); legend is display-only pointer-events none
+- [Phase ?]: PERS-01: version 1 stays current (empty additive MIGRATIONS map) - migration/validation infrastructure is the deliverable, existing saves stay format-stable
+- [Phase ?]: PERS-01: validateSave enforces the full SaveCommand union before replay; applyCommand raw throw stays as defense-in-depth only
+- [Phase ?]: PERS-02: OPTIONS_KEY 'rcb.options' disjoint from save keys; options never enter SaveData/getStateJson (golden-byte)
+- [Phase ?]: PERS-02: graphicsQuality->RenderConfig read BEFORE new Phaser.Game (context-creation-only, 'applies on next launch')
+- [Phase ?]: PERS-02: gameSpeedDefault injected once in MainScene.create() for fresh+loaded paths (positive-finite guard); HUD buttons own live speed afterwards
 
 ## Session
 
-**Last session:** 2026-08-06T01:00:23.791Z
-**Stopped at:** Completed 18-18-PLAN.md
+**Last session:** 2026-08-06T11:54:17.976Z
+**Stopped at:** Completed 19-19-PLAN.md
 **Resume file:** None
