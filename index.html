@@ -151,6 +151,8 @@
         transform: translate(-50%, -50%);
         min-width: 220px;
         max-width: 320px;
+        max-height: 80vh;
+        overflow-y: auto;
         background: rgba(40, 28, 14, 0.95);
         border: 1px solid #e8c46b;
         border-radius: 6px;
@@ -158,6 +160,7 @@
         padding: 10px 12px;
         z-index: 30;
         font-size: 13px;
+        pointer-events: auto;
       }
       .hud-popup-header {
         display: flex;
@@ -276,7 +279,156 @@
         flex-wrap: wrap;
         gap: 4px;
       }
-      .overlay-toggles .hud-overlay-title {
+      .overlay-toggle {
+        min-height: 32px;
+        font: inherit;
+        font-size: 12px;
+        color: #f3e9d2;
+        background: #4a3517;
+        border: 1px solid #7a6234;
+        border-radius: 4px;
+        padding: 4px 8px;
+        cursor: pointer;
+      }
+      .overlay-toggle:hover {
+        background: #5d4420;
+      }
+      .overlay-toggle.active {
+        background: #7a5c22;
+        border-color: #e8c46b;
+        color: #e8c46b;
+      }
+      .overlay-toggle .shortcut {
+        color: #b39a62;
+        margin-left: 4px;
+        font-size: 11px;
+      }
+      .overlay-toggle.active .shortcut {
+        color: #e8c46b;
+      }
+      .overlay-legend {
+        position: fixed;
+        bottom: 64px;
+        right: 280px;
+        z-index: 24;
+        min-width: 180px;
+        background: rgba(40, 28, 14, 0.95);
+        border: 1px solid #7a6234;
+        border-radius: 6px;
+        padding: 8px 12px;
+        color: #f3e9d2;
+        font-size: 12px;
+        pointer-events: auto;
+      }
+      .overlay-legend .hud-subtitle {
+        margin-bottom: 4px;
+      }
+      .overlay-legend .legend-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 0;
+      }
+      .overlay-legend .legend-swatch {
+        width: 16px;
+        height: 12px;
+        border: 1px solid rgba(243, 233, 210, 0.3);
+        border-radius: 2px;
+      }
+      .advisor-tabs {
+        display: flex;
+        gap: 4px;
+        overflow-x: auto;
+        max-width: 100%;
+        padding-bottom: 6px;
+        margin-bottom: 6px;
+        border-bottom: 1px solid #7a6234;
+      }
+      .advisor-tab {
+        min-height: 32px;
+        font: inherit;
+        font-size: 12px;
+        color: #f3e9d2;
+        background: #4a3517;
+        border: 1px solid #7a6234;
+        border-radius: 4px;
+        padding: 4px 10px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .advisor-tab:hover {
+        background: #5d4420;
+      }
+      .advisor-tab.active {
+        background: #7a5c22;
+        border-color: #e8c46b;
+        color: #e8c46b;
+      }
+      .advisor-panel {
+        font-size: 12px;
+      }
+      .advisor-panel .row {
+        display: flex;
+        justify-content: space-between;
+        padding: 2px 0;
+      }
+      .advisor-panel .row b {
+        color: #e8c46b;
+        font-weight: normal;
+      }
+      .advisor-alerts {
+        margin: 6px 0;
+      }
+      .advisor-alerts li {
+        color: #e8c46b;
+      }
+      .advisor-action {
+        margin-top: 6px;
+        font: inherit;
+        font-size: 12px;
+        color: #f3e9d2;
+        background: #4a3517;
+        border: 1px solid #7a6234;
+        border-radius: 4px;
+        padding: 4px 8px;
+        cursor: pointer;
+      }
+      .advisor-action:hover {
+        background: #5d4420;
+      }
+      .hud-popup .inspector-nav {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+        padding-top: 6px;
+        border-top: 1px solid #7a6234;
+      }
+      .hud-popup .inspector-nav button {
+        font: inherit;
+        font-size: 13px;
+        color: #f3e9d2;
+        background: #4a3517;
+        border: 1px solid #7a6234;
+        border-radius: 4px;
+        padding: 3px 8px;
+        cursor: pointer;
+      }
+      .hud-popup .inspector-nav button:hover {
+        background: #5d4420;
+      }
+      .hud-popup .inspector-nav button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      .hud-popup .inspector-nav .inspector-nav-label {
+        color: #b39a62;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      .hud-popup .hud-overlay-title {
         color: #e8c46b;
       }
       .hud-overlay {

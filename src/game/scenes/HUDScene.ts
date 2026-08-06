@@ -222,6 +222,12 @@ export class HUDScene extends Phaser.Scene {
     overlayToggles.dataset.testid = 'overlay-toggles';
     overlayBar.append(overlayHead, overlayToggles);
 
+    // Legend host (filled/cleared by the overlay system — 18-03-02).
+    const overlayLegend = document.createElement('div');
+    overlayLegend.className = 'overlay-legend';
+    overlayLegend.dataset.testid = 'overlay-legend';
+    overlayLegend.style.display = 'none';
+
     const toast = document.createElement('div');
     toast.className = 'hud-toast';
     toast.dataset.testid = 'toast';
@@ -273,6 +279,7 @@ export class HUDScene extends Phaser.Scene {
     // column so they never clip (fixed-position, same as the toast).
     document.body.appendChild(advisorsDrawer);
     document.body.appendChild(overlayBar);
+    document.body.appendChild(overlayLegend);
 
     this.els.pop = root.querySelector('[data-testid="stat-population"]') as HTMLElement;
     this.els.prosperity = root.querySelector('[data-testid="stat-prosperity"]') as HTMLElement;
@@ -303,6 +310,7 @@ export class HUDScene extends Phaser.Scene {
     this.els.advisorTabs = tabHost;
     this.els.advisorPanels = panelHost;
     this.els.overlayToggles = overlayToggles;
+    this.els.overlayLegend = overlayLegend;
     this.buildBtns = [...grid.querySelectorAll('.hud-build-btn')] as HTMLButtonElement[];
   }
 
@@ -470,6 +478,39 @@ export class HUDScene extends Phaser.Scene {
     `;
     popup.style.display = 'block';
     popup.querySelector('.hud-popup-close')?.addEventListener('click', () => this.closePopup());
+    popup.appendChild(this.buildInspectorNav(building));
+  }
+
+  /**
+   * The inspector Next ◀/▶ controller row. Populated as placeholder buttons that
+   * are disabled while no same-kind navigation exists; 18-04-02 wires the
+   * same-kind cycling handlers. Rendered via createElement/textContent — no
+   * interpolation of sim-derived strings.
+   */
+  private buildInspectorNav(building: BuildingState): HTMLElement {
+    const nav = document.createElement('div');
+    nav.className = 'inspector-nav';
+    const prev = document.createElement('button');
+    prev.dataset.testid = 'inspector-prev';
+    prev.textContent = '◀';
+    prev.setAttribute('aria-label', 'Previous');
+    prev.disabled = true;
+    const label = document.createElement('span');
+    label.className = 'inspector-nav-label';
+    label.textContent = this.inspectorNavLabel(building);
+    const next = document.createElement('button');
+    next.dataset.testid = 'inspector-next';
+    next.textContent = '▶';
+    next.setAttribute('aria-label', 'Next');
+    next.disabled = true;
+    nav.append(prev, label, next);
+    return nav;
+  }
+
+  /** The same-kind descriptor shown between the inspector nav buttons. */
+  private inspectorNavLabel(building: BuildingState): string {
+    if (building.house) return `Residence ${building.id}`;
+    return `${BUILDINGS[building.type].name} ${building.id}`;
   }
 }
 

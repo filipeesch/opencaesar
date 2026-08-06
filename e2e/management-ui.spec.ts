@@ -127,6 +127,50 @@ test('build buttons disable when treasury < cost and track live treasury (UI-01)
   expect(errors).toEqual([]);
 });
 
+test('no decorative control audit (UI-01): every HUD/control-bar button is real', async ({ page }) => {
+  const errors = collectErrors(page);
+  await openGame(page);
+  await zoomOut(page);
+
+  // Every audited control carries a non-empty data-testid.
+  await page.waitForSelector('.hud-control-bar button, .hud-build-btn');
+  const untested = page.locator(
+    '.hud-control-bar button:not([data-testid]), .hud-build-btn:not([data-testid]), .advisor-tab:not([data-testid]), .overlay-toggle:not([data-testid])',
+  );
+  expect(await untested.count(), 'audited controls must each expose a data-testid').toBe(0);
+  const auditedCount = await page.locator('.hud-control-bar button, .hud-build-btn').count();
+  expect(auditedCount).toBeGreaterThan(0);
+
+  // Each control-bar button's click changes its target surface's observable state.
+  const drawer = page.getByTestId('advisor-drawer');
+  const drawerBefore = await drawer.isVisible();
+  await page.getByTestId('controls-advisors').click();
+  await expect(drawer).toBeVisible();
+  expect(await drawer.isVisible()).not.toBe(drawerBefore);
+
+  const bar = page.getByTestId('overlay-bar');
+  const barBefore = await bar.isVisible();
+  await page.getByTestId('controls-overlays').click();
+  await expect(bar).toBeVisible();
+  expect(await bar.isVisible()).not.toBe(barBefore);
+
+  const logPanel = page.getByTestId('log-panel');
+  const logBefore = await logPanel.evaluate((el) => el.className);
+  await page.getByTestId('controls-messages').click();
+  await expect(logPanel).toHaveClass(/active/);
+  expect(await logPanel.evaluate((el) => el.className)).not.toBe(logBefore);
+
+  // A build button click toggles build mode (active class on itself) — real.
+  const buildRoad = page.getByTestId('build-road');
+  await expect(buildRoad).toBeEnabled();
+  await buildRoad.click();
+  await expect(buildRoad).toHaveClass(/active/);
+  await buildRoad.click();
+  await expect(buildRoad).not.toHaveClass(/active/);
+
+  expect(errors).toEqual([]);
+});
+
 test('advisors drawer switches panels with a live active tab (UI-02)', async ({ page }) => {
   const errors = collectErrors(page);
   await openGame(page);
