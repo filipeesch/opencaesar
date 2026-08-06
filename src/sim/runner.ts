@@ -49,7 +49,8 @@ import type { CodexEntry, CodexKind, HouseView, CityView, TutorialStepId, Tutori
 import { desirabilityOf, tickHousing } from './housing';
 import { housingLevelName } from '../../data/housing';
 import { effectivePopulation, effectiveWorkers, deriveSatisfied } from './housingLive';
-import { ageOnMonth, netMigration, residentsForHouse } from './population';
+import { ageOnMonth, netMigration, residentsForHouse, allocateWorkers } from './population';
+import { buildLaborSectors, applySectorAssignments } from './labor';
 import { foodShortageEffects } from './housing';
 import { findMergePartner, mergeProposal, targetFootprint } from './housingMerge';
 import { Treasury, rollYear } from './finance';
@@ -259,6 +260,15 @@ export class SimRunner {
    *  surfaced as DerivedSnapshot.immigration/emigration/homeless (total
    *  functions — 0 by default). Internal-only; never serialized. */
   private lastMigration = { immigration: 0, emigration: 0, homeless: 0 };
+  /** POP-03: per-sector labor config (pinned/paused), additive and inert until
+   *  a player issues setLaborSectorState. Defaults to unpinned/unpaused for any
+   *  sector absent (marketConfigs precedent). Internal-only — never serialized;
+   *  reconstructed on load by replaying setLaborSectorState commands. */
+  private laborSectorCfg = new Map<string, { pinned: boolean; paused: boolean }>();
+  /** POP-03: per-sector staffing from the last tickLabor run — the reserve floor
+   *  a pinned sector is guaranteed under a shrunken pool (Pitfall 2 runner-level
+   *  reserve semantics). Internal-only; re-derives deterministically from ticks. */
+  private laborSectorAssigned = new Map<string, number>();
 
   constructor(seed: number, map?: SimMap, mapSize?: number) {
     if (!catalogsValidated) {
@@ -2926,27 +2936,74 @@ export class SimRunner {
   }
 
   /**
-   * Assign workers from the reachable pool to labor-connected buildings.
-   * Labor connectivity is durable once a labor walker reaches a building (it
-   * must be re-established only if the road network is severed, which the sim
-   * never does) — so a connected building keeps drawing workers each tick,
-   * limited only by the pool and its requirement.
+   * POP-03: assign workers from the reachable pool to labor-connected buildings
+   * by sector priority 1..5 (LABOR_SECTOR_PRIORITY) — replacing the legacy
+   * greedy placement-order loop. Pinned sectors get a RUNNER-LEVEL reserve
+   * (their prior staffing is set aside before the general pool split — the weak
+   * pure-function pinned branch of allocateWorkers is NOT relied on, Pitfall 2);
+   * paused sectors report needed=0 and their workers spill to other sectors.
+   * Every labor.test.ts invariant is preserved: assigned ≤ pool, per-building
+   * assigned ≤ required, surplus pool fills all jobs (activation via setActive
+   * exactly as before). Deterministic — placement order, no RNG/wall-clock.
    */
   private tickLabor(): void {
-    let pool = workerPool(this.buildings);
+    // Buildings that lost labor connectivity release their workers.
     for (const b of this.buildings) {
       if (b.workersRequired <= 0) continue;
       if (!b.laborConnected) {
         b.workersAssigned = 0;
         this.setActive(b, false);
-        continue;
       }
-      const want = b.workersRequired;
-      const give = Math.min(want, pool);
-      pool -= give;
-      b.workersAssigned = give;
-      this.setActive(b, give >= want);
     }
+    const pool = workerPool(this.buildings);
+    const sectors = buildLaborSectors(this.buildings, this.laborSectorCfg);
+
+    // 1) Reserve-guard (Pitfall 2): a pinned sector keeps its prior assigned
+    //    (bounded by its needed and the remaining pool) — set aside BEFORE the
+    //    general pool split. The pure-function pinned branch of allocateWorkers
+    //    is NOT relied upon (it would go negative on an empty pool).
+    const ordered = [...sectors].sort((a, b) => a.priority - b.priority);
+    let remaining = pool;
+    for (const s of ordered) {
+      if (!s.pinned) continue;
+      const prior = this.laborSectorAssigned.get(s.id) ?? 0;
+      const give = Math.min(s.needed, prior, remaining);
+      s.assigned = give;
+      remaining -= give;
+    }
+    // 2) Allocate the leftover over the unpinned ordering (the pure function
+    //    sorts by priority 1..5); pinned sectors keep exactly their reserve.
+    allocateWorkers(
+      sectors.filter((s) => !s.pinned),
+      remaining,
+    );
+
+    // 3) Distribute to buildings (per-building caps respected) + activate.
+    applySectorAssignments(this.buildings, sectors);
+    for (const b of this.buildings) {
+      if (b.workersRequired <= 0) continue;
+      if (!b.laborConnected) continue;
+      this.setActive(b, b.workersAssigned >= b.workersRequired);
+    }
+    // 4) Track per-sector staffing for the next tick's pinned reserve floor.
+    for (const s of sectors) this.laborSectorAssigned.set(s.id, s.assigned);
+  }
+
+  /** POP-03: read-only per-sector labor view (pinned/paused from the private
+   *  store, needed live from buildLaborSectors, assigned from the last tickLabor
+   *  run's per-sector tracking — a freshly built sector row starts at assigned 0
+   *  until the next tickLabor). Never fabricates — advisors/UI consume only this
+   *  getter, mirroring marketConfig. */
+  getLaborSectors(): Array<{ id: string; priority: number; needed: number; assigned: number; pinned: boolean; paused: boolean }> {
+    const sectors = buildLaborSectors(this.buildings, this.laborSectorCfg);
+    return sectors.map((s) => ({
+      id: s.id,
+      priority: s.priority,
+      needed: s.needed,
+      assigned: this.laborSectorAssigned.get(s.id) ?? 0,
+      pinned: s.pinned,
+      paused: this.laborSectorCfg.get(s.id)?.paused === true,
+    }));
   }
 
   /** Farm production, then cart transfer from farms to touching granaries. */
