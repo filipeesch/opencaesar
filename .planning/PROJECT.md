@@ -33,6 +33,7 @@ an opaque "teleporting stock" or radious-only model.
 - ~31-event catalog with deterministic responses that change outcomes, replayable via SaveCommand — Phase 15
 - 21-level housing progression (cumulative requirements, hysteresis devolution, deterministic house merging, level-based economy bridge) — Phase 16
 - 10-mission campaign (playable/winnable in sequence), contextual state-observed tutorial, catalog-derived codex — Phase 17
+- Management UI: HUD with all controls wired, 13-advisor composer, overlays with heatmaps/legends/click-through, 5 inspectors — Phase 18
 
 ### Active
 
@@ -53,7 +54,8 @@ Full build-out of the game.md specification — see REQUIREMENTS.md and ROADMAP.
 - Live ratings/objectives/events: `src/sim/ratings.ts` (weighted decomposition), `src/sim/objectives.ts` (sustained tracker), `src/sim/events.ts` + `data/events.ts` (respondEvent); exposed via `getDerived()`.
 - Housing: `data/housing.ts` (`HOUSING_LEVELS` 21-level + footprint ladder), `src/sim/housingLive.ts` (bridge: `HOUSING_LIVE_STATS`, `levelDesirability`, `deriveSatisfied`, `liveStats`), `src/sim/housingMerge.ts` (deterministic merge), `housingEvolution.ts` (`decideEvolution` hysteresis, untouched).
 - Campaign: `data/missions.ts` (10 missions + per-mission map/modifiers/routes), `src/sim/missionMaps.ts` (layouts), `src/sim/campaign.ts` (codex + tutorial predicates), runner `startMission` (replayable SaveCommand), `getTutorial()`/`getCodex()` derived accessors.
-- Tests: Vitest (`npm run test`), 114 files / 870 passing including golden determinism. `tsc --noEmit` must be clean.
+- Management UI: `src/game/advisors.ts` (13-advisor composer), HUDScene/MainScene (control bar, drawer, overlays, inspectors), runner `getWaterOverlay()`/`getInspector(kind,id)`/`getDesirabilityOverlay()`.
+- Tests: Vitest (`npm run test`), 117 files / 889 passing including golden determinism + Playwright e2e. `tsc --noEmit` must be clean.
 - Fragile API contract: expanding certain types previously broke tests; changes need golden-equivalence verification.
 
 ## Constraints
@@ -76,6 +78,7 @@ Full build-out of the game.md specification — see REQUIREMENTS.md and ROADMAP.
 - Merges re-derive from tick+commands (NO new SaveCommand); merge target block must contain both houses' full footprints; merged population effective via `effectivePopulation` — Phase 16
 - Campaign: `startMission`/`dismissTutorialStep` are replayable SaveCommands carrying the true start year (time-limit safe across save/load); progression gating is live-only (`!replaying`) — Phase 17
 - Tutorial/codex are derived-only (never in `getState()`): pure predicates over `DerivedSnapshot`; codex built strictly from data catalogs — goldens untouched — Phase 17
+- UI is view-only read-only: inspectors read internals via `getInspector(kind,id)` (explicit building/walker disambiguation — CR-01 fix) + `getWalkerInternals` seam, never growing serialized state; new DOM uses `textContent`/`createElement` (XSS-safe) — Phase 18
 
 ## Evolution
 
@@ -94,4 +97,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
-_Last updated: 2026-08-05 after Phase 17_
+_Last updated: 2026-08-06 after Phase 18_
