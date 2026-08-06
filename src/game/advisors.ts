@@ -222,7 +222,28 @@ export function advisorPanels(source: AdvisorSource): AdvisorPanel[] {
   const houses = state.buildings.filter((b) => b.house);
   const occupancyCapacity = houses.reduce((s, b) => s + (b.house?.populationCapacity ?? 0), 0);
   const waterOverlay = source.getWaterOverlay?.();
-  const waters = Object.values(waterOverlay ?? {}).reduce((s, grid) => s + grid.reduce((a, row) => a + row.reduce((x, v) => x + v, 0), 0), 0);
+  // WR-03: count tiles with any well/fountain coverage (a real, physical
+  // metric). NEVER the raw sum across every returned grid — that double-counts
+  // tiles across sources+coverage+classes and drags in the negative water-source
+  // desirability, producing a fabricated number with no meaning.
+  const waters = (() => {
+    const o = waterOverlay ?? {};
+    const well = o.wellCoverage;
+    const fount = o.fountainCoverage;
+    if (!Array.isArray(well) || !Array.isArray(fount)) return 0;
+    let covered = 0;
+    const h = Math.min(well.length, fount.length);
+    for (let y = 0; y < h; y++) {
+      const wRow = well[y];
+      const fRow = fount[y];
+      if (!Array.isArray(wRow) || !Array.isArray(fRow)) continue;
+      const wlen = Math.min(wRow.length, fRow.length);
+      for (let x = 0; x < wlen; x++) {
+        if (wRow[x] > 0 || fRow[x] > 0) covered++;
+      }
+    }
+    return covered;
+  })();
   const housing: AdvisorPanel = {
     id: 'housing',
     title: 'Housing',
