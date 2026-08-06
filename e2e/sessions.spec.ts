@@ -96,6 +96,50 @@ test('pause button opens the pause overlay', async ({ page }) => {
   await expect(page.getByTestId('pause-overlay')).toBeVisible();
 });
 
+test('resume-load of a structurally-invalid v1 save is rejected: button disabled + typed reason', async ({ page }) => {
+  // PERS-01 hard edge: a v1 save whose version passes readSave's meta
+  // truthiness check but whose payload fails validateSave. The load button
+  // MUST look resume-able (intact meta) yet reject on click-through — disabled
+  // with the typed reason via textContent, never a crash / silent misload.
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => {
+    // Filter the documented pre-existing environmental spritesheet noise
+    // (proof: reproducible at the pre-Phase-19 baseline on a loaded host —
+    // SUMMARY deviation #4). Any OTHER console error is a failure.
+    if (m.type() === 'error' && !m.text().includes('Failed to process file')) errors.push(m.text());
+  });
+
+  await page.goto('/', { waitUntil: 'networkidle' });
+  await expect(page.getByTestId('home-screen')).toBeVisible();
+
+  await page.evaluate(() => {
+    window.localStorage.setItem(
+      'rcb.save',
+      JSON.stringify({
+        data: { version: 1, seed: 42, mapSize: 40, commands: 'not-an-array', tickCount: 123, savedAt: 1000 },
+        meta: { seed: 42, mapSize: 40, tick: 123, savedAt: 1000 },
+      }),
+    );
+  });
+  await page.reload({ waitUntil: 'networkidle' });
+  await expect(page.getByTestId('home-screen')).toBeVisible();
+
+  // readSave is tolerant — the meta survives, so the button is enabled...
+  await expect(page.getByTestId('load-game')).toBeEnabled();
+  await expect(page.getByTestId('load-game')).toContainText('Resume city');
+
+  // ...but the click-through validate gate rejects it.
+  await page.getByTestId('load-game').click();
+  await page.waitForTimeout(300);
+  await expect(page.getByTestId('load-game')).toBeDisabled();
+  await expect(page.getByTestId('load-game')).toContainText('Save rejected');
+
+  // Still on home — never a crash, never a silent misload; zero page errors.
+  await expect(page.getByTestId('home-screen')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test('restart returns to the home screen', async ({ page }) => {
   await openGame(page);
   await page.keyboard.press('Escape');

@@ -106,6 +106,21 @@ describe('loadSavedGame (read → parse → migrate → validate)', () => {
     }
   });
 
+  it('returns a typed migrate failure for a save newer than SAVE_VERSION', () => {
+    const storage = memStore();
+    storage.setItem(
+      'rcb.save',
+      JSON.stringify(makeRecord({ ...fakeSave, version: 999 } as unknown as SaveData)),
+    );
+    const res = loadSavedGame(storage);
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toBe('migrate');
+      expect(typeof res.reason).toBe('string');
+      expect(res.reason!.length).toBeGreaterThan(0);
+    }
+  });
+
   it('returns a typed validate failure for a structurally-invalid v1 save', () => {
     const storage = memStore();
     storage.setItem('rcb.save', JSON.stringify(makeRecord({ ...fakeSave, commands: 'x' } as unknown as SaveData)));
