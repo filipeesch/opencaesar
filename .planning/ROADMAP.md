@@ -358,3 +358,19 @@ Plans:
 - [x] 19-PLAN.md
 
 - [x] 19-PLAN — versioned save/load (SAVE_VERSION + additive migrateSave + typed validateSave via src/sim/saveCodec.ts, loadSavedGame() + HomeScene/MainScene hookup, determinism round-trip with the codec) + functional persisted options/accessibility (src/game/options.ts rcb.options, RenderConfig at boot, gameSpeedDefault boot speed, text-size/reduced-motion CSS seams, thin audio seam, Settings drawer in the HUD, settings e2e) (PERS-01/PERS-02)
+
+### Phase 19.1: Population & Labor (POP-01..04)
+
+**Goal**: Wire the orphaned population module: per-residence population (class/age/employment), migration (attractiveness, immigration/emigration, homelessness), labor sectors with priority allocation, and urban wage policy.
+**Depends on**: Phase 19
+**Requirements**: POP-01, POP-02, POP-03, POP-04
+**Success Criteria** (what must be TRUE):
+  1. Population is modeled per residence with class, age bands, employment, children/elderly, taxable income, service access, sentiment, crime/health risk.
+  2. Migration (attractiveness index, immigration/emigration walkers, homelessness) is modeled.
+  3. Labor sectors with priority 1-5, pinning, pause, restore-auto; scarce workers allocated by priority.
+  4. Urban wage policy with imperial reference comparison and unemployment band reporting.
+**Plans**: 1 plan
+
+Plans:
+
+- [ ] 19.1-PLAN.md — wire the orphaned population module: per-residence population (internal HouseInstance residents derived deterministically, surfaced via DerivedSnapshot + residence inspector), month-cadence migration (vacancy-bounded netMigration, famine refill, homeless), labor sectors with priority 1-5 allocateWorkers + reserve-pin/pause/restore-auto setLaborSectorState SaveCommand, wageBand + unemploymentBand advisor report; goldens/byte-identity untouched; full suite + typecheck + check:military green (POP-01..04)
