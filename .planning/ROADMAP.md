@@ -33,7 +33,7 @@ slice at a time, keeping the existing 126 tests green and adding golden determin
 - [x] **Phase 16: Full Housing Evolution** - 21 levels, hysteresis, house merging (completed 2026-08-05)
 - [x] **Phase 17: Campaign, Tutorial & Codex** - 10 missions, contextual tutorial, codex (completed 2026-08-05)
 - [x] **Phase 18: Management UI** - HUD, 13 advisors, overlays, inspectors (completed 2026-08-06)
-- [ ] **Phase 19: Persistence & Options** - versioned save/load, options/accessibility
+- [x] **Phase 19: Persistence & Options** - versioned save/load, options/accessibility (completed 2026-08-06)
 - [ ] **Phase 20: UI Redesign — Caesar III Sidebar & Advisors** — Replace current HUD with Caesar III-style sidebar, 13 advisor panels with live sim data, overlay system (fire/danger/collapse/crime/food), building inspector, redesigned build panel. (INSERTED — ui-redesign)
 
 ## Phase Details
