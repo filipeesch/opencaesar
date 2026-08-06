@@ -169,9 +169,11 @@ export interface DerivedSnapshot {
   constructionSpend: number;
   /** RATE-02/D-03: trailing-360-tick window of exported loads (deterministic). */
   annualExports: number;
-  /** POP-01: total residents across all houses (== population by construction —
-   *  Σ effectivePopulation over houses). Golden-safe: getStateJson serializes
-   *  getState, never this snapshot. */
+  /** POP-01: total LIVE internal residents across all houses — summed from the
+   *  same house.residents arrays as residentsByClass, so the two always
+   *  reconcile (WR-02). After a famine-emigration month this trails the
+   *  capacity-based population until immigration refills the vacancy. Golden-
+   *  safe: getStateJson serializes getState, never this snapshot. */
   residentCount: number;
   /** POP-01: live per-class resident breakdown from HouseInstance internals
    *  (0/0 row when no residency initialized yet — total function). */
@@ -1542,8 +1544,10 @@ export class SimRunner {
       annualExports: this.annualExportsTotal(),
       // POP-01: per-residence totals projected from live internals (total
       // functions — 0/0 row when no residency initialized yet). Golden-safe:
-      // getStateJson serializes getState, not this derived snapshot.
-      residentCount: population,
+      // getStateJson serializes getState, not this derived snapshot. WR-02:
+      // residentCount sums the SAME live residents as residentsByClass, so the
+      // two always reconcile (capacity-based population stays in `population`).
+      residentCount: this.liveResidentCount(),
       residentsByClass: this.residentsByClass(),
       // POP-02: the closing migration month's internal deltas (0 by default —
       // total function, empty cities safe).
@@ -1559,6 +1563,18 @@ export class SimRunner {
       }),
       unemploymentBand: unemploymentBand(unemploymentRate),
     };
+  }
+
+  /** POP-01: total live internal residents across all houses — the same source
+   *  as residentsByClass (WR-02), so residentCount === plebeian + patrician
+   *  always; 0/0 row when no residency has been initialized — total function,
+   *  empty-city safe. */
+  private liveResidentCount(): number {
+    let total = 0;
+    for (const b of this.buildings) {
+      total += b.house?.residents?.length ?? 0;
+    }
+    return total;
   }
 
   /** POP-01: live per-class resident totals over internal house residents (0/0
