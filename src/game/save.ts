@@ -29,7 +29,7 @@ export interface SaveRecord {
 
 export type SaveResult = { ok: true } | { ok: false; error: 'read' | 'write' | 'parse' };
 
-function defaultStorage(): StorageLike {
+export function defaultStorage(): StorageLike {
   try {
     if (typeof window !== 'undefined' && window.localStorage) return window.localStorage;
   } catch {
