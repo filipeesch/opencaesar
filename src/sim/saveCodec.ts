@@ -140,6 +140,11 @@ function validateCommand(cmd: unknown): SaveValidationError | null {
     case 'dismissTutorialStep':
       if (!str(c.step)) return 'malformed-command';
       break;
+    case 'setLaborSectorState':
+      if (!str(c.sector)) return 'malformed-command';
+      if (c.pinned !== undefined && typeof c.pinned !== 'boolean') return 'malformed-command';
+      if (c.paused !== undefined && typeof c.paused !== 'boolean') return 'malformed-command';
+      break;
     default:
       return 'unknown-command-kind';
   }

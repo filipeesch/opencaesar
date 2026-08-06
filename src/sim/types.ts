@@ -96,7 +96,12 @@ export type SaveCommand =
   // original start year instead of recomputing 0 (CR-01: a time-limited mission
   // started on an already-ticked runner must not instantly fail after load).
   | { kind: 'startMission'; id: string; year: number }
-  | { kind: 'dismissTutorialStep'; step: string };
+  | { kind: 'dismissTutorialStep'; step: string }
+  // Phase 19.1 (POP-03): labor sector pin/pause/restore-auto. Replay semantics:
+  // the command mutates the runner's per-sector labor store (pinned/paused)
+  // during replay, so sector config survives save/load with NO SaveData schema
+  // field — the flags reconstruct from the replayed command stream.
+  | { kind: 'setLaborSectorState'; sector: string; pinned?: boolean; paused?: boolean };
 
 /** Serializable save payload capturing everything needed to resume a sim deterministically. */
 export interface SaveData {

@@ -50,7 +50,7 @@ import { desirabilityOf, tickHousing } from './housing';
 import { housingLevelName } from '../../data/housing';
 import { effectivePopulation, effectiveWorkers, deriveSatisfied } from './housingLive';
 import { ageOnMonth, netMigration, residentsForHouse, allocateWorkers } from './population';
-import { buildLaborSectors, applySectorAssignments } from './labor';
+import { buildLaborSectors, applySectorAssignments, SECTOR_IDS } from './labor';
 import { foodShortageEffects } from './housing';
 import { findMergePartner, mergeProposal, targetFootprint } from './housingMerge';
 import { Treasury, rollYear } from './finance';
@@ -3006,6 +3006,49 @@ export class SimRunner {
     }));
   }
 
+  /** POP-03: pin/pause/restore-auto a labor sector (replayable SaveCommand).
+   *  Unknown sector ids and non-boolean flags are rejected with {ok:false}
+   *  (never a raw throw — ASVS V5; the saveCodec validateCommand case guards
+   *  the replayed stream before fromSaveData). While paused the command
+   *  enqueues and applies on the resume tick (paused-enqueue precedent).
+   *  Live+replay merge the new flags into the per-sector store — a call with
+   *  only one flag preserves the other — and record via the push-on-accept
+   *  pattern (commandLog + saveCommands, respecting suppressCommandRecording).
+   *  Internal-only: sector config reconstructs on load by replaying the
+   *  command, never a SaveData schema field. */
+  setLaborSectorState(sector: string, opts: { pinned?: boolean; paused?: boolean }): { ok: boolean; error?: string } {
+    if (!SECTOR_IDS.includes(sector)) {
+      return { ok: false, error: 'unknown-sector' };
+    }
+    if (opts.pinned !== undefined && typeof opts.pinned !== 'boolean') {
+      return { ok: false, error: 'invalid-config' };
+    }
+    if (opts.paused !== undefined && typeof opts.paused !== 'boolean') {
+      return { ok: false, error: 'invalid-config' };
+    }
+    if (this.paused && !this.replaying) {
+      this.enqueue({ kind: 'setLaborSectorState', sector, pinned: opts.pinned, paused: opts.paused });
+      return { ok: true };
+    }
+    const current = this.laborSectorCfg.get(sector) ?? { pinned: false, paused: false };
+    const merged = {
+      pinned: opts.pinned !== undefined ? opts.pinned : current.pinned,
+      paused: opts.paused !== undefined ? opts.paused : current.paused,
+    };
+    this.laborSectorCfg.set(sector, merged);
+    if (!this.suppressCommandRecording) {
+      this.commandLog.push({
+        tick: this.tickCount,
+        command: `setLaborSectorState ${sector}${
+          opts.pinned !== undefined ? ` pinned=${opts.pinned}` : ''
+        }${opts.paused !== undefined ? ` paused=${opts.paused}` : ''}`,
+        result: 'ok',
+      });
+      this.saveCommands.push({ kind: 'setLaborSectorState', sector, pinned: opts.pinned, paused: opts.paused });
+    }
+    return { ok: true };
+  }
+
   /** Farm production, then cart transfer from farms to touching granaries. */
   private tickFood(): void {
     for (const b of this.buildings) {
@@ -3548,6 +3591,8 @@ function applyCommand(runner: SimRunner, cmd: SaveCommand): void {
     runner.startMission(cmd.id, cmd.year);
   } else if (cmd.kind === 'dismissTutorialStep') {
     runner.dismissTutorialStep(cmd.step);
+  } else if (cmd.kind === 'setLaborSectorState') {
+    runner.setLaborSectorState(cmd.sector, cmd);
   } else {
     const exhaustive: never = cmd;
     throw new Error(`unknown command kind: ${(exhaustive as { kind: string }).kind}`);

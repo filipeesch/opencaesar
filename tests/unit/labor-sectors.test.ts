@@ -192,17 +192,44 @@ describe('surplus pool fill-all (labor.test.ts invariant preserved)', () => {
 
 describe('setLaborSectorState SaveCommand (19.1-03-02)', () => {
   it('round-trips pin/pause through getSaveData → migrate+validate → fromSaveData', () => {
-    const r = sectorTown(2);
-    staffTown(r);
-    (r as unknown as { tickLabor: () => void }).tickLabor();
+    const map = SimMap.fromLayout(22, 16, (x, y) => {
+      if ((x === 3 || x === 4) && (y === 2 || y === 3)) return 'fertile';
+      return 'earth';
+    });
+    const r = new SimRunner(7, map);
+    const place = (t: BuildingType, x: number, y: number) => {
+      const res = r.placeBuilding(t, x, y);
+      if (!res.ok) throw new Error(`place ${t}@${x},${y}: ${res.error}`);
+    };
+    for (let x = 2; x <= 18; x++) {
+      place('road', x, 1);
+      place('road', x, 8);
+    }
+    for (let y = 2; y <= 7; y++) {
+      place('road', 2, y);
+      place('road', 18, y);
+    }
+    place('farm', 3, 2);
+    place('granary', 6, 2);
+    place('market', 9, 2);
+    place('warehouse', 12, 2);
+    place('theatre', 15, 2);
+    place('well', 17, 2);
+    place('house', 4, 7);
+    place('house', 5, 7);
+    // Issue the commands up front so the original run and the replay share the
+    // SAME command timeline (the replay model replays all commands at tick 0 —
+    // a mid-run command would legitimately diverge, like the demolish case in
+    // population-determinism.test.ts). The tick window then derives labor
+    // connectivity + staffing identically on both sides.
     expect(r.setLaborSectorState('food', { pinned: true }).ok).toBe(true);
     expect(r.setLaborSectorState('commerce', { paused: true }).ok).toBe(true);
-    for (let i = 0; i < 40; i++) r.tick();
+    for (let i = 0; i < 340; i++) r.tick();
 
     const migrated = migrateSave(r.getSaveData());
     const validated = validateSave(migrated);
     expect(validated.ok).toBe(true);
-    const loaded = SimRunner.fromSaveData(migrated as SaveData);
+    const loaded = SimRunner.fromSaveData(migrated as SaveData, map);
     expect(loaded.getLaborSectors()).toEqual(r.getLaborSectors());
   });
 
