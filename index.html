@@ -318,7 +318,8 @@
         padding: 8px 12px;
         color: #f3e9d2;
         font-size: 12px;
-        pointer-events: auto;
+        /* Display-only readout — never intercepts clicks (T-18-04). */
+        pointer-events: none;
       }
       .overlay-legend .hud-subtitle {
         margin-bottom: 4px;

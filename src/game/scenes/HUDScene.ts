@@ -8,7 +8,8 @@ import { BUILDINGS } from '../../sim/buildings';
 import { HOUSE_TIERS } from '../../sim/config';
 import { foodHudFromState } from '../../sim/advisors';
 import { advisorPanels, ADVISOR_TAB_ORDER } from '../advisors';
-import type { AdvisorAction } from '../advisors';
+import type { AdvisorAction, OverlayId } from '../advisors';
+import { OVERLAY_RAMPS } from '../palette';
 import type { SimRunner } from '../../sim/runner';
 import type { BuildingCategory, BuildingState, BuildingType } from '../../sim/types';
 import { writeSave } from '../save';
@@ -247,6 +248,34 @@ export class HUDScene extends Phaser.Scene {
     const overlayToggles = document.createElement('div');
     overlayToggles.className = 'overlay-toggles';
     overlayToggles.dataset.testid = 'overlay-toggles';
+    // 5 overlay toggles + None (UI-03): each click emits 'overlay-toggle' — the
+    // single source of truth is MainScene.setOverlay (radio: exactly one active).
+    for (const o of OVERLAY_KEYS) {
+      const btn = document.createElement('button');
+      btn.className = 'overlay-toggle';
+      btn.dataset.testid = `overlay-${o.id}`;
+      btn.dataset.overlay = o.id;
+      const label = document.createElement('span');
+      label.textContent = o.label;
+      const shortcut = document.createElement('span');
+      shortcut.className = 'shortcut';
+      shortcut.textContent = o.key;
+      btn.append(label, shortcut);
+      btn.addEventListener('click', () => this.game.events.emit('overlay-toggle', o.id));
+      overlayToggles.appendChild(btn);
+    }
+    const noneBtn = document.createElement('button');
+    noneBtn.className = 'overlay-toggle';
+    noneBtn.dataset.testid = 'overlay-none';
+    noneBtn.dataset.overlay = 'none';
+    const noneLabel = document.createElement('span');
+    noneLabel.textContent = 'None';
+    const noneShortcut = document.createElement('span');
+    noneShortcut.className = 'shortcut';
+    noneShortcut.textContent = 'X';
+    noneBtn.append(noneLabel, noneShortcut);
+    noneBtn.addEventListener('click', () => this.game.events.emit('overlay-toggle', 'none'));
+    overlayToggles.appendChild(noneBtn);
     overlayBar.append(overlayHead, overlayToggles);
 
     // Legend host (filled/cleared by the overlay system — 18-03-02).
@@ -370,6 +399,7 @@ export class HUDScene extends Phaser.Scene {
     });
 
     this.game.events.on('hud-toast', (text: string) => this.showToast(text));
+    this.game.events.on('overlay-legend', (id: OverlayId | null) => this.renderOverlayLegend(id));
     this.game.events.on('game-pause', () => {
       this.closePopup();
       this.els.overlay.style.display = 'flex';
@@ -527,6 +557,39 @@ export class HUDScene extends Phaser.Scene {
     return btn;
   }
 
+  /** Sync the overlay bar's active classes and render/clear the legend. */
+  private renderOverlayLegend(id: OverlayId | null): void {
+    this.els.overlayToggles.querySelectorAll('.overlay-toggle').forEach((btn) => {
+      const oid = (btn as HTMLElement).dataset.overlay;
+      btn.classList.toggle('active', oid === id || (oid === 'none' && id === null));
+    });
+    const legend = this.els.overlayLegend;
+    if (!legend) return;
+    legend.textContent = '';
+    if (!id) {
+      legend.style.display = 'none';
+      return;
+    }
+    const head = document.createElement('div');
+    head.className = 'hud-subtitle';
+    head.textContent = overlayName(id);
+    legend.appendChild(head);
+    const ramp = OVERLAY_RAMPS[id];
+    const labels = OVERLAY_LABELS[id];
+    for (let i = 0; i < ramp.length; i++) {
+      const rowEl = document.createElement('div');
+      rowEl.className = 'legend-row';
+      const swatch = document.createElement('span');
+      swatch.className = 'legend-swatch';
+      swatch.style.background = ramp[i];
+      const lab = document.createElement('span');
+      lab.textContent = labels[i];
+      rowEl.append(swatch, lab);
+      legend.appendChild(rowEl);
+    }
+    legend.style.display = 'block';
+  }
+
   private renderLog(messages: { tick: number; type: string; text: string }[]): void {
     this.els.log.innerHTML = '';
     const recent = messages.slice(-8).reverse();
@@ -639,6 +702,33 @@ export class HUDScene extends Phaser.Scene {
 
 function row(label: string, value: string): string {
   return `<div class="row"><span>${label}</span><b>${value}</b></div>`;
+}
+
+/** Overlay bar toggle definitions (UI-03, locked shortcuts W/F/R/C/D + X). */
+const OVERLAY_KEYS: { id: OverlayId; label: string; key: string }[] = [
+  { id: 'water', label: 'Water', key: 'W' },
+  { id: 'food', label: 'Food', key: 'F' },
+  { id: 'risks', label: 'Risks', key: 'R' },
+  { id: 'coverage', label: 'Coverage', key: 'C' },
+  { id: 'desirability', label: 'Desirability', key: 'D' },
+];
+
+/** Static legend band labels per overlay (safe — no sim-derived strings). */
+const OVERLAY_LABELS: Record<OverlayId, readonly string[]> = {
+  water: ['None', 'Basic', 'Clean', 'Grand', 'Source'],
+  food: ['0 days', 'Low', 'Med', 'High', 'Plenty'],
+  risks: ['None', 'Low', 'Moderate', 'High', 'Critical'],
+  coverage: ['0-20%', '20-40%', '40-60%', '60-80%', '80-100%'],
+  desirability: ['Low', 'Modest', 'Neutral', 'Good', 'High'],
+};
+
+/** Legend heading for an overlay id (static display text). */
+function overlayName(id: OverlayId): string {
+  const names: Record<OverlayId, string> = {
+    water: 'Water', food: 'Food Supply', risks: 'Risks',
+    coverage: 'Service Coverage', desirability: 'Desirability',
+  };
+  return names[id] ?? id;
 }
 
 /** Human panel title for an advisor tab id (static display text). */

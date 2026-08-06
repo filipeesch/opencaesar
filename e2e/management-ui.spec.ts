@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { BUILDINGS } from '../src/sim/buildings';
 import type { BuildingType } from '../src/sim/types';
-import { getState, openGame, pickTile, placeOn, runTicks, tileCenter, zoomOut } from './helpers';
+import { getCamera, getState, openGame, pickTile, placeOn, runTicks, tileCenter, zoomOut } from './helpers';
 
 /**
  * Phase 18 management-ui e2e suite (UI-01..04). Scaffolded in Wave 0 against
@@ -222,6 +222,26 @@ test('overlay toggle shows a legend and clicking a highlighted tile opens the in
   // Exactly one overlay is active (radio) — clear it via None.
   await page.getByTestId('overlay-none').click();
   await expect(page.getByTestId('overlay-legend')).toBeHidden();
+
+  expect(errors).toEqual([]);
+});
+
+test('camera wheel-zoom keeps working while an overlay is active (UI-03)', async ({ page }) => {
+  const errors = collectErrors(page);
+  await openGame(page);
+  await zoomOut(page); // zoom is at its 0.5 min after zoomOut
+
+  await page.getByTestId('controls-overlays').click();
+  await page.getByTestId('overlay-water').click();
+  await expect(page.getByTestId('overlay-legend')).toBeVisible();
+
+  // Wheel-zoom must still change the camera with an overlay active (T-18-04).
+  const before = await getCamera(page);
+  await page.mouse.move(640, 400);
+  await page.mouse.wheel(0, -120); // zoom in
+  await page.waitForTimeout(150);
+  const after = await getCamera(page);
+  expect(after.zoom).toBeGreaterThan(before.zoom);
 
   expect(errors).toEqual([]);
 });

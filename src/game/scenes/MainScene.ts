@@ -10,12 +10,14 @@
 import Phaser from 'phaser';
 import { BUILDINGS } from '../../sim/buildings';
 import { CONFIG } from '../../sim/config';
-import type { BuildingType, PlacementError, PlacementResult, SaveData, SimState, TileType, Vec2 } from '../../sim/types';
+import { foodOverlayGrids } from '../../sim/advisors';
+import type { BuildingState, BuildingType, PlacementError, PlacementResult, SaveData, SimState, TileType, Vec2 } from '../../sim/types';
 import { SimRunner } from '../../sim/runner';
 import { TimeSystem } from '../../sim/time';
 import { HOUSE_FOOT_TOP_Y, HOUSE_FRAME_H, houseFrame, isSheetLoaded, SHEET_BUILDINGS, getSpriteMeta, BUILDING_RESOLUTIONS } from '../art';
 import { drawBuilding } from '../buildingArt';
-import { BUILDING_COLORS, HOUSE_COLORS, TILE_H, TILE_W, WALKER_COLORS } from '../palette';
+import { BUILDING_COLORS, HOUSE_COLORS, TILE_H, TILE_W, WALKER_COLORS, OVERLAY_RAMPS, hexToPhaser } from '../palette';
+import type { OverlayId } from '../advisors';
 
 const TILE_INDEX: Record<TileType, number> = { earth: 0, water: 1, fertile: 2, trees: 3, rock: 4, road: 5 };
 const BUILDABLE_TYPES: readonly BuildingType[] = ['road', 'house', 'garden', 'well', 'fountain', 'farm', 'orchard', 'granary', 'market', 'engineer_post', 'fire_station', 'clinic', 'school', 'library', 'temple', 'theatre', 'forum'];
@@ -51,6 +53,10 @@ export class MainScene extends Phaser.Scene {
   private downPlaced = false;
   /** True while the pause overlay is open — the sim clock halts. */
   private paused = false;
+  /** Active map overlay (UI-03): exactly one at a time, or null for none. */
+  private overlay: OverlayId | null = null;
+  /** Heatmap Graphics drawn below the building depths (never intercepts input). */
+  private overlayGfx: Phaser.GameObjects.Graphics | null = null;
 
   init(data: { seed?: number; mapSize?: number; save?: SaveData }): void {
     if (data?.save) {
@@ -111,6 +117,13 @@ export class MainScene extends Phaser.Scene {
     this.ghost = this.add.graphics();
     this.ghost.setDepth(100000);
 
+    // Overlay heatmap layer (UI-03): depth 1 sits above terrain (0) but below
+    // every building depth (~30+), keeping buildings legible, and never takes
+    // pointer input — camera pan/zoom and the click-inspect path stay intact.
+    this.overlayGfx = this.add.graphics();
+    this.overlayGfx.setDepth(1);
+    this.overlayGfx.setVisible(true);
+
     this.wireInput(cam);
 
     this.input.keyboard?.on('keydown-ESC', () => {
@@ -125,6 +138,17 @@ export class MainScene extends Phaser.Scene {
       }
       this.setPaused(true);
     });
+
+    // Keyboard overlay shortcuts (UI-03, locked): W/F/R/C/D + X to clear.
+    const kb = this.input.keyboard;
+    kb?.on('keydown-W', () => this.setOverlay('water'));
+    kb?.on('keydown-F', () => this.setOverlay('food'));
+    kb?.on('keydown-R', () => this.setOverlay('risks'));
+    kb?.on('keydown-C', () => this.setOverlay('coverage'));
+    kb?.on('keydown-D', () => this.setOverlay('desirability'));
+    kb?.on('keydown-X', () => this.setOverlay(null));
+    this.game.events.on('overlay-toggle', (id: OverlayId | 'none' | null) => this.setOverlay(id));
+
     this.scene.launch('HUD');
 
     if (new URLSearchParams(window.location.search).has('test')) {
@@ -139,6 +163,109 @@ export class MainScene extends Phaser.Scene {
     this.syncTerrain(state);
     this.syncEntities(state);
     this.updateGhost();
+    if (this.overlay) this.renderOverlay(state, this.overlay);
+  }
+
+  /**
+   * Set the active overlay (UI-03): exactly one at a time (radio), 'none'/null
+   * clears it. Single source of truth for the bar, the keyboard, and adviser
+   * open-overlay actions. Read-only view state — never touches sim state.
+   */
+  private setOverlay(id: OverlayId | 'none' | null): void {
+    const next = id && id !== 'none' ? (id as OverlayId) : null;
+    this.overlay = next;
+    this.overlayGfx?.clear();
+    this.game.events.emit('overlay-legend', next);
+    // A fresh overlay closes any open popup (click-through reopens one).
+    this.game.events.emit('hud-inspect', null);
+  }
+
+  /** Draw the active overlay's heatmap from its pure per-tile grid, below the
+   *  building depths. Zero-value cells are not painted (the map stays legible). */
+  private renderOverlay(state: SimState, overlayId: OverlayId): void {
+    const gfx = this.overlayGfx;
+    if (!gfx) return;
+    const width = state.width;
+    const height = state.height;
+
+    let cells: number[][] | null = null;
+    let bandOf: (v: number) => number;
+    const clampBand = (b: number): number => Math.min(4, Math.max(0, b));
+
+    switch (overlayId) {
+      case 'water': {
+        const o = this.runner.getWaterOverlay();
+        const src = o.sources;
+        const cls = o.houseWaterClass;
+        cells = Array.from({ length: height }, (_, y) =>
+          Array.from({ length: width }, (_, x) => (src[y][x] > 0 ? 4 : cls[y][x])),
+        );
+        bandOf = (v) => v;
+        break;
+      }
+      case 'food': {
+        const o = foodOverlayGrids(state);
+        cells = o.supplyDays;
+        bandOf = (v) => (v <= 0 ? 0 : v < 3 ? 1 : v < 6 ? 2 : v < 10 ? 3 : 4);
+        break;
+      }
+      case 'risks': {
+        const o = this.runner.getCivilizationOverlay();
+        const fire = o.fire;
+        const danger = o.danger;
+        const collapse = o.collapse;
+        const crime = o.crime;
+        cells = Array.from({ length: height }, (_, y) =>
+          Array.from({ length: width }, (_, x) =>
+            Math.max(fire[y][x], danger[y][x], collapse[y][x], crime[y][x]),
+          ),
+        );
+        bandOf = (v) => clampBand(Math.floor(v / 0.25));
+        break;
+      }
+      case 'coverage': {
+        const civ = this.runner.getCivicStats();
+        cells = Array.from({ length: height }, () => new Array<number>(width).fill(0));
+        const byId = new Map<number, BuildingState>();
+        for (const b of state.buildings) byId.set(b.id, b);
+        for (const h of civ.houses) {
+          const b = byId.get(h.id);
+          if (!b) continue;
+          const v = Math.max(h.health, h.literacy, h.entertainment) / 100;
+          for (let dy = 0; dy < b.footprint; dy++) {
+            for (let dx = 0; dx < b.footprint; dx++) {
+              const yy = b.y + dy;
+              const xx = b.x + dx;
+              if (yy >= 0 && yy < height && xx >= 0 && xx < width) cells[yy][xx] = v;
+            }
+          }
+        }
+        bandOf = (v) => clampBand(Math.round(v * 4));
+        break;
+      }
+      case 'desirability': {
+        const o = this.runner.getWaterOverlay();
+        cells = o.desirability;
+        bandOf = (v) => clampBand(Math.round((v + 8) / 4));
+        break;
+      }
+      default:
+        return;
+    }
+    if (!cells) return;
+
+    const ramp = OVERLAY_RAMPS[overlayId];
+    gfx.clear();
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const v = cells[y][x];
+        if (!v || v === 0) continue;
+        const band = clampBand(bandOf(v));
+        const color = hexToPhaser(ramp[band]);
+        const top = tileTop(x, y);
+        drawDiamond(gfx, top.x, top.y, TILE_W / 2, TILE_H / 2, color, 0.55);
+      }
+    }
   }
 
   /** Enter or leave build mode (called from the HUD). */
