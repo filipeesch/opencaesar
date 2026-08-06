@@ -18,7 +18,7 @@
 | `src/game/scenes/HUDScene.ts` (Settings control-bar button + drawer) | controller (DOM overlay) | request-response | `HUDScene.ts` — control bar (262-280), `toggleAdvisorsDrawer`/`toggleOverlayBar` (508-528), `saveGame` (691-695), `game.events` on/off (475-497) | exact (self-extension) |
 | `index.html` (body[data-text-size]/[data-reduced-motion] CSS seams) | config (styles) | static | `index.html` HUD CSS block (lines 7-545) | exact (self-extension) |
 | `tests/unit/saveCodec.test.ts` (NEW) | test | n/a | `tests/unit/ui.test.ts:40-49` (options round-trip) + `tests/unit/save.test.ts` + `tests/determinism/determinism.test.ts:29-42` | exact |
-| `tests/unit/optionsStore.test.ts` (NEW) | test | n/a | `tests/unit/save.test.ts` (memStore + `StorageLike` + `SaveResult`) + `tests/unit/ui.test.ts:40-49` | exact |
+| `tests/unit/options.test.ts` (NEW) | test | n/a | `tests/unit/save.test.ts` (memStore + `StorageLike` + `SaveResult`) + `tests/unit/ui.test.ts:40-49` | exact |
 | `tests/unit/save.test.ts` (EXTEND — `loadSavedGame`) | test | n/a | `tests/unit/save.test.ts` itself | exact (self-extension) |
 | `tests/unit/time.test.ts` (EXTEND — boot default speed) | test | n/a | `tests/unit/time.test.ts:32-36,92-106` (setSpeed) | exact (self-extension) |
 | `tests/determinism/determinism.test.ts` (EXTEND — migrate/validate in round-trip) | test (determinism) | n/a | `tests/determinism/determinism.test.ts:29-42` (save/load round-trip) | exact (self-extension) |
@@ -356,7 +356,7 @@ expect(SimRunner.fromSaveData(migrated as SaveData).getStateJson()).toBe(origina
 ```
 **Delta cases (RESEARCH Validation Map):** migrate N→N+1 chain + current-version pass-through; `version > current` / `version < 1` typed reject; validate rejects non-finite seed/mapSize/tickCount, `commands` not array, unknown command kind, malformed command field — with NO raw throw.
 
-### `tests/unit/optionsStore.test.ts` (NEW)
+### `tests/unit/options.test.ts` (NEW)
 
 **Analog:** `tests/unit/save.test.ts` (`memStore()` StorageLike factory, lines 5-12) + `tests/unit/ui.test.ts:40-49`.
 

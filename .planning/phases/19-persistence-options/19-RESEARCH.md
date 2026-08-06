@@ -155,7 +155,7 @@ src/
 index.html                 # + body[data-text-size=…] / body[data-reduced-motion=true] CSS
 tests/
 ├── unit/saveCodec.test.ts    # NEW — migrate/validate (version bounds, corrupt command, NaN)
-├── unit/optionsStore.test.ts # NEW — localStorage round-trip, defaults merge, corrupt→defaults
+├── unit/options.test.ts # NEW — localStorage round-trip, defaults merge, corrupt→defaults
 └── unit/save.test.ts         # extend — loadSavedGame rejects invalid, migrates old
 e2e/settings.spec.ts          # NEW — settings panel e2e (data-testid), save/load with validation
 ```
@@ -437,22 +437,24 @@ body[data-reduced-motion="true"] *:not(.hud-toast) {
 
 ## Open Questions
 
-1. **Should validation/migration failures surface in the Home UI, and how?**
+> All four questions are RESOLVED — the plan (19-PLAN.md) implements the recommendations below.
+
+1. **Should validation/migration failures surface in the Home UI, and how?** *(RESOLVED — disable load + reason text, no modal; plan 19-01-01/02)*
    - What we know: `loadSavedGame()` will return a typed reason (read/parse/migrate/validate).
    - What's unclear: whether the home screen disables Load with a message, or shows a toast explaining "corrupt save rejected" vs silently disabling.
    - Recommendation: disable the load button when the save fails validation and show the reason text on the button/tooltip; keep it simple — no modal.
 
-2. **Is the autosave/quicksave quickload UI in scope?**
+2. **Is the autosave/quicksave quickload UI in scope?** *(RESOLVED — OUT of scope; plan keeps slot UI unwired)*
    - What we know: spec requires it; CONTEXT's locked decisions do not mention slot UI; the APIs exist and are unit-tested but unwired (Pitfall 7).
    - What's unclear: whether "versioned save/load for all systems" implies the slot UI.
    - Recommendation: keep it out unless the planner expands scope; if included, route every slot read through `loadSavedGame()`.
 
-3. **How literal should "graphics quality → renderers" be, given only-build-time RenderConfig?**
+3. **How literal should "graphics quality → renderers" be, given only-build-time RenderConfig?** *(RESOLVED — RenderConfig booleans at boot + optional canvas CSS toggle; plan 19-02-01)*
    - What we know: RenderConfig is fixed at context creation (Pitfall 3).
    - What's unclear: whether "high/medium/low" should also toggle CSS `image-rendering` or sprite resolution selection (art.ts already selects per-zoom resolutions).
    - Recommendation: map to RenderConfig booleans at boot; optionally add a canvas CSS `image-rendering` toggle for low — confirm visual acceptance at verify.
 
-4. **Does `gameSpeedDefault` apply to a fresh city AND a loaded city?**
+4. **Does `gameSpeedDefault` apply to a fresh city AND a loaded city?** *(RESOLVED — both; plan 19-02-02)*
    - What we know: `MainScene.create()` runs for both paths (runtimeConfig save vs seed).
    - What's unclear: none really — apply in `create()` after runner construction for both. Intent confirmed; no user decision needed beyond A5 key naming.
 
@@ -490,19 +492,19 @@ body[data-reduced-motion="true"] *:not(.hud-toast) {
 | PERS-01 | `validateSave` rejects: non-finite seed/mapSize/tickCount, `commands` not array, unknown command kind, malformed command field (no raw throw) | unit | same file `::validate` | ❌ Wave 0 |
 | PERS-01 | `loadSavedGame()` read→parse→migrate→validate; corrupt JSON / unknown version / invalid data → typed `ok:false`; valid v1 → `ok:true` | unit | extend `tests/unit/save.test.ts` | ✅ extend |
 | PERS-01 | Save → load round-trips byte-identically WITH migrate/validate in the loop, across systems (missions/events/objectives/tutorial/options decisions) | determinism (existing pattern) | `npm run test:unit -- tests/determinism` (extend one suite to call migrateSave/validateSave first) | ✅ extend |
-| PERS-02 | Options persist to `rcb.options` and round-trip; missing/corrupt stored value → defaults merge; forward-compat (unknown future fields preserved via merge) | unit | `npm run test:unit -- tests/unit/optionsStore.test.ts` (new) | ❌ Wave 0 |
+| PERS-02 | Options persist to `rcb.options` and round-trip; missing/corrupt stored value → defaults merge; forward-compat (unknown future fields preserved via merge) | unit | `npm run test:unit -- tests/unit/options.test.ts` (new) | ❌ Wave 0 |
 | PERS-02 | Settings panel e2e: toggle option → toast → reload page → option still applied (localStorage survives) | e2e | `npx playwright test e2e/settings.spec.ts` (new) | ❌ Wave 0 |
 | PERS-02 | `gameSpeedDefault` applied at boot (MainScene.create → timeSystem.speed), HUD speed buttons still override live speed | unit (TimeSystem) + e2e | extend `tests/unit/time.test.ts` + settings.spec.ts | ✅ extend |
 | Guard | No `getStateJson()` change from any PERS work; options never enter SaveData | determinism/golden | `npm run test:unit -- tests/golden tests/determinism` | ✅ |
 
 ### Sampling Rate
-- **Per task commit:** `npm run typecheck && npm run test:unit -- tests/unit/saveCodec.test.ts tests/unit/optionsStore.test.ts`
+- **Per task commit:** `npm run typecheck && npm run test:unit -- tests/unit/saveCodec.test.ts tests/unit/options.test.ts`
 - **Per wave merge:** `npm test` (full vitest) + `npm run test:e2e` (browser)
 - **Phase gate:** Full suite green before `/gsd-verify-work`
 
 ### Wave 0 Gaps
 - [ ] `tests/unit/saveCodec.test.ts` — migrate/validate (version bounds, corrupt command, NaN)
-- [ ] `tests/unit/optionsStore.test.ts` — rcb.options persistence, defaults merge, corrupt→defaults
+- [ ] `tests/unit/options.test.ts` — rcb.options persistence, defaults merge, corrupt→defaults
 - [ ] `e2e/settings.spec.ts` — settings panel + persist-across-reload
 - [ ] Extend `tests/unit/save.test.ts` (loadSavedGame) and `tests/unit/time.test.ts` (boot default speed)
 
