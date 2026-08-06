@@ -34,12 +34,13 @@ an opaque "teleporting stock" or radious-only model.
 - 21-level housing progression (cumulative requirements, hysteresis devolution, deterministic house merging, level-based economy bridge) — Phase 16
 - 10-mission campaign (playable/winnable in sequence), contextual state-observed tutorial, catalog-derived codex — Phase 17
 - Management UI: HUD with all controls wired, 13-advisor composer, overlays with heatmaps/legends/click-through, 5 inspectors — Phase 18
-- Versioned save/load (migration + validation + deterministic reload) and functional persisted options/accessibility — Phase 19 (final v1.0 phase)
+- Versioned save/load (migration + validation + deterministic reload) and functional persisted options/accessibility — Phase 19
+- Per-residence population (class/age/employment via seeded residents), month-cadence migration (vacancy-bounded, famine refill, homeless), labor sectors with priority 1-5 + reserve-pin/pause/restore-auto SaveCommand, wage/unemployment band reporting — Phase 19.1
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
-Full build-out of the game.md specification — see REQUIREMENTS.md and ROADMAP.md.
+UI Redesign — Caesar III-style sidebar & advisor panels (Phase 20, INSERTED — ui-redesign).
 
 ### Out of Scope
 
@@ -56,8 +57,9 @@ Full build-out of the game.md specification — see REQUIREMENTS.md and ROADMAP.
 - Housing: `data/housing.ts` (`HOUSING_LEVELS` 21-level + footprint ladder), `src/sim/housingLive.ts` (bridge: `HOUSING_LIVE_STATS`, `levelDesirability`, `deriveSatisfied`, `liveStats`), `src/sim/housingMerge.ts` (deterministic merge), `housingEvolution.ts` (`decideEvolution` hysteresis, untouched).
 - Campaign: `data/missions.ts` (10 missions + per-mission map/modifiers/routes), `src/sim/missionMaps.ts` (layouts), `src/sim/campaign.ts` (codex + tutorial predicates), runner `startMission` (replayable SaveCommand), `getTutorial()`/`getCodex()` derived accessors.
 - Management UI: `src/game/advisors.ts` (13-advisor composer), HUDScene/MainScene (control bar, drawer, overlays, inspectors), runner `getWaterOverlay()`/`getInspector(kind,id)`/`getDesirabilityOverlay()`.
-- Tests: Vitest (`npm run test`), 119 files / 929 passing including golden determinism + Playwright e2e. `tsc --noEmit` must be clean.
+- Tests: Vitest (`npm run test`), 121 files / 973 passing including golden determinism + Playwright e2e. `tsc --noEmit` must be clean.
 - Fragile API contract: expanding certain types previously broke tests; changes need golden-equivalence verification.
+- v1.0 shipped 2026-08-06: 20 phases (1-19 + 19.1), 59/59 REQ-IDs wired, 973 tests. Milestone archives in `.planning/milestones/v1.0-*`. Open advisories: Phase-18 UI-review top-3 (keyboard A/←/→ bindings, per-service coverage hues, UPPERCASE labels) — deferred, target for Phase 20.
 
 ## Constraints
 
@@ -81,6 +83,7 @@ Full build-out of the game.md specification — see REQUIREMENTS.md and ROADMAP.
 - Tutorial/codex are derived-only (never in `getState()`): pure predicates over `DerivedSnapshot`; codex built strictly from data catalogs — goldens untouched — Phase 17
 - UI is view-only read-only: inspectors read internals via `getInspector(kind,id)` (explicit building/walker disambiguation — CR-01 fix) + `getWalkerInternals` seam, never growing serialized state; new DOM uses `textContent`/`createElement` (XSS-safe) — Phase 18
 - Save/options: `saveCodec.ts` (SAVE_VERSION, additive `migrateSave`, full-union `validateSave` incl. `pendingCommands`) before `fromSaveData` (never edited); options in `src/game/options.ts` (`rcb.options`, disjoint from save), sanitized on load, applied at boot — Phase 19
+- Population/labor (v1.0 gap closure): per-residence residents live ONLY on `HouseInstance` internals (never serialized; `toBuildingState` must not copy them) + `DerivedSnapshot` report fields; migration is vacancy-bounded (0-delta when city full ⇒ golden-neutral) on the %40 month cadence; labor pinning = runner-level reserve-guard (the pure `allocateWorkers` pinned branch is not relied on); `setLaborSectorState` validated in handler + `validateCommand`; wage bands are pure reporting (no treasury change) — Phase 19.1
 
 ## Evolution
 
@@ -99,4 +102,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
-_Last updated: 2026-08-06 after Phase 19 (v1.0 complete)_
+_Last updated: 2026-08-06 after v1.0 milestone (shipped)_
