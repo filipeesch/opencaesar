@@ -851,12 +851,21 @@ export class HUDScene extends Phaser.Scene {
     if (building.type === 'granary' || building.type === 'warehouse') {
       const slotCap = BUILDINGS[building.type]?.storageCapacity ?? 0;
       const used = Object.values(building.stock).reduce((a, v) => a + (v ?? 0), 0);
-      storageInspection({ ...building.stock }, Math.min(slotCap, Math.floor(used)), slotCap);
+      // WR-06: use the projection's output instead of discarding it — the
+      // enriched reserved/inTransit fields render only when real internals
+      // supply them (never fabricated zeros).
+      const insp = storageInspection({ ...building.stock }, Math.min(slotCap, Math.floor(used)), slotCap);
       appendRow(body, 'Workers', `${building.workersAssigned}/${building.workersRequired}`);
       appendRow(body, 'Active', ok(building.active));
-      appendRow(body, 'Used', String(Math.floor(used)));
-      appendRow(body, 'Capacity', String(slotCap));
-      for (const [g, v] of Object.entries(building.stock)) appendRow(body, g, String(Math.floor(v)));
+      appendRow(body, 'Used', String(typeof insp.usedSlots === 'number' ? insp.usedSlots : Math.floor(used)));
+      appendRow(body, 'Capacity', String(typeof insp.capacity === 'number' ? insp.capacity : slotCap));
+      const totalOf = (rec: Record<string, number> | undefined): number =>
+        rec ? Object.values(rec).reduce((a, b) => a + (Number(b) || 0), 0) : 0;
+      const reserved = totalOf(insp.reserved as Record<string, number> | undefined);
+      const inTransit = totalOf(insp.inTransit as Record<string, number> | undefined);
+      if (reserved > 0) appendRow(body, 'Reserved', String(reserved));
+      if (inTransit > 0) appendRow(body, 'In Transit', String(inTransit));
+      for (const [g, v] of Object.entries(insp.stock ?? building.stock)) appendRow(body, g, String(Math.floor(v)));
       return;
     }
 
