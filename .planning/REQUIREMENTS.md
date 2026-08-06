@@ -27,10 +27,10 @@ Requirements for completing the OpenCaesar build-out. Each maps to roadmap phase
 
 ### Population & Labor (Section 10, 13)
 
-- [ ] **POP-01**: Population is modeled per residence with class, age bands, employment, children/elderly, taxable income, inventories, service access, sentiment, crime/health risk
-- [ ] **POP-02**: Migration (attractiveness index, immigration/emigration walkers, homelessness) is modeled
-- [ ] **POP-03**: Labor sectors with priority 1–5, pinning, pause, restore-auto; scarce workers allocated by priority
-- [ ] **POP-04**: Urban wage policy with imperial reference comparison and unemployment band reporting
+- [x] **POP-01**: Population is modeled per residence with class, age bands, employment, children/elderly, taxable income, inventories, service access, sentiment, crime/health risk
+- [x] **POP-02**: Migration (attractiveness index, immigration/emigration walkers, homelessness) is modeled
+- [x] **POP-03**: Labor sectors with priority 1–5, pinning, pause, restore-auto; scarce workers allocated by priority
+- [x] **POP-04**: Urban wage policy with imperial reference comparison and unemployment band reporting
 
 ### Housing (Section 11)
 

@@ -2,28 +2,28 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Complete OpenCaesar
-current_phase: 20
-current_phase_name: ui redesign — caesar iii sidebar & advisors
-status: planning
-stopped_at: Completed 19-19-PLAN.md
-last_updated: "2026-08-06T12:46:04.718Z"
+current_phase: 19.1
+current_phase_name: population-labor
+status: verifying
+stopped_at: Completed 19.1-PLAN.md
+last_updated: "2026-08-06T20:15:24.214Z"
 last_activity: 2026-08-06
-last_activity_desc: Phase 19 complete, transitioned to Phase 20
+last_activity_desc: Phase 19.1 execution started
 progress:
-  total_phases: 19
-  completed_phases: 19
-  total_plans: 33
-  completed_plans: 33
+  total_phases: 20
+  completed_phases: 20
+  total_plans: 34
+  completed_plans: 34
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 20 — ui redesign — caesar iii sidebar & advisors
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-08-06 — Phase 19 complete, transitioned to Phase 20
+Phase: 19.1 (population-labor) — EXECUTING
+Plan: 1 of 1
+Status: Phase complete — ready for verification
+Last activity: 2026-08-06 — Phase 19.1 execution started
 
 ## Performance Metrics
 
@@ -34,6 +34,7 @@ Last activity: 2026-08-06 — Phase 19 complete, transitioned to Phase 20
 | Phase 17 P17-plan | 6133 | 8 tasks | 12 files |
 | Phase 18 P18 | 91 | 10 tasks | 12 files |
 | Phase 19 P19-plan | 112 | 7 tasks | 15 files |
+| Phase 19.1 P19.1-plan | 138 | 7 tasks | 15 files |
 
 ## Decisions
 
@@ -57,9 +58,12 @@ Last activity: 2026-08-06 — Phase 19 complete, transitioned to Phase 20
 - [Phase ?]: PERS-02: OPTIONS_KEY 'rcb.options' disjoint from save keys; options never enter SaveData/getStateJson (golden-byte)
 - [Phase ?]: PERS-02: graphicsQuality->RenderConfig read BEFORE new Phaser.Game (context-creation-only, 'applies on next launch')
 - [Phase ?]: PERS-02: gameSpeedDefault injected once in MainScene.create() for fresh+loaded paths (positive-finite guard); HUD buttons own live speed afterwards
+- [Phase ?]: Labor allocation by sector priority with a runner-level pinned reserve (pure allocateWorkers pinned branch not relied on — Pitfall 2); setLaborSectorState is a replayable SaveCommand (union + exhaustive applyCommand + saveCodec validateCommand)
+- [Phase ?]: Type-based labor sector map (granary/market→utility, warehouse→commerce) because the storage category splits between utility and commerce; [ASSUMED] tunings A1 (imperial ref 0.3) / A2 (unemployment band thresholds) / A3 (priority map) / A5 (attractiveness weights) kept as-authored
+- [Phase ?]: Per-residence population derived from level/tick history (never serialized); wage/unemployment bands reported as pure DerivedSnapshot projections — zero SaveData growth, zero golden delta
 
 ## Session
 
-**Last session:** 2026-08-06T11:54:17.976Z
-**Stopped at:** Completed 19-19-PLAN.md
+**Last session:** 2026-08-06T20:02:06.293Z
+**Stopped at:** Completed 19.1-PLAN.md
 **Resume file:** None
