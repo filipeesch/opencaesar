@@ -296,6 +296,31 @@ export function residenceInspection(
     if (h.godAccess && Object.keys(h.godAccess).length > 0) out.godAccess = { ...h.godAccess };
     if (h.foodInventory) out.foodInventory = { ...h.foodInventory };
     if (h.civic) out.civic = { ...h.civic };
+    // POP-01: the per-residence projection — appended ONLY when internals carry
+    // a live residents cohort (UI-04; minimal calls keep the old shape). Never
+    // fabricated: class/age/employment derive from the deterministic residents.
+    if (h.residents) {
+      let plebeian = 0;
+      let patrician = 0;
+      let children = 0;
+      let workforce = 0;
+      let elderly = 0;
+      let employed = 0;
+      for (const r of h.residents) {
+        if (r.class === 'patrician') patrician += 1;
+        else plebeian += 1;
+        if (r.age <= 15) children += 1;
+        else if (r.age <= 60) workforce += 1;
+        else elderly += 1;
+        if (r.employed) employed += 1;
+      }
+      out.residents = {
+        count: h.residents.length,
+        classBreakdown: { plebeian, patrician },
+        ageBands: { children, workforce, elderly },
+        employed,
+      };
+    }
   }
   if (internals?.happiness !== undefined) out.happiness = internals.happiness;
   if (internals?.desirability !== undefined) out.desirability = internals.desirability;

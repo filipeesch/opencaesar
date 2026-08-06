@@ -904,8 +904,16 @@ export class HUDScene extends Phaser.Scene {
       const h = building.house;
       const houseInternals = internals?.house;
       const safety = internals?.safety;
+      // UI-04/POP-01: feed the residence projection the LIVE internals — the
+      // real dominant resident class and occupancy, never the fabricated
+      // ('plebeian', full-capacity) from before. residency class/occupancy only
+      // appear once the cohort is initialized.
+      const cohort = houseInternals?.residents;
+      const realClass = cohort && cohort.length > 0
+        ? (cohort.filter((r) => r.class === 'patrician').length > cohort.length / 2 ? 'patrician' : 'plebeian')
+        : 'plebeian';
       const insp = residenceInspection(
-        h.populationCapacity, h.populationCapacity, 'plebeian', [],
+        h.populationCapacity, h.populationCapacity, realClass, [],
         {},
         { house: houseInternals, safety, happiness: h.happiness, desirability: h.desirability },
       );
@@ -913,7 +921,10 @@ export class HUDScene extends Phaser.Scene {
       appendRow(body, 'Level', `${lvl} — ${housingLevelName(lvl)}`);
       appendRow(body, 'Tier', `${HOUSE_TIERS[h.tier].name} (${h.tier + 1}/5)`);
       if (typeof insp.satisfiedTicks === 'number') appendRow(body, 'Satisfied Ticks', String(insp.satisfiedTicks));
-      appendRow(body, 'Population', String(h.populationCapacity));
+      const liveCount = insp.residents && typeof insp.residents === 'object'
+        ? String((insp.residents as { count: number }).count)
+        : String(h.populationCapacity);
+      appendRow(body, 'Population', liveCount);
       appendRow(body, 'Food', ok(h.foodCooldown > 0));
       appendRow(body, 'Water', ok(h.waterCooldown > 0));
       appendRow(body, 'Labor', ok(h.laborCooldown > 0));
@@ -925,6 +936,14 @@ export class HUDScene extends Phaser.Scene {
       if (insp.foodInventory && typeof insp.foodInventory === 'object') {
         const fi = insp.foodInventory as Record<string, number>;
         for (const [g, v] of Object.entries(fi)) appendRow(body, `${g} stock`, String(Math.floor(v)));
+      }
+      // POP-01: real per-residence class/age/employment rows (guard mirrors the
+      // foodInventory guard — appended only when the live cohort is present).
+      if (typeof insp.residents === 'object') {
+        const rs = insp.residents as { count: number; classBreakdown: Record<string, number>; ageBands: Record<string, number>; employed: number };
+        appendRow(body, 'Class', `${rs.classBreakdown.plebeian} plebeian / ${rs.classBreakdown.patrician} patrician`);
+        appendRow(body, 'Age Bands', `${rs.ageBands.children} children / ${rs.ageBands.workforce} working age / ${rs.ageBands.elderly} elderly`);
+        appendRow(body, 'Employed', `${rs.employed}/${rs.count}`);
       }
       if (safety) {
         appendRow(body, 'Fire', safety.fire);

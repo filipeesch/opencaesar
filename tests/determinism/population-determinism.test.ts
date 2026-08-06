@@ -50,7 +50,7 @@ describe('per-residence population determinism (POP-01)', () => {
     expect(before).toBeDefined();
     const residentCount = r.getDerived().residentCount;
 
-    const loaded = SimRunner.fromSaveData(r.getSaveData());
+    const loaded = SimRunner.fromSaveData(r.getSaveData(), foodChainMap());
     const after = loaded.getInspector(house.id, 'building')?.internals?.house?.residents;
     expect(after).toEqual(before);
     expect(loaded.getDerived().residentCount).toBe(residentCount);
@@ -91,12 +91,18 @@ describe('migration determinism (POP-02)', () => {
     buildFoodCity(r);
     for (let i = 0; i < 500; i++) r.tick();
     // Healthy city: every house fed → no famine emigration → full occupancy.
-    const before = r.getStateJson();
-    for (let i = 0; i < 80; i++) r.tick(); // two more month boundaries
-    expect(r.getStateJson()).toBe(before);
-    const d = r.getDerived();
-    expect(d.immigration ?? 0).toBe(0);
-    expect(d.emigration ?? 0).toBe(0);
+    const full = residentSum(r);
+    expect(full).toBeGreaterThan(0);
+    const before = r.getDerived();
+    expect(before.immigration ?? 0).toBe(0);
+    expect(before.emigration ?? 0).toBe(0);
+    // Two more month boundaries: occupancy unchanged (net migration is
+    // vacancy-bounded — a full city is zero-delta).
+    for (let i = 0; i < 80; i++) r.tick();
+    expect(residentSum(r)).toBe(full);
+    const after = r.getDerived();
+    expect(after.immigration ?? 0).toBe(0);
+    expect(after.emigration ?? 0).toBe(0);
   });
 
   it('famine-driven emigration creates vacancy that refills and is byte-identical across save/load', () => {
@@ -127,7 +133,7 @@ describe('migration determinism (POP-02)', () => {
     // 3) The refilled resident set is byte-identical across a save/load round-trip.
     const migrated = migrateSave(r.getSaveData());
     expect(validateSave(migrated).ok).toBe(true);
-    const loaded = SimRunner.fromSaveData(migrated as SaveData);
+    const loaded = SimRunner.fromSaveData(migrated as SaveData, foodChainMap());
     expect(loaded.getStateJson()).toBe(r.getStateJson());
     expect(residentSum(loaded)).toBe(refilled);
 

@@ -49,6 +49,7 @@ import type { CodexEntry, CodexKind, HouseView, CityView, TutorialStepId, Tutori
 import { desirabilityOf, tickHousing } from './housing';
 import { housingLevelName } from '../../data/housing';
 import { effectivePopulation, effectiveWorkers, deriveSatisfied } from './housingLive';
+import { ageOnMonth, residentsForHouse } from './population';
 import { findMergePartner, mergeProposal, targetFootprint } from './housingMerge';
 import { Treasury, rollYear } from './finance';
 import type { FinanceLedger } from './finance';
@@ -160,6 +161,13 @@ export interface DerivedSnapshot {
   constructionSpend: number;
   /** RATE-02/D-03: trailing-360-tick window of exported loads (deterministic). */
   annualExports: number;
+  /** POP-01: total residents across all houses (== population by construction —
+   *  Σ effectivePopulation over houses). Golden-safe: getStateJson serializes
+   *  getState, never this snapshot. */
+  residentCount: number;
+  /** POP-01: live per-class resident breakdown from HouseInstance internals
+   *  (0/0 row when no residency initialized yet — total function). */
+  residentsByClass?: { plebeian: number; patrician: number };
 }
 
 export class SimRunner {
@@ -309,7 +317,14 @@ export class SimRunner {
     // HOUS-02: deterministic adjacent-house merging on the month cadence. Runs
     // right after evolution so it sees the tick's final levels, then walkers
     // move (coverage/arrivals see the merged state).
-    if (this.tickCount % 40 === 0) this.tickHousingMerge();
+    // POP-01: the per-residence cohort sync follows immediately after — it
+    // re-derives residents for the tick's final levels (merge/evolution). All
+    // mutation lives HERE (inside tick(), %40 cadence) so save/load replay
+    // re-derives byte-identically.
+    if (this.tickCount % 40 === 0) {
+      this.tickHousingMerge();
+      this.tickResidency();
+    }
 
     // Walkers move last: coverage and arrivals see the tick's final services.
     for (const w of [...this.walkers]) updateWalker(this.simInternals(), w);
@@ -586,6 +601,40 @@ export class SimRunner {
       if (w.targetBuildingId === from) w.targetBuildingId = to;
       if (w.trade?.destBuildingId === from) w.trade.destBuildingId = to;
       if (w.trade?.sourceBuildingId === from) w.trade.sourceBuildingId = to;
+    }
+  }
+
+  /**
+   * POP-01: per-residence cohort sync on the month cadence (tickCount % 40, right
+   * after tickHousingMerge so it sees the tick's final levels). Every house keeps
+   * an internal-only `residents` array derived FROM the level-based
+   * effectivePopulation — never serialized, so goldens/SimState stay
+   * byte-identical. On a level change/merge the cohort is re-derived fresh via
+   * residentsForHouse (mulberry32 seeded by a house-stable salt of id + level +
+   * month — the shared RNG stream is NEVER touched, each cohort gets its own
+   * seeded RNG); otherwise it is aged one month. Occupancy is kept at the house's
+   * effective population and never exceeds it — a devolve becomes over-full and
+   * re-derives.
+   */
+  private tickResidency(): void {
+    for (const b of this.buildings) {
+      if (!b.house) continue;
+      const h = b.house;
+      const level = h.level ?? 0;
+      const capacity = this.effectiveHousePopulation(b);
+      if (
+        h.residents === undefined ||
+        h.residentsDerivedLevel !== level ||
+        h.residentsDerivedCapacity !== capacity
+      ) {
+        const salt = (b.id * 2654435761 + level * 73856093 + Math.floor(this.tickCount / 40) * 19349663) >>> 0;
+        h.residents = residentsForHouse(level, capacity, salt === 0 ? 1 : salt, (s) => mulberry32(s));
+        h.residentsDerivedLevel = level;
+        h.residentsDerivedCapacity = capacity;
+        h.nextResidentId = h.residents.length + 1;
+      } else {
+        ageOnMonth(h.residents);
+      }
     }
   }
 
@@ -1340,7 +1389,27 @@ export class SimRunner {
       decomposition,
       constructionSpend: this.constructionSpend,
       annualExports: this.annualExportsTotal(),
+      // POP-01: per-residence totals projected from live internals (total
+      // functions — 0/0 row when no residency initialized yet). Golden-safe:
+      // getStateJson serializes getState, not this derived snapshot.
+      residentCount: population,
+      residentsByClass: this.residentsByClass(),
     };
+  }
+
+  /** POP-01: live per-class resident totals over internal house residents (0/0
+   *  when no residency has been initialized — total function, empty-city safe). */
+  private residentsByClass(): { plebeian: number; patrician: number } {
+    let plebeian = 0;
+    let patrician = 0;
+    for (const b of this.buildings) {
+      if (!b.house?.residents) continue;
+      for (const r of b.house.residents) {
+        if (r.class === 'patrician') patrician += 1;
+        else plebeian += 1;
+      }
+    }
+    return { plebeian, patrician };
   }
 
   /** Live-derived advisor data (wired from the running sim). */

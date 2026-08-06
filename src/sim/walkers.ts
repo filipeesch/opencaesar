@@ -24,6 +24,7 @@ import {
 } from './logistics';
 import type { GranaryCandidate, MarketCoverage, MarketFoodState, MarketConfig } from './logistics';
 import type { ProductionState } from './production';
+import type { Resident } from './population';
 
 export interface WalkerInstance {
   id: number;
@@ -119,6 +120,30 @@ export interface HouseInstance {
    *  driven by walker-delivered service access. Internal only — never
    *  serialized, so goldens/SimState stay byte-identical. */
   civic?: HouseCivicState;
+  /** Per-residence live population (POP-01). Internal only — never serialized
+   *  to BuildingState, so goldens/SimState stay byte-identical. A cohort of
+   *  exactly effectivePopulation residents, derived deterministically from the
+   *  house level/id and re-derived on any level change/merge. Mutated ONLY on
+   *  the tickCount % 40 residency/migration hooks. */
+  residents?: Resident[];
+  /** Next deterministic resident id for migration bookings (POP-02). Internal
+   *  only — never serialized to BuildingState, so goldens/SimState stay
+   *  byte-identical. */
+  nextResidentId?: number;
+  /** The house level the current `residents` cohort was derived at; a level
+   *  change/merge re-derives the cohort via residentsForHouse. Internal only —
+   *  never serialized to BuildingState, so goldens/SimState stay byte-identical. */
+  residentsDerivedLevel?: number;
+  /** The effective population the current `residents` cohort was derived at (a
+   *  HOUS-02 merge raises capacity without a level change — the cohort must
+   *  re-derive to absorb the combined residents). Internal only — never
+   *  serialized to BuildingState, so goldens/SimState stay byte-identical. */
+  residentsDerivedCapacity?: number;
+  /** Consecutive %40 months the house has been starving (foodCooldown <= 0);
+   *  when it reaches FAMINE_EMIGRATION_MONTHS the POP-02 famine-emigration path
+   *  drains residents. Internal only — never serialized to BuildingState, so
+   *  goldens/SimState stay byte-identical. */
+  starvedMonths?: number;
 }
 
 /** Civic wellness per house (Phase 12). Internal to the sim run. */

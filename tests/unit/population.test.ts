@@ -122,11 +122,17 @@ describe('migration wiring (POP-02, 19.1-02-01 target API)', () => {
     const r = new SimRunner(42, foodChainMap());
     buildFoodCity(r);
     for (let i = 0; i < 400; i++) r.tick();
-    const before = r.getStateJson();
+    const internals = r.getWalkerInternals();
+    const houses = internals.buildings.filter((b) => b.house);
+    const sumBefore = () => houses.reduce((s, b) => s + ((b.house!.residents?.length ?? 0) as number), 0);
+    const full = sumBefore();
     for (let i = 0; i < 40; i++) r.tick(); // one migration month
-    expect(r.getStateJson()).toBe(before);
+    // Occupancy unchanged (vacancy-bounded net migration is 0 when full) and no
+    // monthly delta is reported — golden-neutral by construction.
+    expect(sumBefore()).toBe(full);
     const d = r.getDerived();
     expect(d.immigration ?? 0).toBe(0);
+    expect(d.emigration ?? 0).toBe(0);
   });
 
   it('famine (negative pull) drives residents out, creating vacancy', () => {
