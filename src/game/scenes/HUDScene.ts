@@ -52,6 +52,63 @@ export class HUDScene extends Phaser.Scene {
   /** Currently active advisor tab id (defaults to 'ratings'). */
   private activeAdvisor: string | null = null;
 
+  // WR-04: `game.events` is Phaser's GLOBAL emitter and outlives scene restarts.
+  // Handlers registered there are stored as bound fields so the scene can
+  // off() exactly them on shutdown — otherwise every restart doubles popup
+  // renders / legend calls and leaks memory. These prefixes stay `readonly`
+  // arrow fields so `this` is captured (off() needs the exact fn reference).
+  private readonly onHudToast = (text: string): void => {
+    this.showToast(text);
+  };
+  private readonly onOverlayLegend = (id: OverlayId | null): void => {
+    this.renderOverlayLegend(id);
+  };
+  private readonly onGamePause = (): void => {
+    this.closePopup();
+    this.els.overlay.style.display = 'flex';
+  };
+  private readonly onGameResume = (): void => {
+    this.els.overlay.style.display = 'none';
+  };
+  private readonly onHudInspect = (id: number | null): void => {
+    if (id === null) {
+      this.closePopup();
+    } else {
+      this.inspectId = id;
+      const state = this.main?.runner.getState();
+      const building = state?.buildings.find((b) => b.id === id);
+      if (building) this.renderPopup(building);
+    }
+  };
+  private readonly onHudWalkerInspect = (id: number | null): void => {
+    if (id === null) {
+      this.closePopup();
+    } else {
+      this.inspectId = null;
+      // CR-01: walker ids share the building id space — the kind must be explicit
+      // or a colliding walker would resolve to the building and never open.
+      const inspector = this.main?.runner.getInspector(id, 'walker');
+      if (inspector?.kind === 'walker' && inspector.walker) {
+        this.inspectKind = 'walker';
+        const state = this.main!.runner.getState();
+        // Same-kind cycling (UI-04): walkers of the same type, stable id order.
+        this.inspectList = state.walkers
+          .filter((w) => w.type === inspector.walker!.type)
+          .map((w) => w.id)
+          .sort((a, b) => a - b);
+        this.inspectIndex = this.inspectList.indexOf(id);
+        this.renderWalkerInspector(inspector.walker);
+      }
+    }
+  };
+  private readonly onHudBuildMode = (): void => {
+    this.closePopup();
+    this.els.build.querySelectorAll('.hud-build-btn').forEach((btn) => {
+      const active = this.main?.getBuildMode() === (btn as HTMLElement).dataset.build;
+      btn.classList.toggle('active', active === true);
+    });
+  };
+
   constructor() {
     super('HUD');
   }
@@ -60,6 +117,7 @@ export class HUDScene extends Phaser.Scene {
     this.main = this.scene.get('Main') as MainScene;
     this.buildDom();
     this.wireEvents();
+    this.registerShutdownCleanup();
   }
 
   override update(): void {
@@ -414,52 +472,27 @@ export class HUDScene extends Phaser.Scene {
       this.main?.runner.setPolicy(this.main.runner.getPolicy().taxRate, input.valueAsNumber / 100);
     });
 
-    this.game.events.on('hud-toast', (text: string) => this.showToast(text));
-    this.game.events.on('overlay-legend', (id: OverlayId | null) => this.renderOverlayLegend(id));
-    this.game.events.on('game-pause', () => {
-      this.closePopup();
-      this.els.overlay.style.display = 'flex';
-    });
-    this.game.events.on('game-resume', () => {
-      this.els.overlay.style.display = 'none';
-    });
-    this.game.events.on('hud-inspect', (id: number | null) => {
-      if (id === null) {
-        this.closePopup();
-      } else {
-        this.inspectId = id;
-        const state = this.main?.runner.getState();
-        const building = state?.buildings.find((b) => b.id === id);
-        if (building) this.renderPopup(building);
-      }
-    });
-    this.game.events.on('hud-walker-inspect', (id: number | null) => {
-      if (id === null) {
-        this.closePopup();
-      } else {
-      this.inspectId = null;
-      // CR-01: walker ids share the building id space — the kind must be explicit
-      // or a colliding walker would resolve to the building and never open.
-      const inspector = this.main?.runner.getInspector(id, 'walker');
-      if (inspector?.kind === 'walker' && inspector.walker) {
-        this.inspectKind = 'walker';
-        const state = this.main!.runner.getState();
-        // Same-kind cycling (UI-04): walkers of the same type, stable id order.
-        this.inspectList = state.walkers
-          .filter((w) => w.type === inspector.walker!.type)
-          .map((w) => w.id)
-          .sort((a, b) => a - b);
-        this.inspectIndex = this.inspectList.indexOf(id);
-        this.renderWalkerInspector(inspector.walker);
-      }
-      }
-    });
-    this.game.events.on('hud-build-mode', () => {
-      this.closePopup();
-      this.els.build.querySelectorAll('.hud-build-btn').forEach((btn) => {
-        const active = this.main?.getBuildMode() === (btn as HTMLElement).dataset.build;
-        btn.classList.toggle('active', active === true);
-      });
+    this.game.events.on('hud-toast', this.onHudToast);
+    this.game.events.on('overlay-legend', this.onOverlayLegend);
+    this.game.events.on('game-pause', this.onGamePause);
+    this.game.events.on('game-resume', this.onGameResume);
+    this.game.events.on('hud-inspect', this.onHudInspect);
+    this.game.events.on('hud-walker-inspect', this.onHudWalkerInspect);
+    this.game.events.on('hud-build-mode', this.onHudBuildMode);
+  }
+
+  /** WR-04: game.events listeners leak across scene restarts because the emitter
+   *  is global and outlives the scene. Register a one-shot scene shutdown hook
+   *  that off()s exactly the bound handlers this instance registered. */
+  private registerShutdownCleanup(): void {
+    this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.game.events.off('hud-toast', this.onHudToast);
+      this.game.events.off('overlay-legend', this.onOverlayLegend);
+      this.game.events.off('game-pause', this.onGamePause);
+      this.game.events.off('game-resume', this.onGameResume);
+      this.game.events.off('hud-inspect', this.onHudInspect);
+      this.game.events.off('hud-walker-inspect', this.onHudWalkerInspect);
+      this.game.events.off('hud-build-mode', this.onHudBuildMode);
     });
   }
 

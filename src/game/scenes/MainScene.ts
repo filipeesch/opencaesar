@@ -57,6 +57,9 @@ export class MainScene extends Phaser.Scene {
   private overlay: OverlayId | null = null;
   /** Heatmap Graphics drawn below the building depths (never intercepts input). */
   private overlayGfx: Phaser.GameObjects.Graphics | null = null;
+  /** WR-04: game.events is global — holding the bound handler lets the scene
+   *  off() it on shutdown so restarts don't stack duplicate setOverlay renders. */
+  private readonly onOverlayToggle = (id: OverlayId | 'none' | null): void => this.setOverlay(id);
 
   init(data: { seed?: number; mapSize?: number; save?: SaveData }): void {
     if (data?.save) {
@@ -147,7 +150,14 @@ export class MainScene extends Phaser.Scene {
     kb?.on('keydown-C', () => this.setOverlay('coverage'));
     kb?.on('keydown-D', () => this.setOverlay('desirability'));
     kb?.on('keydown-X', () => this.setOverlay(null));
-    this.game.events.on('overlay-toggle', (id: OverlayId | 'none' | null) => this.setOverlay(id));
+    // WR-04: register the bound handler and off() it on shutdown — game.events
+    // is a global emitter that outlives scene restarts (restartToHome stops and
+    // re-launches Main/HUD), so without cleanup every restart would call
+    // setOverlay N times for one overlay-toggle emit.
+    this.game.events.on('overlay-toggle', this.onOverlayToggle);
+    this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.game.events.off('overlay-toggle', this.onOverlayToggle);
+    });
 
     this.scene.launch('HUD');
 
