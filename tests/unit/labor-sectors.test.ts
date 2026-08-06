@@ -55,6 +55,34 @@ function buildingsOf(r: SimRunner): BuildingInstance[] {
   return (r as unknown as { buildings: BuildingInstance[] }).buildings;
 }
 
+/** 60x16 palatine town: a 5x5 Governor Palace (workers 40) in the north block
+ *  with 45 houses along the south row — 45 × level-1 capacity 20 = 900
+ *  population, the govPalatineThreshold that unlocks placement — the CR-01
+ *  regression fixture. */
+function palatineTown(): SimRunner {
+  const m = SimMap.fromLayout(60, 16, () => 'earth');
+  const r = new SimRunner(11, m);
+  const place = (t: BuildingType, x: number, y: number) => {
+    const res = r.placeBuilding(t, x, y);
+    if (!res.ok) throw new Error(`place ${t}@${x},${y}: ${res.error}`);
+  };
+  for (let x = 2; x <= 54; x++) {
+    place('road', x, 1);
+    place('road', x, 8);
+  }
+  for (let y = 2; y <= 7; y++) {
+    place('road', 2, y);
+    place('road', 54, y);
+  }
+  // Houses first: 45 × level-1 capacity 20 = 900 population unlocks the
+  // palace placement (govPalatineThreshold) — the gate precedes the labor
+  // pipeline and must be satisfied by REAL placement, not bypassed.
+  for (let i = 0; i < 45; i++) place('house', 4 + i, 7);
+  fund(r, 3000); // palatine costs 3000; starting treasury is 1000
+  place('palatine', 4, 2); // footprint 5 → x 4..8, y 2..6, road-adjacent at y=1
+  return r;
+}
+
 /** Connect every job building and give every house an active labor walker. */
 function staffTown(r: SimRunner): void {
   const buildings = buildingsOf(r);
@@ -62,6 +90,21 @@ function staffTown(r: SimRunner): void {
     if (b.workersRequired > 0) b.laborConnected = true;
     if (b.house) b.house.laborCooldown = 1;
   }
+}
+
+/** Minimal labor-connected BuildingInstance of a known type @ workers. */
+function fake(type: BuildingType, workers: number): BuildingInstance {
+  return {
+    id: 0, type, x: 0, y: 0, footprint: 1, workersAssigned: 0, workersRequired: workers,
+    active: true, laborConnected: true, laborCooldown: 0, spawnCooldown: 0, stock: {},
+  } as unknown as BuildingInstance;
+}
+
+/** Credit the treasury ledger past a costly build (palatine costs 3000; the
+ *  starting treasury is 1000) — same private-internals style as staffTown. */
+function fund(r: SimRunner, amount: number): void {
+  const acc = (r as unknown as { treasuryAccount: { addRevenue(cat: 'other', amount: number): void } }).treasuryAccount;
+  acc.addRevenue('other', amount);
 }
 
 describe('labor sector priority map (19.1-03-01)', () => {
@@ -140,6 +183,24 @@ describe('pinned reserve semantics (19.1-03-01, Pitfall 2 runner-level)', () => 
     expect(commerce.assigned).toBeGreaterThan(0);
     expect(culture.assigned).toBe(0);
     expect(commerce.assigned).toBeLessThanOrEqual(before);
+  });
+
+  it('WR-01: a sector pinned while unstaffed regains workers once the pool grows (no sticky-zero)', () => {
+    const r = sectorTown(2);
+    const buildings = buildingsOf(r);
+    staffTown(r);
+    // Drain the pool completely: no house contributes workers.
+    for (const b of buildings) if (b.house) b.house.laborCooldown = 0;
+    expect(r.setLaborSectorState('commerce', { pinned: true }).ok).toBe(true);
+    (r as unknown as { tickLabor: () => void }).tickLabor();
+    expect(r.getLaborSectors().find((s) => s.id === 'commerce')!.assigned).toBe(0);
+    // A surplus pool appears: the pinned sector must regain workers up to its
+    // needed — pinned is a guaranteed floor, not an upper cap.
+    for (const b of buildings) if (b.house) b.house.laborCooldown = 1;
+    (r as unknown as { tickLabor: () => void }).tickLabor();
+    const commerce = r.getLaborSectors().find((s) => s.id === 'commerce')!;
+    expect(commerce.assigned).toBeGreaterThan(0);
+    expect(commerce.assigned).toBe(commerce.needed);
   });
 });
 
@@ -259,14 +320,6 @@ describe('setLaborSectorState SaveCommand (19.1-03-02)', () => {
 });
 
 describe('labor.ts pure helpers (19.1-03-01)', () => {
-  /** Minimal labor-connected BuildingInstance of a known type @ workers. */
-  function fake(type: BuildingType, workers: number): BuildingInstance {
-    return {
-      id: 0, type, x: 0, y: 0, footprint: 1, workersAssigned: 0, workersRequired: workers,
-      active: true, laborConnected: true, laborCooldown: 0, spawnCooldown: 0, stock: {},
-    } as unknown as BuildingInstance;
-  }
-
   it('buildLaborSectors groups by BUILDINGS category and folds paused → needed=0', () => {
     const buildings = [fake('farm', 2), fake('well', 1), fake('granary', 3), fake('warehouse', 5), fake('theatre', 4)];
     const sectors = buildLaborSectors(buildings, { commerce: { paused: true } });
@@ -294,5 +347,32 @@ describe('labor.ts pure helpers (19.1-03-01)', () => {
     expect(a.workersAssigned).toBeLessThanOrEqual(a.workersRequired);
     expect(b.workersAssigned).toBeLessThanOrEqual(b.workersRequired);
     expect(a.workersAssigned + b.workersAssigned).toBe(5);
+  });
+});
+
+describe('CR-01 regression: palatine keeps staffing (19.1-03-01)', () => {
+  it('buildLaborSectors maps the Governor Palace (workers 40) to commerce', () => {
+    const sectors = buildLaborSectors([fake('palatine', 40)]);
+    expect(sectors.find((s) => s.id === 'commerce')!.needed).toBe(40);
+  });
+
+  it('a labor-connected palatine in a surplus pool is staffed and active', () => {
+    const r = palatineTown(); // 45 houses × 4 workers = 180-pool ≥ 40 demand
+    const buildings = buildingsOf(r);
+    for (const b of buildings) {
+      if (b.workersRequired > 0) b.laborConnected = true;
+      if (b.house) b.house.laborCooldown = 1;
+    }
+    (r as unknown as { tickLabor: () => void }).tickLabor();
+    const palatine = buildings.find((b) => b.type === 'palatine')!;
+    // Regression vs the legacy tickLabor: the palace must be staffed, never
+    // zeroed every tick by applySectorAssignments with no sector to re-assign it.
+    expect(palatine.workersAssigned).toBe(palatine.workersRequired);
+    expect(palatine.active).toBe(true);
+    // Its 40 jobs appear in sector reporting — they never vanish.
+    const commerce = r.getLaborSectors().find((s) => s.id === 'commerce')!;
+    expect(commerce.needed).toBeGreaterThanOrEqual(40);
+    const state = r.getState();
+    expect(state.assignedWorkers).toBe(state.totalJobs);
   });
 });

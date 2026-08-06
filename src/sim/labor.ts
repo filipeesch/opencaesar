@@ -46,13 +46,13 @@ export const SECTOR_IDS: readonly string[] = Object.keys(LABOR_SECTOR_PRIORITY);
 const TYPE_SECTOR: Record<string, string> = {
   // food
   farm: 'food',
-  vegetable_farm: 'food',
+  // vegetable_farm / cattle_ranch / fishing_wharf are not in the BUILDINGS
+  // catalog yet — mappings reserved for those future types.
   orchard: 'food',
-  cattle_ranch: 'food',
-  fishing_wharf: 'food',
   // water
   well: 'water',
-  reservoir: 'water',
+  // reservoir is not in the BUILDINGS catalog yet — mapping reserved for the
+  // future type.
   fountain: 'water',
   // utility (infrastructure / raw extraction / workshops / civic services)
   granary: 'utility',
@@ -77,6 +77,7 @@ const TYPE_SECTOR: Record<string, string> = {
   warehouse: 'commerce',
   forum: 'commerce',
   senate: 'commerce',
+  palatine: 'commerce', // Governor Palace (workers 40) — CR-01: government civic
   // culture
   school: 'culture',
   library: 'culture',
