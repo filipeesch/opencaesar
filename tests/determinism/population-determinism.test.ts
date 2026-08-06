@@ -199,3 +199,73 @@ describe('no wall-clock / Math.random in the new population/labor/runner paths',
     expect(CONFIG.serviceCooldownTicks).toBeGreaterThan(0);
   });
 });
+
+// ============================================================================
+// POP-01/02 UI + walker + serialization guarantees (Nyquist audit, source
+// audit + behavioral — the plan's must_haves that the byte-identity and unit
+// cases cannot observe directly).
+// ============================================================================
+describe('POP-01/02 UI, walker, and serialization guarantees (source audit)', () => {
+  const root = join(__dirname, '..', '..', 'src');
+
+  it('HUDScene feeds real internals — the fabricated plebeian call is gone (POP-01/UI-04)', () => {
+    const src = readFileSync(join(root, 'game', 'scenes', 'HUDScene.ts'), 'utf8');
+    // Pre-phase the house branch fabricated the call:
+    //   residenceInspection(cap, cap, 'plebeian', [], {}, ...)
+    // POP-01 feeds the real class derived from the live cohort instead.
+    expect(/residenceInspection\s*\([^)]*['"]plebeian['"]/.test(src), 'fabricated plebeian call still present').toBe(false);
+    // The real per-residence rows are appended behind the foodInventory-style guard.
+    expect(src).toContain("typeof insp.residents === 'object'");
+    for (const row of ["'Class'", "'Age Bands'", "'Employed'"]) {
+      expect(src).toContain(`appendRow(body, ${row}`);
+    }
+  });
+
+  it('migration spawns no walkers: no migrant walker kind and no createWalker in the migration path (A7)', () => {
+    const typesSrc = readFileSync(join(root, 'sim', 'types.ts'), 'utf8');
+    const union = typesSrc.slice(
+      typesSrc.indexOf('export type WalkerType ='),
+      typesSrc.indexOf('export type PlacementError'),
+    );
+    expect(/migrant|immigr|emigr/i.test(union), 'WalkerType union mentions a migration walker').toBe(false);
+    const runnerSrc = readFileSync(join(root, 'sim', 'runner.ts'), 'utf8');
+    const migrationPath = runnerSrc.slice(
+      runnerSrc.indexOf('private tickPopulationMigration'),
+      runnerSrc.indexOf('private tickDerivedSystems'),
+    );
+    expect(migrationPath).not.toContain('createWalker');
+  });
+
+  it('an active-migration famine run keeps the walker roster inside the catalog union (behavioral, A7)', () => {
+    const walkerTypes = new Set(
+      (readFileSync(join(root, 'sim', 'types.ts'), 'utf8')
+        .slice(
+          readFileSync(join(root, 'sim', 'types.ts'), 'utf8').indexOf('export type WalkerType ='),
+          readFileSync(join(root, 'sim', 'types.ts'), 'utf8').indexOf('export type PlacementError'),
+        )
+        .match(/'([a-z_]+)'/g) ?? [])
+        .map((s) => s.slice(1, -1)),
+    );
+    const r = new SimRunner(42, foodChainMap());
+    buildFoodCity(r);
+    for (let i = 0; i < 500; i++) r.tick();
+    for (const [x, y] of [[0, 1], [2, 1], [4, 1]] as Array<[number, number]>) r.demolish(x, y);
+    let sawMigration = false;
+    for (let i = 0; i < 480; i++) {
+      r.tick();
+      const d = r.getDerived();
+      if ((d.emigration ?? 0) > 0 || (d.immigration ?? 0) > 0) sawMigration = true;
+    }
+    expect(sawMigration, 'famine run never triggered a migration month').toBe(true);
+    for (const w of r.getState().walkers) expect(walkerTypes.has(w.type)).toBe(true);
+  });
+
+  it('toBuildingState never copies internal residency state (POP-01, no SaveData growth)', () => {
+    const runnerSrc = readFileSync(join(root, 'sim', 'runner.ts'), 'utf8');
+    const toBS = runnerSrc.slice(
+      runnerSrc.indexOf('private toBuildingState'),
+      runnerSrc.indexOf('private toWalkerState'),
+    );
+    expect(toBS, 'toBuildingState copies internal-only residency state').not.toMatch(/residents|nextResidentId|starvedMonths/);
+  });
+});
