@@ -76,4 +76,43 @@ describe('options store (rcb.options)', () => {
     expect(saveOptions(custom, storage)).toEqual({ ok: true });
     expect(loadOptions(storage)).toEqual(custom);
   });
+
+  it('sanitizes parseable-but-invalid stored values back to defaults (WR-01)', () => {
+    const storage = memStore();
+    // Hand-edited / hostile values that parse but violate the schema.
+    storage.setItem(
+      OPTIONS_KEY,
+      JSON.stringify({
+        textSize: 'gigantic', // not in {small,normal,large}
+        graphicsQuality: 'ultra', // not in {low,medium,high}
+        audioMusic: 7, // out of [0,1]
+        audioSfx: -2, // out of [0,1]
+        gameSpeedDefault: 0, // not positive-finite
+        reducedMotion: 'yes', // not a boolean
+      }),
+    );
+    const o = loadOptions(storage);
+    // Enums whitelist + gameSpeedDefault positive-finite + non-boolean
+    // reducedMotion fall back to defaults; out-of-range numerics are CLAMPED
+    // to [0,1] (the "clamp numeric fields to range" half of the fix).
+    expect(o.textSize).toBe(DEFAULT_OPTIONS.textSize);
+    expect(o.graphicsQuality).toBe(DEFAULT_OPTIONS.graphicsQuality);
+    expect(o.audioMusic).toBeCloseTo(1); // 7 clamped to max
+    expect(o.audioSfx).toBeCloseTo(0); // -2 clamped to min
+    expect(o.gameSpeedDefault).toBe(DEFAULT_OPTIONS.gameSpeedDefault);
+    expect(o.reducedMotion).toBe(DEFAULT_OPTIONS.reducedMotion);
+  });
+
+  it('clamps out-of-range numeric values to [0,1] and keeps in-range enums (WR-01)', () => {
+    const storage = memStore();
+    storage.setItem(
+      OPTIONS_KEY,
+      JSON.stringify({ audioMusic: 1.5, audioSfx: -0.5, textSize: 'large', graphicsQuality: 'high' }),
+    );
+    const o = loadOptions(storage);
+    expect(o.audioMusic).toBeCloseTo(1); // clamped
+    expect(o.audioSfx).toBeCloseTo(0); // clamped
+    expect(o.textSize).toBe('large'); // valid enum passes through
+    expect(o.graphicsQuality).toBe('high'); // valid enum passes through
+  });
 });
