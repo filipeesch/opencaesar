@@ -1382,6 +1382,48 @@ export class SimRunner {
     });
   }
 
+  /**
+   * UI-03 desirability overlay: the same per-tile desirability the sim applies
+   * to house evolution (`desirabilityOf`) — terrain + policy spread + adjacent
+   * road bonus, plus each live house's actual service coverage on its footprint.
+   * Pure projection (read-only, deterministic, never serialized); the water-only
+   * `desirability` grid (well/fountain additive delta) is intentionally NOT the
+   * surface this exposes — it would be blank everywhere except near sources
+   * (WR-05).
+   */
+  getDesirabilityOverlay(): number[][] {
+    const width = this.width;
+    const height = this.height;
+    // Per-tile service coverage from live houses (footprint-aware merge).
+    const servicesAt = new Map<string, { food: boolean; water: boolean; labor: boolean }>();
+    for (const b of this.buildings) {
+      if (!b.house) continue;
+      const fp = Math.max(1, b.footprint ?? 1);
+      const svc = {
+        food: b.house.foodCooldown > 0,
+        water: b.house.waterCooldown > 0,
+        labor: b.house.laborCooldown > 0,
+      };
+      for (let dy = 0; dy < fp; dy++) {
+        for (let dx = 0; dx < fp; dx++) {
+          servicesAt.set(`${b.y + dy}:${b.x + dx}`, svc);
+        }
+      }
+    }
+    const wagesUnpaid = this.lastWagesUnpaid > 0;
+    const arrears = this.arrearsDepth();
+    const grid: number[][] = [];
+    for (let y = 0; y < height; y++) {
+      const row: number[] = [];
+      for (let x = 0; x < width; x++) {
+        const svc = servicesAt.get(`${y}:${x}`) ?? { food: false, water: false, labor: false };
+        row.push(desirabilityOf(this.map, x, y, this.policy, wagesUnpaid, svc, arrears));
+      }
+      grid.push(row);
+    }
+    return grid;
+  }
+
   /** Every live well/fountain as an active water source (shared by the water
    *  overlay and the derived water %, so the two always agree). Fountains keep
    *  their kind so they land in `fountainCoverage`, not `wellCoverage`. */

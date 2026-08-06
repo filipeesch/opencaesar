@@ -259,9 +259,11 @@ export class MainScene extends Phaser.Scene {
         break;
       }
       case 'desirability': {
-        const o = this.runner.getWaterOverlay();
-        cells = o.desirability;
-        bandOf = (v) => clampBand(Math.round((v + 8) / 4));
+        // WR-05: feed the overlay from the sim's actual per-tile desirability
+        // surface (the same desirabilityOf() the house ladder applies), not the
+        // water-only additive delta grid (blank except near wells/fountains).
+        cells = this.runner.getDesirabilityOverlay();
+        bandOf = (v) => clampBand(Math.round(v / 50)); // desirability 0..200 → band 0..4
         break;
       }
       default:
