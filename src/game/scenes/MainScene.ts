@@ -13,6 +13,7 @@ import { CONFIG } from '../../sim/config';
 import { foodOverlayGrids } from '../../sim/advisors';
 import type { BuildingState, BuildingType, PlacementError, PlacementResult, SaveData, SimState, TileType, Vec2 } from '../../sim/types';
 import { SimRunner } from '../../sim/runner';
+import { migrateSave, SaveCodecError, validateSave } from '../../sim/saveCodec';
 import { TimeSystem } from '../../sim/time';
 import { HOUSE_FOOT_TOP_Y, HOUSE_FRAME_H, houseFrame, isSheetLoaded, SHEET_BUILDINGS, getSpriteMeta, BUILDING_RESOLUTIONS } from '../art';
 import { drawBuilding } from '../buildingArt';
@@ -80,7 +81,7 @@ export class MainScene extends Phaser.Scene {
     if (this.runtimeConfig) {
       this.runner =
         'save' in this.runtimeConfig
-          ? SimRunner.fromSaveData(this.runtimeConfig.save)
+          ? this.validatedRunnerFromSave(this.runtimeConfig.save)
           : new SimRunner(this.runtimeConfig.seed, undefined, this.runtimeConfig.mapSize);
       this.runtimeConfig = null;
     }
@@ -315,6 +316,28 @@ export class MainScene extends Phaser.Scene {
   /** Select a simulation speed multiplier (0.5, 1, 2, 4, 8). */
   setSpeed(speed: number): void {
     this.timeSystem.setSpeed(speed);
+  }
+
+  /**
+   * PERS-01 defense-in-depth: migrate + validate a `save` runtimeConfig BEFORE
+   * any SimRunner.fromSaveData replay. A save can reach MainScene from any
+   * future path (?save= URL, dev e2e, slot quickload), so create() re-checks it
+   * even after the HomeScene gate. A rejected save NEVER reaches fromSaveData/
+   * applyCommand — it emits a hud-toast with the typed reason and falls back to
+   * a fresh seed city (never a raw throw, never a silent misload on a NaN seed).
+   */
+  private validatedRunnerFromSave(save: SaveData): SimRunner {
+    try {
+      const migrated = migrateSave(save);
+      const checked = validateSave(migrated);
+      if (checked.ok) return SimRunner.fromSaveData(checked.data);
+      this.game.events.emit('hud-toast', `Save rejected: ${checked.reason}`);
+    } catch (e) {
+      const reason = e instanceof SaveCodecError ? e.message : e instanceof Error ? e.message : String(e);
+      this.game.events.emit('hud-toast', `Save rejected: ${reason}`);
+    }
+    // Same seam the no-save path uses — a fresh seed-generated city.
+    return new SimRunner(seedFromUrl(), undefined, CONFIG.defaultMapSize);
   }
 
   isPaused(): boolean {
