@@ -7,6 +7,9 @@ import Phaser from 'phaser';
 import { BUILDINGS } from '../../sim/buildings';
 import { HOUSE_TIERS } from '../../sim/config';
 import { foodHudFromState } from '../../sim/advisors';
+import { advisorPanels, ADVISOR_TAB_ORDER } from '../advisors';
+import type { AdvisorAction } from '../advisors';
+import type { SimRunner } from '../../sim/runner';
 import type { BuildingCategory, BuildingState, BuildingType } from '../../sim/types';
 import { writeSave } from '../save';
 import type { MainScene } from './MainScene';
@@ -29,6 +32,8 @@ export class HUDScene extends Phaser.Scene {
   private drawerOpen = false;
   /** Whether the overlay bar is open (control bar → overlay bar). */
   private overlayBarOpen = false;
+  /** Currently active advisor tab id (defaults to 'ratings'). */
+  private activeAdvisor: string | null = null;
 
   constructor() {
     super('HUD');
@@ -81,6 +86,12 @@ export class HUDScene extends Phaser.Scene {
     // exactly when state.treasury < BUILDINGS[type].cost, re-evaluated every
     // tick (only when changed avoids layout thrash).
     this.updateBuildAffordability(state.treasury);
+
+    // UI-02: the advisors drawer renders one live panel under the tick-change
+    // guard (identical-tick frames skip re-render — no spinner).
+    if (this.drawerOpen && this.activeAdvisor && this.main) {
+      this.renderAdvisor(this.main.runner);
+    }
 
     if (this.inspectId !== null) this.renderPopup(state.buildings.find((b) => b.id === this.inspectId) ?? null);
   }
@@ -207,6 +218,22 @@ export class HUDScene extends Phaser.Scene {
     const panelHost = document.createElement('div');
     panelHost.className = 'advisor-panels';
     panelHost.dataset.testid = 'advisor-panels';
+    // 13 tabs in UI-SPEC order + one hidden panel host per advisor (UI-02).
+    for (const id of ADVISOR_TAB_ORDER) {
+      const tab = document.createElement('button');
+      tab.className = 'advisor-tab';
+      tab.dataset.testid = `advisor-tab-${id}`;
+      tab.dataset.advisor = id;
+      tab.textContent = advisorTitle(id);
+      tab.addEventListener('click', () => this.selectAdvisor(id));
+      tabHost.appendChild(tab);
+      const panel = document.createElement('div');
+      panel.className = 'advisor-panel';
+      panel.dataset.testid = `advisor-panel-${id}`;
+      panel.dataset.advisorPanel = id;
+      panel.hidden = true;
+      panelHost.appendChild(panel);
+    }
     advisorsDrawer.append(drawerHead, tabHost, panelHost);
 
     // Overlay bar frame (filled with the 5 toggles + None in 18-03-02).
@@ -312,6 +339,8 @@ export class HUDScene extends Phaser.Scene {
     this.els.overlayToggles = overlayToggles;
     this.els.overlayLegend = overlayLegend;
     this.buildBtns = [...grid.querySelectorAll('.hud-build-btn')] as HTMLButtonElement[];
+    // Default active tab is ratings (fallback when no critical alert directs one).
+    this.selectAdvisor('ratings');
   }
 
   private wireEvents(): void {
@@ -382,6 +411,10 @@ export class HUDScene extends Phaser.Scene {
     if (this.els.advisorsDrawer) {
       this.els.advisorsDrawer.style.display = this.drawerOpen ? 'block' : 'none';
     }
+    if (this.drawerOpen && this.main) {
+      // Initial content on open (per-tick refresh still runs under the guard).
+      this.renderAdvisor(this.main.runner);
+    }
     this.game.events.emit('advisor-open', this.drawerOpen);
   }
 
@@ -391,7 +424,7 @@ export class HUDScene extends Phaser.Scene {
     if (this.els.overlayBar) {
       this.els.overlayBar.style.display = this.overlayBarOpen ? 'block' : 'none';
     }
-    this.game.events.emit('overlay-toggle', this.overlayBarOpen ? 'bar-open' : 'bar-close');
+    this.game.events.emit('overlay-bar', this.overlayBarOpen);
   }
 
   /** Focus the message log (control-bar Messages button → real scene effect). */
@@ -402,6 +435,96 @@ export class HUDScene extends Phaser.Scene {
     if (on && this.els.log) {
       this.els.log.scrollTop = this.els.log.scrollHeight;
     }
+  }
+
+  /** Activate one advisor tab (real scene effect: active class + panel swap). */
+  private selectAdvisor(id: string): void {
+    this.activeAdvisor = id;
+    this.els.advisorTabs.querySelectorAll('.advisor-tab').forEach((t) => {
+      t.classList.toggle('active', (t as HTMLElement).dataset.advisor === id);
+    });
+    this.els.advisorPanels.querySelectorAll('.advisor-panel').forEach((p) => {
+      (p as HTMLElement).hidden = (p as HTMLElement).dataset.advisorPanel !== id;
+    });
+  }
+
+  /** Rebuild every advisor panel from the live composer (called under the
+   *  tick-change guard + on drawer open). Sim-derived strings are rendered via
+   *  textContent — never innerHTML — per T-18-01. */
+  private renderAdvisor(runner: SimRunner): void {
+    const panels = advisorPanels(runner);
+    for (const panel of panels) {
+      const host = this.els.advisorPanels.querySelector(
+        `[data-advisor-panel="${panel.id}"]`,
+      ) as HTMLElement | null;
+      if (!host) continue;
+      host.textContent = '';
+      if (panel.noData) {
+        const empty = document.createElement('div');
+        empty.className = 'advisor-empty';
+        const head = document.createElement('div');
+        head.className = 'hud-subtitle';
+        head.textContent = 'No data yet';
+        const body = document.createElement('p');
+        body.textContent = 'The city is still growing. Advance the simulation, then open this advisor again.';
+        empty.append(head, body);
+        host.appendChild(empty);
+        continue;
+      }
+      for (const r of panel.rows) {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'row';
+        const lab = document.createElement('span');
+        lab.textContent = r.label;
+        const val = document.createElement('b');
+        val.textContent = r.value;
+        if (r.tone) val.classList.add(r.tone);
+        rowEl.append(lab, val);
+        host.appendChild(rowEl);
+      }
+      if (panel.alerts && panel.alerts.length > 0) {
+        const ul = document.createElement('ul');
+        ul.className = 'advisor-alerts';
+        for (const a of panel.alerts) {
+          const li = document.createElement('li');
+          li.textContent = a;
+          ul.appendChild(li);
+        }
+        host.appendChild(ul);
+      }
+      if (panel.action) host.appendChild(this.buildAdvisorAction(panel.action));
+    }
+  }
+
+  /** The per-panel "more detail" action — a real, wired button (UI-02). */
+  private buildAdvisorAction(action: AdvisorAction): HTMLElement {
+    const btn = document.createElement('button');
+    btn.className = 'advisor-action';
+    btn.dataset.testid = `action-open-${action.kind}`;
+    switch (action.kind) {
+      case 'open-inspector':
+        btn.textContent = 'Open Inspector';
+        btn.addEventListener('click', () => this.game.events.emit('hud-inspect', action.id));
+        break;
+      case 'locate':
+        btn.textContent = 'Locate';
+        btn.addEventListener('click', () => this.game.events.emit('hud-inspect', action.id));
+        break;
+      case 'open-overlay':
+        btn.textContent = 'Open Overlay';
+        btn.addEventListener('click', () => {
+          this.toggleOverlayBar(true);
+          this.game.events.emit('overlay-toggle', action.overlay);
+        });
+        break;
+      case 'open-codex':
+        btn.textContent = 'Open Codex';
+        btn.addEventListener('click', () => {
+          this.game.events.emit('hud-toast', `Codex: ${action.entryId}`);
+        });
+        break;
+    }
+    return btn;
   }
 
   private renderLog(messages: { tick: number; type: string; text: string }[]): void {
@@ -516,4 +639,16 @@ export class HUDScene extends Phaser.Scene {
 
 function row(label: string, value: string): string {
   return `<div class="row"><span>${label}</span><b>${value}</b></div>`;
+}
+
+/** Human panel title for an advisor tab id (static display text). */
+function advisorTitle(id: string): string {
+  const titles: Record<string, string> = {
+    ratings: 'Ratings', finance: 'Finance', food: 'Food',
+    'production-logistics': 'Production', labor: 'Labor', trade: 'Trade',
+    housing: 'Housing', demography: 'Demography', 'safety-risks': 'Safety',
+    religion: 'Religion', governance: 'Governance', diplomacy: 'Diplomacy',
+    objectives: 'Objectives',
+  };
+  return titles[id] ?? id;
 }
