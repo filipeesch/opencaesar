@@ -4,6 +4,7 @@
  */
 
 import type { SaveData } from '../sim/types';
+import { migrateSave, SaveCodecError, validateSave } from '../sim/saveCodec';
 
 export const SAVE_KEY = 'rcb.save';
 
@@ -93,6 +94,49 @@ export function deleteSave(storage: StorageLike = defaultStorage()): SaveResult 
 /** Meta-only view for the load list; null when no save exists. */
 export function listSaves(storage: StorageLike = defaultStorage()): SaveRecord | null {
   return readSave(storage);
+}
+
+/**
+ * Result of the validated load path — read → parse → migrate → validate.
+ * Only `{ ok: true }` carries a SaveData fit for SimRunner.fromSaveData.
+ */
+export type LoadResult =
+  | { ok: true; data: SaveData }
+  | { ok: false; error: 'read' | 'parse' | 'migrate' | 'validate'; reason?: string };
+
+/**
+ * PERS-01 validated load: read the envelope → JSON.parse → migrateSave
+ * (additive N→N+1 to SAVE_VERSION, typed SaveCodecError mapped to 'migrate')
+ * → validateSave (typed 'validate' + reason on failure) → { ok: true, data }
+ * only when the save is fit for replay. This REPLACES readSave's truthiness
+ * version check on the loading path (Pitfall 1): a corrupt/unknown-version
+ * save is rejected with a typed reason, never a silent load and never a raw
+ * 'unknown command kind' throw from fromSaveData/applyCommand. readSave/
+ * listSaves stay the tolerant meta-listing surface for the home-screen label.
+ */
+export function loadSavedGame(storage: StorageLike = defaultStorage()): LoadResult {
+  const raw = storage.getItem(SAVE_KEY);
+  if (!raw) return { ok: false, error: 'read' };
+
+  let parsed: SaveRecord;
+  try {
+    parsed = JSON.parse(raw) as SaveRecord;
+  } catch {
+    return { ok: false, error: 'parse' };
+  }
+
+  let migrated: SaveData;
+  try {
+    migrated = migrateSave(parsed?.data);
+  } catch (e) {
+    const reason = e instanceof SaveCodecError ? e.message : e instanceof Error ? e.message : String(e);
+    return { ok: false, error: 'migrate', reason };
+  }
+
+  const checked = validateSave(migrated);
+  if (!checked.ok) return { ok: false, error: 'validate', reason: checked.reason };
+
+  return { ok: true, data: checked.data };
 }
 
 /**

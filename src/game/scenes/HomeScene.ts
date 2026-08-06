@@ -6,10 +6,12 @@
 
 import Phaser from 'phaser';
 import { CONFIG } from '../../sim/config';
-import { listSaves } from '../save';
+import { listSaves, loadSavedGame } from '../save';
 
 export class HomeScene extends Phaser.Scene {
   private root: HTMLElement | null = null;
+  /** The load button, kept so a rejected save can disable it + surface the reason. */
+  private loadBtn: HTMLButtonElement | null = null;
 
   constructor() {
     super('Home');
@@ -93,11 +95,12 @@ export class HomeScene extends Phaser.Scene {
     loadBtn.dataset.testid = 'load-game';
     if (save) {
       loadBtn.textContent = `Resume city (seed ${save.meta.seed}, tick ${save.meta.tick})`;
-      loadBtn.addEventListener('click', () => this.loadSavedGame(save.data));
+      loadBtn.addEventListener('click', () => this.loadSavedGame());
     } else {
       loadBtn.textContent = 'No saved game';
       loadBtn.disabled = true;
     }
+    this.loadBtn = loadBtn;
     load.append(loadLabel, loadBtn);
 
     // How to play
@@ -124,8 +127,26 @@ export class HomeScene extends Phaser.Scene {
     this.scene.start('Main', { seed, mapSize });
   }
 
-  private loadSavedGame(save: { version: 1; seed: number; mapSize: number; commands: unknown[]; tickCount: number }): void {
-    this.scene.start('Main', { save });
+  /**
+   * PERS-01: the validated load click-through. Only an {ok:true} save reaches
+   * scene.start('Main', { save }); a rejected save disables the button and
+   * surfaces the typed reason via textContent (never innerHTML — storage/sim
+   * derived strings). The migrate/validate gate runs HERE, before any replay.
+   */
+  private loadSavedGame(): void {
+    const res = loadSavedGame();
+    if (res.ok) {
+      this.scene.start('Main', { save: res.data });
+      return;
+    }
+    this.showLoadError(res);
+  }
+
+  private showLoadError(res: { error: string; reason?: string }): void {
+    if (this.loadBtn) {
+      this.loadBtn.disabled = true;
+      this.loadBtn.textContent = `Save rejected: ${res.reason ?? res.error}`;
+    }
   }
 }
 
