@@ -15,6 +15,7 @@ import type { BuildingState, BuildingType, PlacementError, PlacementResult, Save
 import { SimRunner } from '../../sim/runner';
 import { migrateSave, SaveCodecError, validateSave } from '../../sim/saveCodec';
 import { TimeSystem } from '../../sim/time';
+import { loadOptions } from '../options';
 import { HOUSE_FOOT_TOP_Y, HOUSE_FRAME_H, houseFrame, isSheetLoaded, SHEET_BUILDINGS, getSpriteMeta, BUILDING_RESOLUTIONS } from '../art';
 import { drawBuilding } from '../buildingArt';
 import { BUILDING_COLORS, HOUSE_COLORS, TILE_H, TILE_W, WALKER_COLORS, OVERLAY_RAMPS, hexToPhaser } from '../palette';
@@ -84,6 +85,16 @@ export class MainScene extends Phaser.Scene {
           ? this.validatedRunnerFromSave(this.runtimeConfig.save)
           : new SimRunner(this.runtimeConfig.seed, undefined, this.runtimeConfig.mapSize);
       this.runtimeConfig = null;
+    }
+    // PERS-02 (gameSpeedDefault): apply the persisted default speed EXACTLY
+    // once at boot for BOTH fresh-seed and loaded cities (create() is the
+    // shared entry). Defensive positive-finite guard (T-19-06) so a corrupted
+    // options value cannot trigger the time.ts setSpeed RangeError. The HUD
+    // [0.5,1,2,4,8] buttons own the LIVE speed afterward (Pitfall 6) — the
+    // default is never re-applied per tick, on pause/resume, or on any event.
+    const bootSpeed = loadOptions().gameSpeedDefault;
+    if (typeof bootSpeed === 'number' && Number.isFinite(bootSpeed) && bootSpeed > 0) {
+      this.setSpeed(bootSpeed);
     }
     const state = this.runner.getState();
     this.lastTiles = new Array<number>(state.width * state.height).fill(-1);
