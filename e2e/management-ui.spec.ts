@@ -38,18 +38,30 @@ function collectErrors(page: Page): string[] {
   return errors;
 }
 
-/** Assert every build button's disabled state matches cost > live treasury. */
+/**
+ * Assert every build button's disabled state matches cost > live treasury.
+ * Pauses the game first so the treasury (and the buttons' live recompute) is
+ * frozen for a single deterministic snapshot — otherwise the running sim drains
+ * treasury between the per-button assertions and the race makes the case flaky
+ * (the feature is proven correct tick-by-tick; this makes the test determinist).
+ */
 async function assertBuildDisabledTracksTreasury(page: Page): Promise<number> {
-  const state = await getState(page);
-  for (const type of BUILD_ORDER) {
-    const expected = BUILDINGS[type].cost > state.treasury;
-    if (expected) {
-      await expect(page.getByTestId(`build-${type}`)).toBeDisabled();
-    } else {
-      await expect(page.getByTestId(`build-${type}`)).toBeEnabled();
+  await page.getByTestId('pause-button').click();
+  try {
+    const state = await getState(page);
+    await expect(page.getByTestId('pause-overlay')).toBeVisible();
+    for (const type of BUILD_ORDER) {
+      const expected = BUILDINGS[type].cost > state.treasury;
+      if (expected) {
+        await expect(page.getByTestId(`build-${type}`)).toBeDisabled();
+      } else {
+        await expect(page.getByTestId(`build-${type}`)).toBeEnabled();
+      }
     }
+    return state.treasury;
+  } finally {
+    await page.getByTestId('resume-button').click();
   }
-  return state.treasury;
 }
 
 /**
