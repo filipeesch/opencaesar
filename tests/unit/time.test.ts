@@ -105,3 +105,36 @@ describe('TimeSystem', () => {
     expect(t.speed).toBe(4);
   });
 });
+
+/**
+ * Phase 19 (PERS-02): the gameSpeedDefault gameplay option. MainScene.create()
+ * applies setSpeed(loadOptions().gameSpeedDefault) exactly ONCE for both fresh
+ * and loaded paths; the HUD [0.5,1,2,4,8] buttons own the LIVE speed
+ * afterward and the default is never re-applied per tick (Pitfall 6). These
+ * cases pin the TimeSystem contract that makes that boot injection safe.
+ */
+describe('boot default speed (gameSpeedDefault)', () => {
+  it('applies a gameSpeedDefault-like value as the initial speed', () => {
+    const ts = new TimeSystem(250);
+    ts.setSpeed(2); // gameSpeedDefault from OptionsSchema semantics
+    expect(ts.speed).toBe(2);
+    expect(ts.advance(500)).toBe(4); // 2x over 500ms = 1000ms of sim time
+  });
+
+  it('a later explicit speed wins (default is once-only, never per-tick)', () => {
+    const ts = new TimeSystem(250);
+    ts.setSpeed(1); // boot default
+    ts.setSpeed(8); // later explicit HUD choice
+    expect(ts.speed).toBe(8);
+    // Advancing does NOT re-apply any default — the live choice holds.
+    ts.advance(100);
+    expect(ts.speed).toBe(8);
+  });
+
+  it('preserves the RangeError contract for corrupt boot values', () => {
+    const ts = new TimeSystem(250);
+    for (const bad of [0, NaN, Infinity, -Infinity]) {
+      expect(() => ts.setSpeed(bad)).toThrow(RangeError);
+    }
+  });
+});

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { migrateSave, validateSave } from '../../src/sim/saveCodec';
 import { SimRunner } from '../../src/sim/runner';
 import { TimeSystem } from '../../src/sim/time';
+import type { SaveData } from '../../src/sim/types';
 import { buildFoodCity, foodChainMap } from '../helpers';
 
 function scriptedRun(seed: number, ticks: number): string {
@@ -37,7 +39,13 @@ describe('determinism', () => {
     for (let i = 0; i < 500; i++) runner.tick();
     const original = runner.getStateJson();
 
-    const loaded = SimRunner.fromSaveData(runner.getSaveData());
+    // Phase 19 (PERS-01): route the save through the codec (migrate + validate)
+    // before replay so the migration/validation loop is exercised across systems
+    // — the save stays byte-identical because v1 is current (empty MIGRATIONS).
+    const migrated = migrateSave(runner.getSaveData());
+    expect(validateSave(migrated).ok).toBe(true);
+
+    const loaded = SimRunner.fromSaveData(migrated as SaveData);
     expect(loaded.getStateJson()).toBe(original);
   });
 
