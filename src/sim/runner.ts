@@ -49,7 +49,8 @@ import type { CodexEntry, CodexKind, HouseView, CityView, TutorialStepId, Tutori
 import { desirabilityOf, tickHousing } from './housing';
 import { housingLevelName } from '../../data/housing';
 import { effectivePopulation, effectiveWorkers, deriveSatisfied } from './housingLive';
-import { ageOnMonth, residentsForHouse } from './population';
+import { ageOnMonth, netMigration, residentsForHouse } from './population';
+import { foodShortageEffects } from './housing';
 import { findMergePartner, mergeProposal, targetFootprint } from './housingMerge';
 import { Treasury, rollYear } from './finance';
 import type { FinanceLedger } from './finance';
@@ -118,6 +119,12 @@ let catalogsValidated = false;
  *  slot limit matches the default warehouse policy. Workshop input stock is
  *  capped so feedstock porters stop feeding an output-full workshop. */
 const WAREHOUSE_CAPACITY = 40;
+/** POP-02 ([ASSUMED A5]) — months of starvation (foodCooldown <= 0 at month
+ *  cadence) before a house's foodShortageEffects emigration path drains
+ *  residents; and the max residents famished out per month per house. Module-
+ *  local (balance-parity — never a BALANCE/CONFIG key). */
+const FAMINE_EMIGRATION_MONTHS = 3;
+const FAMINE_EMIGRANTS_PER_MONTH = 2;
 const PRODUCTION_WAREHOUSE_SLOTS = 16;
 const WORKSHOP_INPUT_CAPACITY = 10;
 
@@ -168,6 +175,12 @@ export interface DerivedSnapshot {
   /** POP-01: live per-class resident breakdown from HouseInstance internals
    *  (0/0 row when no residency initialized yet — total function). */
   residentsByClass?: { plebeian: number; patrician: number };
+  /** POP-02: the closing migration month's internal deltas (0 by default —
+   *  total function, empty cities safe). Golden-safe: getStateJson serializes
+   *  getState, never this snapshot. */
+  immigration?: number;
+  emigration?: number;
+  homeless?: number;
 }
 
 export class SimRunner {
@@ -242,6 +255,10 @@ export class SimRunner {
    *  the last 360 ticks (WR-01). Deterministic from tickCount + live trade
    *  state — no wall-clock, no schema change, survives the quota reset. */
   private readonly tickExportCounts = new Array<number>(360).fill(0);
+  /** POP-02: the closing migration month's deltas, reset every %40 month and
+   *  surfaced as DerivedSnapshot.immigration/emigration/homeless (total
+   *  functions — 0 by default). Internal-only; never serialized. */
+  private lastMigration = { immigration: 0, emigration: 0, homeless: 0 };
 
   constructor(seed: number, map?: SimMap, mapSize?: number) {
     if (!catalogsValidated) {
@@ -317,13 +334,16 @@ export class SimRunner {
     // HOUS-02: deterministic adjacent-house merging on the month cadence. Runs
     // right after evolution so it sees the tick's final levels, then walkers
     // move (coverage/arrivals see the merged state).
-    // POP-01: the per-residence cohort sync follows immediately after — it
-    // re-derives residents for the tick's final levels (merge/evolution). All
-    // mutation lives HERE (inside tick(), %40 cadence) so save/load replay
-    // re-derives byte-identically.
+    // POP-01/02: the per-residence cohort sync and the month migration follow
+    // immediately after — residency re-derives residents for the tick's final
+    // levels (merge/evolution), then migration adjusts internal occupancy
+    // (vacancy-bounded netMigration + famine emigration). All mutation lives
+    // HERE (inside tick(), %40 cadence) so save/load replay re-derives
+    // byte-identically.
     if (this.tickCount % 40 === 0) {
       this.tickHousingMerge();
       this.tickResidency();
+      this.tickPopulationMigration();
     }
 
     // Walkers move last: coverage and arrivals see the tick's final services.
@@ -635,6 +655,118 @@ export class SimRunner {
       } else {
         ageOnMonth(h.residents);
       }
+    }
+  }
+
+  /**
+   * POP-02: month-cadence migration (tickCount % 40, right after tickResidency
+   * so the cohort reflects this tick's final levels). Pure over deterministic
+   * state: an attractiveness blend from ALREADY-derived inputs (desirability,
+   * civic coverage, unemployment — never a second recompute) drives
+   * vacancy-bounded immigration via netMigration (0 when the city is full ⇒
+   * golden-neutral), and foodShortageEffects-driven famine emigration creates
+   * vacancy for later months to refill. All deltas live on internal occupancy
+   * + DerivedSnapshot — getState()/toBuildingState/workerPool/tax/populationOf
+   * stay capacity-based (Pitfall 3 / A6); NO immigration/emigration walkers
+   * are spawned (A7). Deterministic and replay-byte-identical.
+   */
+  private tickPopulationMigration(): void {
+    const snapshot = this.derived ?? this.derivedSnapshot();
+    // Unemployment from ALREADY-derived values (never a second recompute).
+    const population = snapshot.population;
+    const unemploymentRate =
+      population > 0
+        ? Math.max(0, Math.min(1, (population - snapshot.employment.employed) / population))
+        : 0;
+    const houses = this.buildings.filter((b) => b.house);
+
+    // Attractiveness blend [ASSUMED A5] — module-local weights.
+    let desirabilityNorm = 0;
+    for (const b of houses) {
+      const input = this.houseHappinessInput(b);
+      desirabilityNorm += Math.max(0, Math.min(1, input.desirability / 200));
+    }
+    const desirabilityAvg = houses.length === 0 ? 0 : desirabilityNorm / houses.length;
+    const civicAvg =
+      (this.civicCoverage('health') + this.civicCoverage('literacy') + this.civicCoverage('entertainment')) / 3;
+    const attractiveness = Math.max(
+      0,
+      Math.min(1, 0.35 * desirabilityAvg + 0.25 * civicAvg + 0.4 * (1 - unemploymentRate)),
+    );
+
+    this.lastMigration = { immigration: 0, emigration: 0, homeless: 0 };
+
+    // Famine emigration: houses starving past FAMINE_EMIGRATION_MONTHS drain
+    // residents (foodShortageEffects(starvedMonths * 10).emigration — the
+    // housing.ts emigrate/regress/crime vocabulary). Deterministic house order;
+    // a fed month resets the counter, so transient gaps don't emigrate.
+    for (const b of houses) {
+      const h = b.house!;
+      const fed = (h.foodCooldown ?? 0) > 0;
+      h.starvedMonths = fed ? 0 : (h.starvedMonths ?? 0) + 1;
+      if (
+        !fed &&
+        h.starvedMonths >= FAMINE_EMIGRATION_MONTHS &&
+        foodShortageEffects(h.starvedMonths * 10).emigration &&
+        (h.residents?.length ?? 0) > 0
+      ) {
+        const leave = Math.min(h.residents!.length, FAMINE_EMIGRANTS_PER_MONTH);
+        h.residents!.splice(0, leave);
+        this.lastMigration.emigration += leave;
+        this.lastMigration.homeless += leave;
+      }
+    }
+
+    // Immigration: vacancy-bounded netMigration into under-occupied houses in
+    // deterministic placement order. A full city has capacityAvailable 0 ⇒ mig 0
+    // (golden-neutral by construction, Pitfall 3).
+    let capacityAvailable = 0;
+    for (const b of houses) {
+      const h = b.house!;
+      const capacity = this.effectiveHousePopulation(b);
+      capacityAvailable += Math.max(0, capacity - (h.residents?.length ?? capacity));
+    }
+    const mig = netMigration({ attractiveness, unemployment: unemploymentRate, capacityAvailable });
+    if (mig > 0) {
+      let toBook = mig;
+      for (const b of houses) {
+        if (toBook <= 0) break;
+        const h = b.house!;
+        const capacity = this.effectiveHousePopulation(b);
+        const room = capacity - (h.residents?.length ?? 0);
+        if (room <= 0) continue;
+        this.bookResidents(b, Math.min(room, toBook));
+        toBook -= Math.min(room, toBook);
+      }
+      this.lastMigration.immigration = mig;
+    }
+  }
+
+  /** POP-01/02: deterministically book `n` new residents into a house (used by
+   *  migration to fill vacancy). The new residents reuse the residentsForHouse
+   *  derivation (class from tierOfLevel, age from a house-stable seeded RNG) and
+   *  sequential nextResidentId — never Math.random, never the shared RNG. */
+  private bookResidents(b: BuildingInstance, n: number): void {
+    const h = b.house;
+    if (!h) return;
+    if (h.residents === undefined) h.residents = [];
+    const level = h.level ?? 0;
+    const tier = Math.floor(level / 4);
+    const patricianShare = tier >= 3 ? Math.min(0.6, (tier - 2) * 0.2) : 0;
+    const salt = (b.id * 40503 + level * 719939 + 17) >>> 0;
+    const rng = mulberry32(salt === 0 ? 1 : salt);
+    const capacity = this.effectiveHousePopulation(b);
+    for (let i = 0; i < n; i++) {
+      if (h.residents.length >= capacity) break;
+      const id = h.nextResidentId ?? h.residents.length + 1;
+      const isPatrician = patricianShare > 0 && rng.next() < patricianShare;
+      h.residents.push({
+        id,
+        class: isPatrician ? 'patrician' : 'plebeian',
+        age: 16 + Math.floor(rng.next() * 45), // workforce-age immigrant
+        employed: false,
+      });
+      h.nextResidentId = id + 1;
     }
   }
 
@@ -1394,6 +1526,11 @@ export class SimRunner {
       // getStateJson serializes getState, not this derived snapshot.
       residentCount: population,
       residentsByClass: this.residentsByClass(),
+      // POP-02: the closing migration month's internal deltas (0 by default —
+      // total function, empty cities safe).
+      immigration: this.lastMigration.immigration,
+      emigration: this.lastMigration.emigration,
+      homeless: this.lastMigration.homeless,
     };
   }
 
