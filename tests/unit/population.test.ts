@@ -104,8 +104,8 @@ describe('residency consistency (POP-01, 19.1-01-01 target API)', () => {
     buildFoodCity(r);
     for (let i = 0; i < 40; i++) r.tick(); // exactly one %40 boundary
     const house = r.getState().buildings.find((b) => b.house)!;
-    const insp = r.getInspector(house.id, 'building')!;
-    const residents = insp.internals?.house?.residents;
+    const internals = r.getInspector(house.id, 'building')?.internals;
+    const residents = internals && 'house' in internals ? internals.house?.residents : undefined;
     expect(residents).toBeDefined();
     expect(residents!.length).toBeGreaterThan(0);
     expect(residents!.length).toBeLessThanOrEqual(house.house!.populationCapacity);

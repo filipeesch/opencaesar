@@ -87,7 +87,7 @@ describe('getLaborSectors() (19.1-03-01)', () => {
     staffTown(r);
     (r as unknown as { tickLabor: () => void }).tickLabor();
     const sectors = r.getLaborSectors();
-    expect(sectors.map((s) => s.id)).toEqual(expect.arrayContaining(SECTOR_IDS));
+    expect(sectors.map((s) => s.id)).toEqual(expect.arrayContaining([...SECTOR_IDS]));
     const food = sectors.find((s) => s.id === 'food')!;
     expect(food.priority).toBe(1);
     expect(food.needed).toBeGreaterThan(0); // the farm is a food-sector job

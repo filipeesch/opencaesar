@@ -208,7 +208,7 @@ export function advisorPanels(source: AdvisorSource): AdvisorPanel[] {
         ? [{
             label: 'Wage vs Imperial',
             value: `${wageBand.band} (${Math.round(wageBand.relative * 100)}%)`,
-            tone: wageBand.band === 'below' ? 'bad' : 'ok',
+            tone: wageBand.band === 'below' ? ('bad' as const) : ('ok' as const),
           }]
         : []),
       ...(unemploymentBand ? [{ label: 'Unemployment Band', value: unemploymentBand.label }] : []),

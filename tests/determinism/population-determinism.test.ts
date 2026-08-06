@@ -15,7 +15,16 @@ import { CONFIG } from '../../src/sim/config';
 import { SimRunner } from '../../src/sim/runner';
 import { migrateSave, validateSave } from '../../src/sim/saveCodec';
 import type { SaveData } from '../../src/sim/types';
+import type { HouseInstance } from '../../src/sim/walkers';
 import { buildFoodCity, foodChainMap } from '../helpers';
+
+/** Live house internals of a building inspector — getInspector's internals
+ *  union is BuildingInstance | WalkerInstance; narrowing to the house member
+ *  (the residenceInspection append target) keeps the read type-safe. */
+function houseOf(r: SimRunner, id: number): HouseInstance | undefined {
+  const internals = r.getInspector(id, 'building')?.internals;
+  return internals && 'house' in internals ? internals.house : undefined;
+}
 
 /** Total internal residents across all houses (live internals, never serialized). */
 function residentSum(r: SimRunner): number {
@@ -46,12 +55,12 @@ describe('per-residence population determinism (POP-01)', () => {
     buildFoodCity(r);
     for (let i = 0; i < 500; i++) r.tick();
     const house = r.getState().buildings.find((b) => b.house)!;
-    const before = r.getInspector(house.id, 'building')?.internals?.house?.residents;
+    const before = houseOf(r, house.id)?.residents;
     expect(before).toBeDefined();
     const residentCount = r.getDerived().residentCount;
 
     const loaded = SimRunner.fromSaveData(r.getSaveData(), foodChainMap());
-    const after = loaded.getInspector(house.id, 'building')?.internals?.house?.residents;
+    const after = houseOf(loaded, house.id)?.residents;
     expect(after).toEqual(before);
     expect(loaded.getDerived().residentCount).toBe(residentCount);
     expect(loaded.getDerived().residentCount).toBe(r.getDerived().residentCount);
