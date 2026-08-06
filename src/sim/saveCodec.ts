@@ -197,5 +197,28 @@ export function validateSave(data: unknown): SaveValidationResult {
     }
   }
 
+  // pendingCommands (types.ts:108) is re-enqueued verbatim by fromSaveData
+  // (runner.ts:2673-2675) and drained into applyCommand on the first resume
+  // tick after load — it must be validated with the SAME rigor as commands so
+  // a corrupt/hostile save can never reach applyCommand's raw 'unknown command
+  // kind' throw or propagate NaN into the deterministic core after load
+  // (CR-01). The field is optional in valid saves, so undefined is accepted.
+  if (s.pendingCommands !== undefined) {
+    if (!Array.isArray(s.pendingCommands)) {
+      return { ok: false, error: 'commands-not-array', reason: 'pendingCommands must be an array' };
+    }
+    for (const cmd of s.pendingCommands) {
+      const err = validateCommand(cmd);
+      if (err === 'unknown-command-kind') {
+        const kind = (cmd as { kind?: unknown } | null)?.kind;
+        return { ok: false, error: err, reason: `unknown command kind: ${String(kind)}` };
+      }
+      if (err) {
+        const kind = (cmd as { kind?: unknown } | null)?.kind;
+        return { ok: false, error: err, reason: `malformed pending command: ${kind === undefined ? 'non-object' : String(kind)}` };
+      }
+    }
+  }
+
   return { ok: true, data: data as SaveData };
 }

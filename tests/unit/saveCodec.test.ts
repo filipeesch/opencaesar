@@ -130,6 +130,59 @@ describe('saveCodec — validation', () => {
   });
 });
 
+describe('saveCodec — pendingCommands validation (CR-01)', () => {
+  const good = (): SaveData => new SimRunner(42).getSaveData();
+  /** A valid save with hostile pendingCommands (cast allows hostile shapes). */
+  const withPending = (pending: unknown): unknown => ({ ...good(), pendingCommands: pending });
+
+  it('accepts a valid save with a legitimate pendingCommands array', () => {
+    const res = validateSave(withPending([{ kind: 'holdFestival', tierId: 't1' }]));
+    expect(res.ok).toBe(true);
+  });
+
+  it('accepts a valid save whose pendingCommands is empty', () => {
+    const res = validateSave(withPending([]));
+    expect(res.ok).toBe(true);
+  });
+
+  it('rejects a non-array pendingCommands as commands-not-array', () => {
+    for (const bad of ['x', {}, 7, null]) {
+      const res = validateSave(withPending(bad));
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.error).toBe('commands-not-array');
+    }
+  });
+
+  it('rejects an unknown-kind pendingCommands as unknown-command-kind', () => {
+    const res = validateSave(withPending([{ kind: 'bogus' }]));
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toBe('unknown-command-kind');
+      expect(res.reason).toContain('bogus');
+    }
+  });
+
+  it('rejects a NaN pending command member as malformed-command', () => {
+    const res = validateSave(withPending([{ kind: 'place', type: 'road', x: NaN, y: 0 }]));
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toBe('malformed-command');
+  });
+
+  it('never throws on hostile pendingCommands — always a typed { ok:false }', () => {
+    const hostilePending: unknown[] = [
+      [{ kind: 'bogus' }],
+      [{ kind: 'place', type: 'road', x: NaN, y: 0 }],
+      [{ kind: 'setPolicy', taxRate: 0.1 }],
+      ['not-an-object'],
+    ];
+    for (const h of hostilePending) {
+      const res = validateSave(withPending(h));
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(typeof res.error).toBe('string');
+    }
+  });
+});
+
 describe('saveCodec — round-trip WITH the codec in the loop', () => {
   it('migrate + validate + fromSaveData replays byte-identically', () => {
     // Mirror the determinism recipe: build, script, snapshot, then route the
