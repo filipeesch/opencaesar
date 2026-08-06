@@ -12,6 +12,7 @@ import {
   storageInspection, marketInspection, walkerInspection,
 } from '../../sim/advisors';
 import { WORKSHOP_BUILDING_TYPES, EXTRACTION_BUILDING_TYPES } from '../../sim/production';
+import { SPEED_PRESETS } from '../../sim/time';
 import { advisorPanels, ADVISOR_TAB_ORDER } from '../advisors';
 import type { AdvisorAction, OverlayId } from '../advisors';
 import { OVERLAY_RAMPS } from '../palette';
@@ -19,6 +20,8 @@ import type { SimRunner } from '../../sim/runner';
 import type { BuildingCategory, BuildingState, BuildingType, SimState, Vec2, WalkerState } from '../../sim/types';
 import type { BuildingInstance, WalkerInstance } from '../../sim/walkers';
 import { writeSave } from '../save';
+import { applyOptions, loadOptions, saveOptions } from '../options';
+import type { OptionsSchema } from '../../sim/ui';
 import type { MainScene } from './MainScene';
 
 type InspectorKind = 'house' | 'production' | 'storage' | 'market' | 'other';
@@ -49,6 +52,8 @@ export class HUDScene extends Phaser.Scene {
   private drawerOpen = false;
   /** Whether the overlay bar is open (control bar → overlay bar). */
   private overlayBarOpen = false;
+  /** Whether the settings drawer is open (control bar → Settings). */
+  private settingsOpen = false;
   /** Currently active advisor tab id (defaults to 'ratings'). */
   private activeAdvisor: string | null = null;
 
@@ -277,7 +282,12 @@ export class HUDScene extends Phaser.Scene {
     messagesBtn.dataset.testid = 'controls-messages';
     messagesBtn.textContent = 'Messages';
     messagesBtn.addEventListener('click', () => this.toggleMessagesFocus());
-    controlBar.append(advisorsBtn, overlaysBtn, messagesBtn);
+    const settingsBtn = document.createElement('button');
+    settingsBtn.className = 'hud-control-btn';
+    settingsBtn.dataset.testid = 'controls-settings';
+    settingsBtn.textContent = 'Settings';
+    settingsBtn.addEventListener('click', () => this.toggleSettingsDrawer());
+    controlBar.append(advisorsBtn, overlaysBtn, messagesBtn, settingsBtn);
 
     // Advisors drawer frame (filled with tabs + a live panel in 18-02-02).
     const advisorsDrawer = document.createElement('div');
@@ -352,6 +362,74 @@ export class HUDScene extends Phaser.Scene {
     overlayToggles.appendChild(noneBtn);
     overlayBar.append(overlayHead, overlayToggles);
 
+    // Settings drawer (Phase 19 PERS-02): the six opt-* controls edit + persist
+    // shell options via saveOptions/applyOptions. Every label/value via
+    // createElement/textContent — sim/storage-derived strings never hit
+    // innerHTML (T-19-02). Values are pre-filled from loadOptions() on open.
+    const settingsDrawer = document.createElement('div');
+    settingsDrawer.className = 'settings-drawer';
+    settingsDrawer.dataset.testid = 'settings-drawer';
+    settingsDrawer.style.display = 'none';
+    const settingsHead = document.createElement('div');
+    settingsHead.className = 'hud-subtitle';
+    settingsHead.textContent = 'Settings';
+    const settingsRows = document.createElement('div');
+    settingsRows.className = 'settings-rows';
+    const makeSelect = (testid: string, values: string[]): HTMLSelectElement => {
+      const sel = document.createElement('select');
+      sel.dataset.testid = testid;
+      for (const v of values) {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = v;
+        sel.appendChild(opt);
+      }
+      return sel;
+    };
+    const settingRow = (label: string, control: HTMLElement): HTMLElement => {
+      const r = document.createElement('div');
+      r.className = 'hud-settings-row';
+      const lab = document.createElement('label');
+      lab.textContent = label;
+      r.append(lab, control);
+      return r;
+    };
+    const graphicsSel = makeSelect('opt-graphics', ['low', 'medium', 'high']);
+    const musicRange = document.createElement('input');
+    musicRange.type = 'range';
+    musicRange.min = '0';
+    musicRange.max = '1';
+    musicRange.step = '0.1';
+    musicRange.dataset.testid = 'opt-music';
+    const sfxRange = document.createElement('input');
+    sfxRange.type = 'range';
+    sfxRange.min = '0';
+    sfxRange.max = '1';
+    sfxRange.step = '0.1';
+    sfxRange.dataset.testid = 'opt-sfx';
+    const speedSel = makeSelect('opt-speed', SPEED_PRESETS.map(String));
+    const textSizeSel = makeSelect('opt-text-size', ['small', 'normal', 'large']);
+    const reducedMotionBox = document.createElement('input');
+    reducedMotionBox.type = 'checkbox';
+    reducedMotionBox.dataset.testid = 'opt-reduced-motion';
+    settingsRows.append(
+      settingRow('Graphics quality', graphicsSel),
+      settingRow('Music', musicRange),
+      settingRow('Sound effects', sfxRange),
+      settingRow('Default speed', speedSel),
+      settingRow('Text size', textSizeSel),
+      settingRow('Reduced motion', reducedMotionBox),
+    );
+    const graphicsNote = document.createElement('div');
+    graphicsNote.className = 'settings-note';
+    graphicsNote.textContent = 'Graphics quality applies on next launch.';
+    const settingsSaveBtn = document.createElement('button');
+    settingsSaveBtn.className = 'settings-save-btn';
+    settingsSaveBtn.dataset.testid = 'settings-save';
+    settingsSaveBtn.textContent = 'Save';
+    settingsSaveBtn.addEventListener('click', () => this.saveSettings());
+    settingsDrawer.append(settingsHead, settingsRows, graphicsNote, settingsSaveBtn);
+
     // Legend host (filled/cleared by the overlay system — 18-03-02).
     const overlayLegend = document.createElement('div');
     overlayLegend.className = 'overlay-legend';
@@ -409,6 +487,7 @@ export class HUDScene extends Phaser.Scene {
     // column so they never clip (fixed-position, same as the toast).
     document.body.appendChild(advisorsDrawer);
     document.body.appendChild(overlayBar);
+    document.body.appendChild(settingsDrawer);
     document.body.appendChild(overlayLegend);
 
     this.els.pop = root.querySelector('[data-testid="stat-population"]') as HTMLElement;
@@ -437,6 +516,13 @@ export class HUDScene extends Phaser.Scene {
     this.els.controlBar = controlBar;
     this.els.advisorsDrawer = advisorsDrawer;
     this.els.overlayBar = overlayBar;
+    this.els.settingsDrawer = settingsDrawer;
+    this.els.optGraphics = graphicsSel;
+    this.els.optMusic = musicRange;
+    this.els.optSfx = sfxRange;
+    this.els.optSpeed = speedSel;
+    this.els.optTextSize = textSizeSel;
+    this.els.optReducedMotion = reducedMotionBox;
     this.els.advisorTabs = tabHost;
     this.els.advisorPanels = panelHost;
     this.els.overlayToggles = overlayToggles;
@@ -525,6 +611,47 @@ export class HUDScene extends Phaser.Scene {
       this.els.overlayBar.style.display = this.overlayBarOpen ? 'block' : 'none';
     }
     this.game.events.emit('overlay-bar', this.overlayBarOpen);
+  }
+
+  /** Toggle the settings drawer (control-bar Settings button → real handler).
+   *  Values are pre-filled from loadOptions() each time it opens, so the panel
+   *  always reflects the persistent shell state (T-19-02: no data sinks). */
+  private toggleSettingsDrawer(force?: boolean): void {
+    this.settingsOpen = force ?? !this.settingsOpen;
+    if (this.els.settingsDrawer) {
+      this.els.settingsDrawer.style.display = this.settingsOpen ? 'block' : 'none';
+    }
+    if (this.settingsOpen) this.fillSettingsControls();
+  }
+
+  /** Pre-fill the six opt-* controls from the persisted options. */
+  private fillSettingsControls(): void {
+    const o = loadOptions();
+    (this.els.optGraphics as HTMLSelectElement).value = o.graphicsQuality;
+    (this.els.optMusic as HTMLInputElement).value = String(o.audioMusic);
+    (this.els.optSfx as HTMLInputElement).value = String(o.audioSfx);
+    (this.els.optSpeed as HTMLSelectElement).value = String(o.gameSpeedDefault);
+    (this.els.optTextSize as HTMLSelectElement).value = o.textSize;
+    (this.els.optReducedMotion as HTMLInputElement).checked = o.reducedMotion;
+  }
+
+  /** Persist + apply the drawer's options (mirrors saveGame's save+toast). */
+  private saveSettings(): void {
+    const o: OptionsSchema = {
+      graphicsQuality: (this.els.optGraphics as HTMLSelectElement).value as OptionsSchema['graphicsQuality'],
+      audioMusic: toUnit((this.els.optMusic as HTMLInputElement).value),
+      audioSfx: toUnit((this.els.optSfx as HTMLInputElement).value),
+      gameSpeedDefault: Number((this.els.optSpeed as HTMLSelectElement).value) || 1,
+      textSize: (this.els.optTextSize as HTMLSelectElement).value as OptionsSchema['textSize'],
+      reducedMotion: (this.els.optReducedMotion as HTMLInputElement).checked,
+    };
+    const result = saveOptions(o);
+    if (!result.ok) {
+      this.showToast('Save failed');
+      return;
+    }
+    applyOptions(o);
+    this.showToast('Options saved');
   }
 
   /** Focus the message log (control-bar Messages button → real scene effect). */
@@ -981,6 +1108,14 @@ function appendRow(parent: HTMLElement, label: string, value: string): void {
   val.textContent = value;
   rowEl.append(lab, val);
   parent.appendChild(rowEl);
+}
+
+/** Parse a 0..1 audio slider value defensively (finite + clamped to the unit
+ *  interval so a hand-edited drawer value cannot produce NaN in the options). */
+function toUnit(v: string): number {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(1, Math.max(0, n));
 }
 
 /** Overlay bar toggle definitions (UI-03, locked shortcuts W/F/R/C/D + X). */

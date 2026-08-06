@@ -261,6 +261,75 @@
         color: #f3e9d2;
         pointer-events: auto;
       }
+
+      /* ---- Settings drawer + accessibility seams (Phase 19/PERS-02) ---- */
+      body[data-text-size='large'] .hud {
+        font-size: 15px;
+      }
+      body[data-text-size='small'] .hud {
+        font-size: 11px;
+      }
+      body[data-reduced-motion='true'] *:not(.hud-toast) {
+        animation: none !important;
+        transition: none !important;
+      }
+      .settings-drawer {
+        position: fixed;
+        bottom: 132px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: min(420px, 90vw);
+        max-height: 40vh;
+        overflow-y: auto;
+        z-index: 26;
+        background: rgba(40, 28, 14, 0.95);
+        border: 1px solid #7a6234;
+        border-radius: 6px;
+        padding: 8px 12px;
+        color: #f3e9d2;
+        pointer-events: auto;
+      }
+      .settings-drawer .hud-settings-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 4px 0;
+      }
+      .settings-drawer .hud-settings-row label {
+        font-size: 12px;
+        color: #e8c46b;
+      }
+      .settings-drawer select,
+      .settings-drawer input[type='range'] {
+        font: inherit;
+        font-size: 12px;
+        color: #f3e9d2;
+        background: #2b1d0e;
+        border: 1px solid #7a6234;
+        border-radius: 4px;
+        padding: 2px 4px;
+      }
+      .settings-drawer .settings-note {
+        color: #b39a62;
+        font-size: 11px;
+        margin: 6px 0 4px;
+      }
+      .settings-save-btn {
+        width: 100%;
+        font: inherit;
+        font-size: 13px;
+        color: #f3e9d2;
+        background: #7a5c22;
+        border: 1px solid #e8c46b;
+        border-radius: 4px;
+        padding: 6px;
+        cursor: pointer;
+        margin-top: 6px;
+      }
+      .settings-save-btn:hover {
+        background: #5d4420;
+      }
       .overlay-bar {
         position: fixed;
         bottom: 64px;
