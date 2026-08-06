@@ -197,8 +197,13 @@ export class MainScene extends Phaser.Scene {
         const o = this.runner.getWaterOverlay();
         const src = o.sources;
         const cls = o.houseWaterClass;
+        const well = o.wellCoverage;
+        const fount = o.fountainCoverage;
+        // WR-01: paint the well/fountain COVERAGE region (not just the source
+        // tile + house classes) so the player sees where water actually reaches.
         cells = Array.from({ length: height }, (_, y) =>
-          Array.from({ length: width }, (_, x) => (src[y][x] > 0 ? 4 : cls[y][x])),
+          Array.from({ length: width }, (_, x) =>
+            src[y][x] > 0 ? 4 : well[y][x] > 0 || fount[y][x] > 0 ? 1 : cls[y][x]),
         );
         bandOf = (v) => v;
         break;
