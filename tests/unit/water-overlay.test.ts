@@ -43,7 +43,7 @@ describe('water overlay runner getter (UI-03)', () => {
     const overlay = getWaterOverlay(r);
     // Each of the two wells must paint its own source tile (aggregation).
     expect(overlay.wellCoverage[1][1]).toBe(1);
-    expect(overlay.wellCoverage[8][1]).toBe(1);
+    expect(overlay.wellCoverage[1][8]).toBe(1);
     expect(overlay.wellCoverage.length).toBe(12);
     // The fountain paints its source tile in the fountain grid.
     expect(overlay.fountainCoverage[1][5]).toBe(1);
@@ -89,15 +89,18 @@ describe('water overlay runner getter (UI-03)', () => {
   });
 
   it('derived water % agrees with the aggregated overlay coverage (multi-source)', () => {
-    // The overlay counts every well-covered tile; derived.water must aggregate
-    // ALL sources too (not the throwaway first-well find()). After 18-03-01 they
-    // agree; before it, derived counts only one well → RED.
+    // The overlay counts every water-covered tile (well OR fountain); derived
+    // water must aggregate ALL sources too (not the throwaway first-well find()).
     const r = new SimRunner(7, waterMap());
     buildWellsAndFountain(r);
-    const wellCovered = getWaterOverlay(r).wellCoverage
-      .map((row) => row.reduce((a: number, v: number) => a + v, 0))
-      .reduce((a: number, v: number) => a + v, 0);
-    expect(r.getDerived().water.coveredTiles).toBe(wellCovered);
+    const overlay = getWaterOverlay(r);
+    let covered = 0;
+    for (let y = 0; y < overlay.wellCoverage.length; y++) {
+      for (let x = 0; x < overlay.wellCoverage[y].length; x++) {
+        if (overlay.wellCoverage[y][x] > 0 || overlay.fountainCoverage[y][x] > 0) covered++;
+      }
+    }
+    expect(r.getDerived().water.coveredTiles).toBe(covered);
     expect(r.getDerived().water.coveredTiles).toBeGreaterThan(0);
   });
 });

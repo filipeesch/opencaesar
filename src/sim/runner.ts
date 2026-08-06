@@ -43,6 +43,7 @@ import { pickRequest, entryById } from '../../data/requests';
 import type { RequestDef } from '../../data/requests';
 import { ObjectiveTracker } from './objectives';
 import { WaterSystem } from './water';
+import type { WaterSource, WaterSourceKind } from './water';
 import { buildCodex, lookupEntry, TUTORIAL_ELIGIBILITY, TUTORIAL_STEP_ORDER, tutorialText, TUTORIAL_EXPANDED, TUTORIAL_CODEX_REF, nextTutorialCurrent } from './campaign';
 import type { CodexEntry, CodexKind, HouseView, CityView, TutorialStepId, TutorialPrompt, TutorialView } from './campaign';
 import { desirabilityOf, tickHousing } from './housing';
@@ -97,7 +98,7 @@ import { productionAdvisorRows, productionAdvisorSummary, logisticsAdvisorFromSt
 import type { ProductionAdvisorRow, ProductionAdvisorSummary, ProductionInternalNote } from './advisors';
 import { tradeAdvisorFromState } from './advisors';
 import type { TradeAdvisorView, TradePriceSnapshot, TradePriceSnapshotGood } from './advisors';
-import { civilizationOverlayData } from './advisors';
+import { civilizationOverlayData, waterOverlayData } from './advisors';
 
 /** Deferred commands. These share the exact shape of the replayable
  *  `SaveCommand` type, so a paused queue can be serialized verbatim into a save
@@ -1314,11 +1315,10 @@ export class SimRunner {
     // stay untouched.
     const eventMod = this.activeEvent ? this.activeEventDelta : { culture: 0, prosperity: 0, stability: 0, favor: 0 };
     const water = new WaterSystem();
-    const well = this.buildings.find((b) => b.type === 'well' || b.type === 'fountain');
-    water.setSources(well ? [{ x: well.x, y: well.y, kind: 'well', active: true, radius: 2 }] : []);
+    water.setSources(this.liveWaterSources());
     const grid = water.compute(this.width, this.height, () => 0);
     let coveredTiles = 0;
-    for (let y = 0; y < this.height; y++) for (let x = 0; x < this.width; x++) if (grid[y][x].coveredByWell) coveredTiles++;
+    for (let y = 0; y < this.height; y++) for (let x = 0; x < this.width; x++) if (grid[y][x].coveredByWell || grid[y][x].coveredByFountain) coveredTiles++;
 
     const taxes = taxCollected(population, 2, this.policy.taxRate, 1);
     const wages = employment.employed * CONFIG.wagePerWorkerPerTick * this.policy.wageRate;
@@ -1359,6 +1359,42 @@ export class SimRunner {
         return { x: b.x, y: b.y, w: fp, h: fp, safety: b.safety };
       }),
     );
+  }
+
+  /**
+   * Water overlay (UI-03): per-tile water grids aggregating ALL live
+   * well/fountain sources — never find()-first semantics. Pure read-only
+   * projection over this.buildings (no caching, deterministic for a 40x40 grid);
+   * the aqueduct/reservoir systems are not wired into the runner (reservoir is
+   * not a placeable BuildingType), so those grids read zero by design.
+   */
+  getWaterOverlay(): Record<string, number[][]> {
+    const ws = new WaterSystem();
+    ws.setSources(this.liveWaterSources());
+    const grid = ws.compute(this.width, this.height, () => 0);
+    return waterOverlayData({
+      width: this.width,
+      height: this.height,
+      grid,
+      aqueductTiles: new Set(),
+      flowing: new Set(),
+      reservoirStates: [],
+    });
+  }
+
+  /** Every live well/fountain as an active water source (shared by the water
+   *  overlay and the derived water %, so the two always agree). Fountains keep
+   *  their kind so they land in `fountainCoverage`, not `wellCoverage`. */
+  private liveWaterSources(): WaterSource[] {
+    return this.buildings
+      .filter((b) => b.type === 'well' || b.type === 'fountain')
+      .map((b) => ({
+        x: b.x,
+        y: b.y,
+        kind: (b.type === 'fountain' ? 'fountain' : 'well') as WaterSourceKind,
+        active: true,
+        radius: 2,
+      }));
   }
 
   /** Civic wellness (Phase 12): live per-house health/literacy/entertainment
