@@ -14,6 +14,8 @@ import {
   EXTRACTION_SITES, WORKSHOPS,
   EXTRACTION_BUILDING_TYPES, WORKSHOP_BUILDING_TYPES, RAW_OLIVE_GRAPE,
 } from './production';
+import type { ProductionState } from './production';
+import type { HouseInstance, BuildingSafetyState, WalkerInstance } from './walkers';
 import type { LogisticsAdvisorView } from './logistics';
 import { TRADE_CITIES, tradeCityName } from '../../data/trade';
 import { quotaFor } from './trade';
@@ -280,26 +282,100 @@ export function civilizationOverlayData(
 /** Residence/production/storage/market walker inspector datasets (task 11.2). */
 export function residenceInspection(
   population: number, capacity: number, residentClass: string, services: string[], goods: Record<string, number>,
+  internals?: { house?: HouseInstance; safety?: BuildingSafetyState; happiness?: number; desirability?: number },
 ): Record<string, unknown> {
-  return { population, capacity, residentClass, services, goods };
+  const out: Record<string, unknown> = { population, capacity, residentClass, services, goods };
+  // UI-04 additive enrichment sourced from live internals (never serialized —
+  // golden-byte contract). Original minimal calls keep returning the old shape.
+  const h = internals?.house;
+  if (h) {
+    if (h.level !== undefined) out.level = h.level;
+    if (h.satisfiedTicks !== undefined) out.satisfiedTicks = h.satisfiedTicks;
+    if (h.unsatisfiedTicks !== undefined) out.unsatisfiedTicks = h.unsatisfiedTicks;
+    if (h.services) out.servicesTTL = { ...h.services };
+    if (h.godAccess && Object.keys(h.godAccess).length > 0) out.godAccess = { ...h.godAccess };
+    if (h.foodInventory) out.foodInventory = { ...h.foodInventory };
+    if (h.civic) out.civic = { ...h.civic };
+  }
+  if (internals?.happiness !== undefined) out.happiness = internals.happiness;
+  if (internals?.desirability !== undefined) out.desirability = internals.desirability;
+  const s = internals?.safety;
+  if (s) {
+    out.fire = s.fire;
+    out.danger = s.danger;
+    out.collapseRisk = s.collapseRisk;
+    out.crime = s.crime;
+  }
+  return out;
 }
 
 export function productionInspection(
   inputs: Record<string, number>, output: Record<string, number>, status: string,
+  internals?: {
+    production?: ProductionState; active?: boolean; workersAssigned?: number; workersRequired?: number;
+    laborConnected?: boolean; roadAccess?: boolean; destination?: string | null; distance?: number;
+  },
 ): Record<string, unknown> {
-  return { inputs, output, status };
+  const out: Record<string, unknown> = { inputs, output, status };
+  const p = internals?.production;
+  if (p) {
+    out.active = p.active;
+    out.blocked = p.blocked;
+  }
+  if (internals?.active !== undefined) out.active = internals.active;
+  if (internals?.workersAssigned !== undefined) out.workersAssigned = internals.workersAssigned;
+  if (internals?.workersRequired !== undefined) out.workersRequired = internals.workersRequired;
+  if (internals?.laborConnected !== undefined) out.laborConnected = internals.laborConnected;
+  if (internals?.roadAccess !== undefined) out.roadAccess = internals.roadAccess;
+  if (internals?.destination !== undefined) out.destination = internals.destination;
+  if (internals?.distance !== undefined) out.distance = internals.distance;
+  out.bottleneck = status && status !== 'working' ? status : null;
+  return out;
 }
 
-export function storageInspection(stock: Record<string, number>, usedSlots: number, capacity: number): Record<string, unknown> {
-  return { stock, usedSlots, capacity };
+export function storageInspection(
+  stock: Record<string, number>, usedSlots: number, capacity: number,
+  internals?: { reserved?: Record<string, number>; inTransit?: Record<string, number>; perProduct?: Record<string, { stored: number; cap: number }> },
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { stock, usedSlots, capacity };
+  if (internals?.reserved) out.reserved = { ...internals.reserved };
+  if (internals?.inTransit) out.inTransit = { ...internals.inTransit };
+  if (internals?.perProduct) out.perProduct = { ...internals.perProduct };
+  return out;
 }
 
-export function marketInspection(inventory: Record<string, number>, buyerRadius: number): Record<string, unknown> {
-  return { inventory, buyerRadius };
+export function marketInspection(
+  inventory: Record<string, number>, buyerRadius: number,
+  internals?: { workersAssigned?: number; housesServed?: number; enabled?: string[]; demand?: number; buyers?: number; sellers?: number },
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { inventory, buyerRadius };
+  if (internals) {
+    if (internals.workersAssigned !== undefined) out.workersAssigned = internals.workersAssigned;
+    if (internals.housesServed !== undefined) out.housesServed = internals.housesServed;
+    if (internals.enabled) out.enabled = [...internals.enabled];
+    if (internals.demand !== undefined) out.demand = internals.demand;
+    if (internals.buyers !== undefined) out.buyers = internals.buyers;
+    if (internals.sellers !== undefined) out.sellers = internals.sellers;
+  }
+  return out;
 }
 
-export function walkerInspection(id: number, x: number, y: number, status: string, stepsUsed: number, maxSteps: number): Record<string, unknown> {
-  return { id, x, y, status, stepsUsed, maxSteps };
+export function walkerInspection(
+  id: number, x: number, y: number, status: string, stepsUsed: number, maxSteps: number,
+  internals?: WalkerInstance,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { id, x, y, status, stepsUsed, maxSteps };
+  if (internals) {
+    out.type = internals.type;
+    out.origin = internals.origin ?? null;
+    out.path = internals.path ? internals.path.map((p) => ({ ...p })) : [];
+    out.carriedAmount = internals.carriedAmount;
+    out.targetBuildingId = internals.targetBuildingId;
+    if (internals.carryingGood) out.carryingGood = internals.carryingGood;
+    if (internals.trade) out.trade = { ...internals.trade };
+    out.stepsRemaining = internals.path.length;
+  }
+  return out;
 }
 
 /**

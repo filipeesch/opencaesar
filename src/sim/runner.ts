@@ -2538,6 +2538,41 @@ export class SimRunner {
     return this.simInternals();
   }
 
+  /**
+   * UI-04 inspector seam: a thin read-only resolve of a building or walker id
+   * returning its serialized snapshot (via the standard getState() path — the
+   * golden-byte shape) PLUS its live internal instance for the enriched pure
+   * *Inspection projections. Null for an unknown id. Never mutates and never
+   * grows BuildingState/WalkerState.
+   */
+  getInspector(id: number): {
+    kind: 'building' | 'walker';
+    snapshotId: number;
+    building?: BuildingState;
+    walker?: WalkerState;
+    internals?: BuildingInstance | WalkerInstance;
+  } | null {
+    const b = this.buildingById.get(id);
+    if (b) {
+      return {
+        kind: 'building',
+        snapshotId: id,
+        building: this.getState().buildings.find((x) => x.id === id),
+        internals: b,
+      };
+    }
+    const w = this.walkers.find((walk) => walk.id === id);
+    if (w) {
+      return {
+        kind: 'walker',
+        snapshotId: id,
+        walker: this.getState().walkers.find((x) => x.id === id),
+        internals: w,
+      };
+    }
+    return null;
+  }
+
   /** Every accepted and rejected command since construction, in order. */
   getCommandLog(): CommandLogEntry[] {
     return [...this.commandLog];
