@@ -530,18 +530,20 @@ export class HUDScene extends Phaser.Scene {
     }
   }
 
-  /** Toggle the overlay bar (nav button → real handler). */
-  private toggleOverlayBar(force?: boolean): void {
+  /** Toggle the overlay bar (nav button → real handler, or the key router via
+   *  force — WR-05). */
+  toggleOverlayBar(force?: boolean): void {
     this.overlayBarOpen = force ?? !this.overlayBarOpen;
     if (this.sidebar?.overlayBar) {
       asEl(this.sidebar.overlayBar).style.display = this.overlayBarOpen ? 'block' : 'none';
     }
   }
 
-  /** Toggle the settings drawer (nav button → real handler). Values are
-   *  pre-filled from loadOptions() each time it opens, so the panel always
-   *  reflects the persistent shell state (T-19-02: no data sinks). */
-  private toggleSettingsDrawer(force?: boolean): void {
+  /** Toggle the settings drawer (nav button → real handler, or the key router
+   *  via force — WR-05). Values are pre-filled from loadOptions() each time it
+   *  opens, so the panel always reflects the persistent shell state
+   *  (T-19-02: no data sinks). */
+  toggleSettingsDrawer(force?: boolean): void {
     this.settingsOpen = force ?? !this.settingsOpen;
     if (this.sidebar?.settingsDrawer) {
       asEl(this.sidebar.settingsDrawer).style.display = this.settingsOpen ? 'block' : 'none';

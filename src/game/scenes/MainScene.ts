@@ -215,9 +215,13 @@ export class MainScene extends Phaser.Scene {
       }
 
       // WR-05: Escape closes the settings drawer / overlay bar when open
-      // (drawer > inspector > settings > overlay-bar > build > pause).
-      if (result.settings.open !== ctx.settings.open) hud.toggleSettingsDrawer(result.settings.open);
-      if (result.overlayBar.open !== ctx.overlayBar.open) hud.toggleOverlayBar(result.overlayBar.open);
+      // (drawer > inspector > settings > overlay-bar > build > pause). The
+      // ctx always carries both flags (built above); ?? keeps the optional
+      // contract safe for any other RouterCtx producer.
+      const settingsCtx = ctx.settings ?? { open: false };
+      const overlayBarCtx = ctx.overlayBar ?? { open: false };
+      if (result.settings.open !== settingsCtx.open) hud.toggleSettingsDrawer(result.settings.open);
+      if (result.overlayBar.open !== overlayBarCtx.open) hud.toggleOverlayBar(result.overlayBar.open);
 
       // Pause: the router's last-resort ESC fall-through (existing behavior).
       if (result.pause.paused !== ctx.pause.paused) this.setPaused(result.pause.paused);
