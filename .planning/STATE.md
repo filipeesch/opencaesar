@@ -19,8 +19,8 @@ progress:
 
 Phase: 20 — UI Redesign — Caesar III Sidebar & Advisors (1 of 1)
 Plan: 20-plan (Waves 0-5; 10 tasks)
-Status: Waves 0-1 complete (inventory/SPEC + sidebar/topbar/advisor/keyboard)
-Last activity: 2026-08-07 — Phase 20 Waves 0-1 done (127 files / 1004 tests green, goldens byte-identical, 0 innerHTML)
+Status: Waves 0-2 complete (inventory/SPEC + sidebar/topbar/advisor/keyboard + drawer live-tick/keyboard e2e)
+Last activity: 2026-08-07 — Phase 20 Waves 0-2 done (127 files / 1004 tests green, goldens byte-identical, 0 innerHTML; e2e 53 passed, 3 pre-existing fails documented; wave-1 regressions fixed)
 
 ## Performance Metrics
 
@@ -60,12 +60,13 @@ Last activity: 2026-08-07 — Phase 20 Waves 0-1 done (127 files / 1004 tests gr
 - [Phase ?]: Per-residence population derived from level/tick history (never serialized); wage/unemployment bands reported as pure DerivedSnapshot projections — zero SaveData growth, zero golden delta
 
 - [Phase 20 Wave 0]: Sidebar & advisor redesign — control-to-runner-seam inventory verified (0 decorative controls in HUDScene.ts); SPEC.md locks the target sidebar/topbar DOM tree, keyboard precedence (drawer > inspector > build > pause), per-service overlay hue table, and the tick→year/month date rule (year=floor(tick/360), month=floor((tick%360)/40)+1). 8 RED scaffolds (6 unit + 2 e2e) committed against the Wave 1+ target API; all verified failing today (module-absent RED + the 8 real innerHTML sites: 5 in HUDScene.ts, 3 in HomeScene.ts).
+- [Phase 20 Wave 2]: Advisor drawer live-tick re-render under the tick-change guard (never per-frame; composer reads from the locked advisors.ts seam — zero diffs), verbatim empty states, 13 tabs in ADVISOR_TAB_ORDER. Keyboard e2e green (A cycles, ←/→ switch panels, Escape precedence, B toggle, 1-5 overlays; W/F/R/C/D/X regression-locked). Fixed wave-1 e2e regressions: settings drawer startup overlay swallowing mid-screen drags/wheel (display:none at build), legacy policy % value labels, build-mode ESC precedence, compact topbar CSS preserving the drag e2e's transparent band. e2e suite 53 passed / 3 failed (boots, campaign, placement-population — all fail at wave-0 baseline, documented not chased).
 
 ## Session
 
-**Last session:** 2026-08-06T06:30:00.000Z
-**Stopped at:** Completed Phase 20 Wave 0 — inventory + SPEC.md + 8 RED scaffolds (all verified failing; typecheck errors are only the intended missing-module RED)
-**Resume file:** .planning/phases/20/SPEC.md
+**Last session:** 2026-08-07T14:15:00.000Z
+**Stopped at:** Completed Phase 20 Wave 2 — advisor drawer live-tick e2e + keyboard e2e green; wave-1 regressions fixed; e2e 53/3 (pre-existing documented)
+**Resume file:** .planning/phases/20/PLAN.md (Wave 3 — per-service overlay hues + legends + click-through)
 
 ## Operator Next Steps
 
