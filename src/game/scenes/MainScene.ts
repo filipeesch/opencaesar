@@ -360,7 +360,7 @@ export class MainScene extends Phaser.Scene {
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const v = cells[y][x];
-        if (!v || v === 0) continue;
+        if (!v) continue; // IN-05: !v already covers v === 0 (and NaN)
         const band = clampBand(bandOf(v));
         // Per-service ramp: the overlay's own hue, or (risks) the dominant
         // risk service's hue at this tile.
