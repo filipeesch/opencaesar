@@ -1,6 +1,16 @@
 /**
- * HUDScene: top-level UI overlay. DOM-backed (sliders, buttons, message log)
- * but still driven by a Phaser scene reading sim state every frame.
+ * HUDScene: top-level UI overlay (Phase 20 UI-RED redesign).
+ *
+ * Wave 1 layout: a minimal TOP STATUS BAR (Population / date / Treasury /
+ * ratings) plus the RIGHT SIDEBAR interaction hub (build panel, tools/policy,
+ * speed, advisor drawer, overlay group, action group, message log, toast).
+ * The Phase-18 top-edge HUD column and its template-string-era DOM are gone —
+ * every surface is composed via createElement/textContent builders
+ * (UI-RED-08). The building/walker inspector popup keeps its Phase-18
+ * bottom-center host until Wave 4 relocates it into the sidebar.
+ *
+ * DOM is still driven by a Phaser scene reading sim state every frame, but
+ * the tree structure now comes from the pure builders in src/game/ui/.
  */
 
 import Phaser from 'phaser';
@@ -8,12 +18,11 @@ import { BUILDINGS } from '../../sim/buildings';
 import { HOUSE_TIERS } from '../../sim/config';
 import { housingLevelName } from '../../../data/housing';
 import {
-  foodHudFromState, residenceInspection, productionInspection,
+  residenceInspection, productionInspection,
   storageInspection, marketInspection, walkerInspection,
 } from '../../sim/advisors';
 import { WORKSHOP_BUILDING_TYPES, EXTRACTION_BUILDING_TYPES } from '../../sim/production';
-import { SPEED_PRESETS } from '../../sim/time';
-import { advisorPanels, ADVISOR_TAB_ORDER } from '../advisors';
+import { advisorPanels } from '../advisors';
 import type { AdvisorAction, OverlayId } from '../advisors';
 import { OVERLAY_RAMPS } from '../palette';
 import type { SimRunner } from '../../sim/runner';
@@ -23,12 +32,18 @@ import { writeSave } from '../save';
 import { applyOptions, loadOptions, saveOptions } from '../options';
 import type { OptionsSchema } from '../../sim/ui';
 import type { MainScene } from './MainScene';
+import { buildSidebarDom, type SidebarDom } from '../ui/sidebar';
+import { buildTopBarDom, type TopBarDom } from '../ui/topbar';
+import { buildAdvisorDrawer, type AdvisorDrawerDom } from '../ui/advisorDrawer';
+import type { UiNode } from '../ui/dom';
 
 type InspectorKind = 'house' | 'production' | 'storage' | 'market' | 'other';
-
-const BUILD_ORDER: readonly BuildingType[] = ['road', 'house', 'garden', 'well', 'fountain', 'farm', 'orchard', 'granary', 'market', 'engineer_post', 'fire_station', 'clinic', 'school', 'library', 'temple', 'theatre', 'forum'];
-const CATEGORIES: readonly BuildingCategory[] = ['roads', 'housing', 'food', 'water', 'infrastructure', 'engineering', 'safety', 'health', 'education', 'entertainment', 'religion', 'government', 'ornament'];
 type CategoryFilter = BuildingCategory | 'all';
+
+/** Read a UiNode tree as the browser HTMLElement it actually is at runtime. */
+function asEl(node: UiNode): HTMLElement {
+  return node as unknown as HTMLElement;
+}
 
 export class HUDScene extends Phaser.Scene {
   private main: MainScene | null = null;
@@ -48,14 +63,23 @@ export class HUDScene extends Phaser.Scene {
   private inspectKind: 'building' | 'walker' = 'building';
   /** Build-palette buttons, tracked for the live unaffordable-disabled state. */
   private buildBtns: HTMLButtonElement[] = [];
-  /** Whether the advisors drawer is open (control bar → drawer). */
+  /** Whether the advisors drawer is open (nav button / A key). */
   private drawerOpen = false;
-  /** Whether the overlay bar is open (control bar → overlay bar). */
+  /** Whether the overlay bar is open (nav button). */
   private overlayBarOpen = false;
-  /** Whether the settings drawer is open (control bar → Settings). */
+  /** Whether the settings drawer is open (nav button). */
   private settingsOpen = false;
   /** Currently active advisor tab id (defaults to 'ratings'). */
   private activeAdvisor: string | null = null;
+  /** Whether the sidebar build panel is shown (B key toggles it). */
+  private buildPanelOpen = true;
+
+  /** Wave-1 pure-builder trees (mounted in buildDom, refreshed each tick). */
+  private topBar: TopBarDom | null = null;
+  private sidebar: SidebarDom | null = null;
+  private advisorDrawer: AdvisorDrawerDom | null = null;
+  /** The wrapper div holding sidebar + topbar + pause overlay + popup host. */
+  private hudRoot: HTMLElement | null = null;
 
   // WR-04: `game.events` is Phaser's GLOBAL emitter and outlives scene restarts.
   // Handlers registered there are stored as bound fields so the scene can
@@ -108,7 +132,8 @@ export class HUDScene extends Phaser.Scene {
   };
   private readonly onHudBuildMode = (): void => {
     this.closePopup();
-    this.els.build.querySelectorAll('.hud-build-btn').forEach((btn) => {
+    const grid = this.els.build;
+    grid.querySelectorAll('.hud-build-btn').forEach((btn) => {
       const active = this.main?.getBuildMode() === (btn as HTMLElement).dataset.build;
       btn.classList.toggle('active', active === true);
     });
@@ -127,34 +152,23 @@ export class HUDScene extends Phaser.Scene {
 
   override update(): void {
     const state = this.main?.runner.getState();
-    if (!state || !this.els.pop) return;
+    if (!state || !this.topBar) return;
     if (state.tick === this.lastTick) return;
     this.lastTick = state.tick;
 
-    this.els.pop.textContent = String(state.ratings.population);
-    this.els.prosperity.textContent = String(state.ratings.prosperity);
-    this.els.happiness.textContent = String(state.ratings.happiness);
-    this.els.treasury.textContent = String(Math.floor(state.treasury));
-    this.els.workers.textContent = `${state.assignedWorkers}/${state.totalJobs}`;
-    this.els.tax.textContent = `${Math.round(state.policy.taxRate * 100)}%`;
-    this.els.wage.textContent = `${Math.round(state.policy.wageRate * 100)}%`;
-
-    // Months-of-food indicator (spec §15): every value derived from the live sim
-    // snapshot — available food stock over projected monthly consumption.
-    const food = foodHudFromState(state);
-    this.els.food.textContent = `${food.icon} ${food.text}`;
-    this.els.food.className = `hud-food hud-food-${food.band}`;
-    this.els.food.title = `Food supply: ${food.text} (band ${food.band})`;
+    // Top status bar: refresh the value nodes in place (no re-render).
+    const vn = this.topBar.valueNodes;
+    vn.population.textContent = String(state.ratings.population);
+    vn.treasury.textContent = String(Math.floor(state.treasury));
+    vn.date.textContent = dateLabel(state.tick);
+    vn.prosperity.textContent = String(state.ratings.prosperity);
+    vn.happiness.textContent = String(state.ratings.happiness);
 
     const derived = this.main?.runner.getDerived();
     if (derived) {
-      this.els.culture.textContent = String(derived.culture);
-      this.els.stability.textContent = String(derived.stability);
-      this.els.favor.textContent = String(derived.favor);
-      const wp = derived.water.totalTiles ? derived.water.coveredTiles / derived.water.totalTiles : 0;
-      this.els.water.textContent = `${Math.round(wp * 100)}%`;
-      this.els.risk.textContent = `${Math.round(Math.max(derived.crime, derived.collapseRisk, derived.fireRisk) * 100)}%`;
-      this.els.gov.textContent = derived.government.join(',') || 'none';
+      vn.culture.textContent = String(derived.culture);
+      vn.stability.textContent = String(derived.stability);
+      vn.favor.textContent = String(derived.favor);
     }
 
     if (state.messages.length !== this.lastMsgCount) {
@@ -176,6 +190,47 @@ export class HUDScene extends Phaser.Scene {
     if (this.inspectId !== null) this.renderPopup(state.buildings.find((b) => b.id === this.inspectId) ?? null);
   }
 
+  // ---- Public surface consumed by the MainScene key-router (Wave 1) ----
+
+  isDrawerOpen(): boolean {
+    return this.drawerOpen;
+  }
+
+  activeAdvisorId(): string | null {
+    return this.activeAdvisor;
+  }
+
+  isInspectorOpen(): boolean {
+    return this.els.popup?.style.display !== 'none';
+  }
+
+  toggleAdvisors(force?: boolean): void {
+    this.toggleAdvisorsDrawer(force);
+  }
+
+  selectAdvisorTab(id: string): void {
+    this.selectAdvisor(id);
+  }
+
+  closeInspector(): void {
+    this.closePopup();
+  }
+
+  cycleInspector(dir: number): void {
+    this.navInspector(dir);
+  }
+
+  setBuildPanelOpen(open: boolean): void {
+    this.buildPanelOpen = open;
+    if (this.sidebar?.buildPanel) {
+      asEl(this.sidebar.buildPanel).style.display = open ? '' : 'none';
+    }
+  }
+
+  isBuildPanelOpen(): boolean {
+    return this.buildPanelOpen;
+  }
+
   /** Disable each build button when the player cannot afford it. */
   private updateBuildAffordability(treasury: number): void {
     for (const btn of this.buildBtns) {
@@ -192,372 +247,177 @@ export class HUDScene extends Phaser.Scene {
     const root = document.createElement('div');
     root.className = 'hud';
 
-    const stats = document.createElement('div');
-    stats.className = 'hud-panel hud-stats';
-    stats.innerHTML = `
-      <div class="hud-title">Roman City Builder</div>
-      <div class="hud-stat"><span>Population</span><b data-testid="stat-population"></b></div>
-      <div class="hud-stat"><span>Prosperity</span><b data-testid="stat-prosperity"></b></div>
-      <div class="hud-stat"><span>Happiness</span><b data-testid="stat-happiness"></b></div>
-      <div class="hud-stat"><span>Treasury</span><b data-testid="stat-treasury"></b></div>
-      <div class="hud-stat"><span>Employed</span><b data-testid="stat-workers"></b></div>
-      <div class="hud-stat"><span>Food</span><b data-testid="stat-food"></b></div>
-      <div class="hud-stat"><span>Culture</span><b data-testid="stat-culture"></b></div>
-      <div class="hud-stat"><span>Stability</span><b data-testid="stat-stability"></b></div>
-      <div class="hud-stat"><span>Favor</span><b data-testid="stat-favor"></b></div>
-      <div class="hud-stat"><span>Water</span><b data-testid="stat-water"></b></div>
-      <div class="hud-stat"><span>Risk</span><b data-testid="stat-risk"></b></div>
-      <div class="hud-stat"><span>Gov</span><b data-testid="stat-gov"></b></div>
-    `;
+    const state = this.main!.runner.getState();
+    const derived = this.main!.runner.getDerived();
 
-    const build = document.createElement('div');
-    build.className = 'hud-panel hud-build';
-    const title = document.createElement('div');
-    title.className = 'hud-subtitle';
-    title.textContent = 'Build';
-    build.appendChild(title);
+    // Top status bar (Wave 1): population / date / treasury / 5 ratings.
+    this.topBar = buildTopBarDom(state, derived);
+    root.appendChild(asEl(this.topBar.root));
 
-    const cats = document.createElement('div');
-    cats.className = 'hud-cat-bar';
-    const allBtn = document.createElement('button');
-    allBtn.className = 'hud-cat-btn active';
-    allBtn.dataset.cat = 'all';
-    allBtn.textContent = 'All';
-    cats.appendChild(allBtn);
-    for (const cat of CATEGORIES) {
-      const btn = document.createElement('button');
-      btn.className = 'hud-cat-btn';
-      btn.dataset.cat = cat;
-      btn.dataset.testid = `category-${cat}`;
-      btn.textContent = cat[0].toUpperCase() + cat.slice(1);
-      cats.appendChild(btn);
-    }
-    build.appendChild(cats);
+    // Right sidebar (Wave 1): build panel, tools/policy, speed, advisor
+    // button, overlay group, action group, settings, log, legend, toast.
+    this.sidebar = buildSidebarDom(state, derived);
+    root.appendChild(asEl(this.sidebar.root));
 
-    const grid = document.createElement('div');
-    grid.className = 'hud-build-grid';
-    for (const type of BUILD_ORDER) {
-      const def = BUILDINGS[type];
-      const btn = document.createElement('button');
-      btn.className = 'hud-build-btn';
-      btn.dataset.testid = `build-${type}`;
-      btn.dataset.build = type;
-      btn.dataset.category = def.category;
-      btn.textContent = `${def.name} (${def.cost})`;
-      grid.appendChild(btn);
-    }
-    build.appendChild(grid);
+    // Advisor drawer frame — 13 tabs + panel hosts from the single composer.
+    this.advisorDrawer = buildAdvisorDrawer(advisorPanels(this.main!.runner));
+    asEl(this.sidebar.drawerHost).appendChild(asEl(this.advisorDrawer.root));
 
-    const policy = document.createElement('div');
-    policy.className = 'hud-panel hud-policy';
-    policy.innerHTML = `
-      <div class="hud-subtitle">Policy</div>
-      <label>Tax <input type="range" min="0" max="100" value="10" data-testid="policy-tax" /> <span data-testid="policy-tax-value"></span></label>
-      <label>Wage <input type="range" min="0" max="100" value="10" data-testid="policy-wage" /> <span data-testid="policy-wage-value"></span></label>
-    `;
+    // Pause overlay (Wave 1 keeps the full-screen pause card; its Resume /
+    // Save / Restart buttons carry the legacy testids the specs drive).
+    const overlay = document.createElement('div');
+    overlay.className = 'hud-overlay';
+    overlay.dataset.testid = 'pause-overlay';
+    overlay.style.display = 'none';
+    const card = document.createElement('div');
+    card.className = 'hud-overlay-card';
+    const pauseTitle = document.createElement('div');
+    pauseTitle.className = 'hud-overlay-title';
+    pauseTitle.textContent = 'Paused';
+    const resumeBtn = document.createElement('button');
+    resumeBtn.className = 'home-btn primary';
+    resumeBtn.dataset.testid = 'resume-button';
+    resumeBtn.textContent = 'Resume';
+    resumeBtn.addEventListener('click', () => this.main?.setPaused(false));
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'home-btn';
+    saveBtn.dataset.testid = 'save-button';
+    saveBtn.textContent = 'Save';
+    saveBtn.addEventListener('click', () => this.saveGame());
+    const restartBtn = document.createElement('button');
+    restartBtn.className = 'home-btn';
+    restartBtn.dataset.testid = 'restart-button';
+    restartBtn.textContent = 'Restart';
+    restartBtn.addEventListener('click', () => this.main?.restartToHome());
+    card.append(pauseTitle, resumeBtn, saveBtn, restartBtn);
+    overlay.appendChild(card);
+    root.appendChild(overlay);
 
-    const log = document.createElement('div');
-    log.className = 'hud-panel hud-log';
-    log.dataset.testid = 'log-panel';
-    log.innerHTML = '<div class="hud-subtitle">Messages</div><ul data-testid="message-log"></ul>';
-
-    // Control bar (UI-01): every central control dispatches a real handler that
-    // visibly toggles its surface. Labels are static — textContent, never
-    // innerHTML interpolation.
-    const controlBar = document.createElement('div');
-    controlBar.className = 'hud-control-bar';
-    controlBar.dataset.testid = 'control-bar';
-    const advisorsBtn = document.createElement('button');
-    advisorsBtn.className = 'hud-control-btn';
-    advisorsBtn.dataset.testid = 'controls-advisors';
-    advisorsBtn.textContent = 'Advisors';
-    advisorsBtn.addEventListener('click', () => this.toggleAdvisorsDrawer());
-    const overlaysBtn = document.createElement('button');
-    overlaysBtn.className = 'hud-control-btn';
-    overlaysBtn.dataset.testid = 'controls-overlays';
-    overlaysBtn.textContent = 'Overlays';
-    overlaysBtn.addEventListener('click', () => this.toggleOverlayBar());
-    const messagesBtn = document.createElement('button');
-    messagesBtn.className = 'hud-control-btn';
-    messagesBtn.dataset.testid = 'controls-messages';
-    messagesBtn.textContent = 'Messages';
-    messagesBtn.addEventListener('click', () => this.toggleMessagesFocus());
-    const settingsBtn = document.createElement('button');
-    settingsBtn.className = 'hud-control-btn';
-    settingsBtn.dataset.testid = 'controls-settings';
-    settingsBtn.textContent = 'Settings';
-    settingsBtn.addEventListener('click', () => this.toggleSettingsDrawer());
-    controlBar.append(advisorsBtn, overlaysBtn, messagesBtn, settingsBtn);
-
-    // Advisors drawer frame (filled with tabs + a live panel in 18-02-02).
-    const advisorsDrawer = document.createElement('div');
-    advisorsDrawer.className = 'advisor-drawer';
-    advisorsDrawer.dataset.testid = 'advisor-drawer';
-    advisorsDrawer.style.display = 'none';
-    const drawerHead = document.createElement('div');
-    drawerHead.className = 'hud-subtitle';
-    drawerHead.textContent = 'Advisors';
-    const tabHost = document.createElement('div');
-    tabHost.className = 'advisor-tabs';
-    tabHost.dataset.testid = 'advisor-tabs';
-    const panelHost = document.createElement('div');
-    panelHost.className = 'advisor-panels';
-    panelHost.dataset.testid = 'advisor-panels';
-    // 13 tabs in UI-SPEC order + one hidden panel host per advisor (UI-02).
-    for (const id of ADVISOR_TAB_ORDER) {
-      const tab = document.createElement('button');
-      tab.className = 'advisor-tab';
-      tab.dataset.testid = `advisor-tab-${id}`;
-      tab.dataset.advisor = id;
-      tab.textContent = advisorTitle(id);
-      tab.addEventListener('click', () => this.selectAdvisor(id));
-      tabHost.appendChild(tab);
-      const panel = document.createElement('div');
-      panel.className = 'advisor-panel';
-      panel.dataset.testid = `advisor-panel-${id}`;
-      panel.dataset.advisorPanel = id;
-      panel.hidden = true;
-      panelHost.appendChild(panel);
-    }
-    advisorsDrawer.append(drawerHead, tabHost, panelHost);
-
-    // Overlay bar frame (filled with the 5 toggles + None in 18-03-02).
-    const overlayBar = document.createElement('div');
-    overlayBar.className = 'overlay-bar';
-    overlayBar.dataset.testid = 'overlay-bar';
-    overlayBar.style.display = 'none';
-    const overlayHead = document.createElement('div');
-    overlayHead.className = 'hud-subtitle';
-    overlayHead.textContent = 'Overlays';
-    const overlayToggles = document.createElement('div');
-    overlayToggles.className = 'overlay-toggles';
-    overlayToggles.dataset.testid = 'overlay-toggles';
-    // 5 overlay toggles + None (UI-03): each click emits 'overlay-toggle' — the
-    // single source of truth is MainScene.setOverlay (radio: exactly one active).
-    for (const o of OVERLAY_KEYS) {
-      const btn = document.createElement('button');
-      btn.className = 'overlay-toggle';
-      btn.dataset.testid = `overlay-${o.id}`;
-      btn.dataset.overlay = o.id;
-      const label = document.createElement('span');
-      label.textContent = o.label;
-      const shortcut = document.createElement('span');
-      shortcut.className = 'shortcut';
-      shortcut.textContent = o.key;
-      btn.append(label, shortcut);
-      btn.addEventListener('click', () => this.game.events.emit('overlay-toggle', o.id));
-      overlayToggles.appendChild(btn);
-    }
-    const noneBtn = document.createElement('button');
-    noneBtn.className = 'overlay-toggle';
-    noneBtn.dataset.testid = 'overlay-none';
-    noneBtn.dataset.overlay = 'none';
-    const noneLabel = document.createElement('span');
-    noneLabel.textContent = 'None';
-    const noneShortcut = document.createElement('span');
-    noneShortcut.className = 'shortcut';
-    noneShortcut.textContent = 'X';
-    noneBtn.append(noneLabel, noneShortcut);
-    noneBtn.addEventListener('click', () => this.game.events.emit('overlay-toggle', 'none'));
-    overlayToggles.appendChild(noneBtn);
-    overlayBar.append(overlayHead, overlayToggles);
-
-    // Settings drawer (Phase 19 PERS-02): the six opt-* controls edit + persist
-    // shell options via saveOptions/applyOptions. Every label/value via
-    // createElement/textContent — sim/storage-derived strings never hit
-    // innerHTML (T-19-02). Values are pre-filled from loadOptions() on open.
-    const settingsDrawer = document.createElement('div');
-    settingsDrawer.className = 'settings-drawer';
-    settingsDrawer.dataset.testid = 'settings-drawer';
-    settingsDrawer.style.display = 'none';
-    const settingsHead = document.createElement('div');
-    settingsHead.className = 'hud-subtitle';
-    settingsHead.textContent = 'Settings';
-    const settingsRows = document.createElement('div');
-    settingsRows.className = 'settings-rows';
-    const makeSelect = (testid: string, values: string[]): HTMLSelectElement => {
-      const sel = document.createElement('select');
-      sel.dataset.testid = testid;
-      for (const v of values) {
-        const opt = document.createElement('option');
-        opt.value = v;
-        opt.textContent = v;
-        sel.appendChild(opt);
-      }
-      return sel;
-    };
-    const settingRow = (label: string, control: HTMLElement): HTMLElement => {
-      const r = document.createElement('div');
-      r.className = 'hud-settings-row';
-      const lab = document.createElement('label');
-      lab.textContent = label;
-      r.append(lab, control);
-      return r;
-    };
-    const graphicsSel = makeSelect('opt-graphics', ['low', 'medium', 'high']);
-    const musicRange = document.createElement('input');
-    musicRange.type = 'range';
-    musicRange.min = '0';
-    musicRange.max = '1';
-    musicRange.step = '0.1';
-    musicRange.dataset.testid = 'opt-music';
-    const sfxRange = document.createElement('input');
-    sfxRange.type = 'range';
-    sfxRange.min = '0';
-    sfxRange.max = '1';
-    sfxRange.step = '0.1';
-    sfxRange.dataset.testid = 'opt-sfx';
-    const speedSel = makeSelect('opt-speed', SPEED_PRESETS.map(String));
-    const textSizeSel = makeSelect('opt-text-size', ['small', 'normal', 'large']);
-    const reducedMotionBox = document.createElement('input');
-    reducedMotionBox.type = 'checkbox';
-    reducedMotionBox.dataset.testid = 'opt-reduced-motion';
-    settingsRows.append(
-      settingRow('Graphics quality', graphicsSel),
-      settingRow('Music', musicRange),
-      settingRow('Sound effects', sfxRange),
-      settingRow('Default speed', speedSel),
-      settingRow('Text size', textSizeSel),
-      settingRow('Reduced motion', reducedMotionBox),
-    );
-    const graphicsNote = document.createElement('div');
-    graphicsNote.className = 'settings-note';
-    graphicsNote.textContent = 'Graphics quality applies on next launch.';
-    const settingsSaveBtn = document.createElement('button');
-    settingsSaveBtn.className = 'settings-save-btn';
-    settingsSaveBtn.dataset.testid = 'settings-save';
-    settingsSaveBtn.textContent = 'Save';
-    settingsSaveBtn.addEventListener('click', () => this.saveSettings());
-    settingsDrawer.append(settingsHead, settingsRows, graphicsNote, settingsSaveBtn);
-
-    // Legend host (filled/cleared by the overlay system — 18-03-02).
-    const overlayLegend = document.createElement('div');
-    overlayLegend.className = 'overlay-legend';
-    overlayLegend.dataset.testid = 'overlay-legend';
-    overlayLegend.style.display = 'none';
-
-    const toast = document.createElement('div');
-    toast.className = 'hud-toast';
-    toast.dataset.testid = 'toast';
-    toast.style.display = 'none';
-
+    // Inspector popup (Phase-18 host — Wave 4 relocates it to the sidebar).
     const popup = document.createElement('div');
     popup.className = 'hud-popup';
     popup.dataset.testid = 'building-popup';
     popup.style.display = 'none';
+    root.appendChild(popup);
 
-    const pauseBtn = document.createElement('button');
-    pauseBtn.className = 'hud-pause-btn';
-    pauseBtn.dataset.testid = 'pause-button';
-    pauseBtn.textContent = '❚❚';
-    pauseBtn.addEventListener('click', () => this.main?.setPaused(true));
-
-    const speeds = [0.5, 1, 2, 4, 8];
-    const speedRow = document.createElement('div');
-    speedRow.className = 'hud-speed-row';
-    speedRow.dataset.testid = 'speed-control';
-    for (const s of speeds) {
-      const b = document.createElement('button');
-      b.className = 'hud-speed-btn';
-      b.dataset.testid = `speed-${s}`;
-      b.textContent = `${s}×`;
-      b.addEventListener('click', () => this.main?.setSpeed(s));
-      speedRow.appendChild(b);
-    }
-
-    const overlay = document.createElement('div');
-    overlay.className = 'hud-overlay';
-    overlay.dataset.testid = 'pause-overlay';
-    overlay.innerHTML = `
-      <div class="hud-overlay-card">
-        <div class="hud-overlay-title">Paused</div>
-        <button class="home-btn primary" data-testid="resume-button">Resume</button>
-        <button class="home-btn" data-testid="save-button">Save</button>
-        <button class="home-btn" data-testid="restart-button">Restart</button>
-      </div>
-    `;
-    overlay.style.display = 'none';
-    overlay.querySelector('[data-testid="resume-button"]')?.addEventListener('click', () => this.main?.setPaused(false));
-    overlay.querySelector('[data-testid="save-button"]')?.addEventListener('click', () => this.saveGame());
-    overlay.querySelector('[data-testid="restart-button"]')?.addEventListener('click', () => this.main?.restartToHome());
-
-    root.append(stats, build, policy, log, controlBar, toast, popup, speedRow, pauseBtn, overlay);
     document.getElementById('hud')?.appendChild(root);
-    // Bottom-center overlay surfaces live outside the scrolling right-edge HUD
-    // column so they never clip (fixed-position, same as the toast).
-    document.body.appendChild(advisorsDrawer);
-    document.body.appendChild(overlayBar);
-    document.body.appendChild(settingsDrawer);
-    document.body.appendChild(overlayLegend);
+    this.hudRoot = root;
 
-    this.els.pop = root.querySelector('[data-testid="stat-population"]') as HTMLElement;
-    this.els.prosperity = root.querySelector('[data-testid="stat-prosperity"]') as HTMLElement;
-    this.els.happiness = root.querySelector('[data-testid="stat-happiness"]') as HTMLElement;
-    this.els.treasury = root.querySelector('[data-testid="stat-treasury"]') as HTMLElement;
-    this.els.workers = root.querySelector('[data-testid="stat-workers"]') as HTMLElement;
-    this.els.food = root.querySelector('[data-testid="stat-food"]') as HTMLElement;
-    this.els.culture = root.querySelector('[data-testid="stat-culture"]') as HTMLElement;
-    this.els.stability = root.querySelector('[data-testid="stat-stability"]') as HTMLElement;
-    this.els.favor = root.querySelector('[data-testid="stat-favor"]') as HTMLElement;
-    this.els.water = root.querySelector('[data-testid="stat-water"]') as HTMLElement;
-    this.els.risk = root.querySelector('[data-testid="stat-risk"]') as HTMLElement;
-    this.els.gov = root.querySelector('[data-testid="stat-gov"]') as HTMLElement;
-    this.els.tax = root.querySelector('[data-testid="policy-tax-value"]') as HTMLElement;
-    this.els.wage = root.querySelector('[data-testid="policy-wage-value"]') as HTMLElement;
-    this.els.log = root.querySelector('[data-testid="message-log"]') as HTMLElement;
-    this.els.logPanel = root.querySelector('[data-testid="log-panel"]') as HTMLElement;
-    this.els.toast = root.querySelector('[data-testid="toast"]') as HTMLElement;
-    this.els.popup = popup;
-    this.els.overlay = overlay;
-    this.els.cats = cats;
-    this.els.build = grid;
-    this.els.taxInput = root.querySelector('[data-testid="policy-tax"]') as HTMLInputElement;
-    this.els.wageInput = root.querySelector('[data-testid="policy-wage"]') as HTMLInputElement;
-    this.els.controlBar = controlBar;
-    this.els.advisorsDrawer = advisorsDrawer;
-    this.els.overlayBar = overlayBar;
-    this.els.settingsDrawer = settingsDrawer;
-    this.els.optGraphics = graphicsSel;
-    this.els.optMusic = musicRange;
-    this.els.optSfx = sfxRange;
-    this.els.optSpeed = speedSel;
-    this.els.optTextSize = textSizeSel;
-    this.els.optReducedMotion = reducedMotionBox;
-    this.els.advisorTabs = tabHost;
-    this.els.advisorPanels = panelHost;
-    this.els.overlayToggles = overlayToggles;
-    this.els.overlayLegend = overlayLegend;
-    this.buildBtns = [...grid.querySelectorAll('.hud-build-btn')] as HTMLButtonElement[];
+    this.collectEls();
+    this.wireSidebar();
     // Default active tab is ratings (fallback when no critical alert directs one).
     this.selectAdvisor('ratings');
   }
 
-  private wireEvents(): void {
-    this.els.cats.querySelectorAll('.hud-cat-btn').forEach((btn) => {
+  /** Resolve the element refs the per-tick refresh + handlers need. */
+  private collectEls(): void {
+    const sb = this.sidebar!;
+    const root = asEl(sb.root);
+    this.els.pop = asEl(this.topBar!.valueNodes.population);
+    this.els.treasury = asEl(this.topBar!.valueNodes.treasury);
+    this.els.log = root.querySelector('[data-testid="message-log"]') as HTMLElement;
+    this.els.logPanel = root.querySelector('[data-testid="log-panel"]') as HTMLElement;
+    this.els.toast = root.querySelector('[data-testid="toast"]') as HTMLElement;
+    // The pause overlay and inspector popup live on the HUD wrapper (full-screen
+    // surfaces), not inside the sidebar — query the wrapper, not the sidebar.
+    this.els.popup = this.hudRoot?.querySelector('[data-testid="building-popup"]') as HTMLElement;
+    this.els.overlay = this.hudRoot?.querySelector('[data-testid="pause-overlay"]') as HTMLElement;
+    this.els.cats = root.querySelector('[data-testid="sidebar-category-tabs"]') as HTMLElement;
+    this.els.build = root.querySelector('[data-testid="sidebar-build-grid"]') as HTMLElement;
+    this.els.taxInput = root.querySelector('[data-testid="policy-tax"]') as HTMLInputElement;
+    this.els.wageInput = root.querySelector('[data-testid="policy-wage"]') as HTMLInputElement;
+    this.els.optGraphics = root.querySelector('[data-testid="opt-graphics"]') as HTMLSelectElement;
+    this.els.optMusic = root.querySelector('[data-testid="opt-music"]') as HTMLInputElement;
+    this.els.optSfx = root.querySelector('[data-testid="opt-sfx"]') as HTMLInputElement;
+    this.els.optSpeed = root.querySelector('[data-testid="opt-speed"]') as HTMLSelectElement;
+    this.els.optTextSize = root.querySelector('[data-testid="opt-text-size"]') as HTMLSelectElement;
+    this.els.optReducedMotion = root.querySelector('[data-testid="opt-reduced-motion"]') as HTMLInputElement;
+    this.els.overlayToggles = root.querySelector('[data-testid="overlay-bar"]') as HTMLElement;
+    this.els.overlayLegend = root.querySelector('[data-testid="overlay-legend"]') as HTMLElement;
+    this.els.advisorTabs = asEl(this.advisorDrawer!.tabHost);
+    this.els.advisorPanels = asEl(this.advisorDrawer!.panelHost);
+    this.buildBtns = [...root.querySelectorAll('.hud-build-btn')] as HTMLButtonElement[];
+  }
+
+  /** Wire every sidebar control to its real runner/scene seam (Wave 0 map). */
+  private wireSidebar(): void {
+    const root = asEl(this.sidebar!.root);
+    const on = (sel: string, fn: () => void): void => {
+      root.querySelector(sel)?.addEventListener('click', fn);
+    };
+
+    // Nav (control bar): each button dispatches a real surface handler.
+    on('[data-testid="controls-advisors"]', () => this.toggleAdvisorsDrawer());
+    on('[data-testid="controls-overlays"]', () => this.toggleOverlayBar());
+    on('[data-testid="controls-messages"]', () => this.toggleMessagesFocus());
+    on('[data-testid="controls-settings"]', () => this.toggleSettingsDrawer());
+    on('[data-testid="sidebar-advisor-button"]', () => this.toggleAdvisorsDrawer());
+
+    // Category tabs → active filter + grid visibility.
+    root.querySelectorAll('.hud-cat-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         const cat = (btn as HTMLElement).dataset.cat as CategoryFilter;
         this.activeCategory = cat;
-        this.els.cats.querySelectorAll('.hud-cat-btn').forEach((b) => b.classList.toggle('active', b === btn));
+        root.querySelectorAll('.hud-cat-btn').forEach((b) => b.classList.toggle('active', b === btn));
         this.filterGrid();
       });
     });
 
-    this.els.build.querySelectorAll('.hud-build-btn').forEach((btn) => {
+    // Build grid → toggle build mode (seam: MainScene.setBuildMode).
+    root.querySelectorAll('.hud-build-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         const type = (btn as HTMLElement).dataset.build as BuildingType;
         this.main?.setBuildMode(this.main.getBuildMode() === type ? null : type);
       });
     });
 
-    this.els.taxInput.addEventListener('input', () => {
-      const input = this.els.taxInput as HTMLInputElement;
-      this.main?.runner.setPolicy(input.valueAsNumber / 100, this.main.runner.getPolicy().wageRate);
-    });
-    this.els.wageInput.addEventListener('input', () => {
-      const input = this.els.wageInput as HTMLInputElement;
-      this.main?.runner.setPolicy(this.main.runner.getPolicy().taxRate, input.valueAsNumber / 100);
+    // Policy sliders → setPolicy (seam: SimRunner.setPolicy + getPolicy).
+    // 'change' fires too so automated fills (acceptance.spec) land.
+    const tax = this.els.taxInput as HTMLInputElement;
+    const wage = this.els.wageInput as HTMLInputElement;
+    const applyTax = (): void => {
+      this.main?.runner.setPolicy(tax.valueAsNumber / 100, this.main.runner.getPolicy().wageRate);
+    };
+    const applyWage = (): void => {
+      this.main?.runner.setPolicy(this.main.runner.getPolicy().taxRate, wage.valueAsNumber / 100);
+    };
+    tax.addEventListener('input', applyTax);
+    tax.addEventListener('change', applyTax);
+    wage.addEventListener('input', applyWage);
+    wage.addEventListener('change', applyWage);
+
+    // Speed row → setSpeed.
+    root.querySelectorAll('[data-testid^="speed-"]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const testid = (btn as HTMLElement).dataset.testid ?? '';
+        const s = Number(testid.replace('speed-', ''));
+        if (Number.isFinite(s)) this.main?.setSpeed(s);
+      });
     });
 
+    // Action group (sidebar) — pause/resume/save/restart.
+    on('[data-testid="pause-button"]', () => this.main?.setPaused(true));
+    root.querySelector('[data-testid="sidebar-resume-button"] button')
+      ?.addEventListener('click', () => this.main?.setPaused(false));
+    root.querySelector('[data-testid="sidebar-save-button"] button')
+      ?.addEventListener('click', () => this.saveGame());
+    root.querySelector('[data-testid="sidebar-restart-button"] button')
+      ?.addEventListener('click', () => this.main?.restartToHome());
+
+    // Overlay toggles → overlay-toggle bus (MainScene.setOverlay radio).
+    root.querySelectorAll('.overlay-toggle').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = (btn as HTMLElement).dataset.overlay as OverlayId | 'none';
+        this.game.events.emit('overlay-toggle', id);
+      });
+    });
+
+    // Settings drawer → saveOptions/applyOptions (Phase 19 seam).
+    root.querySelector('[data-testid="settings-save"]')
+      ?.addEventListener('click', () => this.saveSettings());
+  }
+
+  private wireEvents(): void {
     this.game.events.on('hud-toast', this.onHudToast);
     this.game.events.on('overlay-legend', this.onOverlayLegend);
     this.game.events.on('game-pause', this.onGamePause);
@@ -591,11 +451,12 @@ export class HUDScene extends Phaser.Scene {
     });
   }
 
-  /** Toggle the advisors drawer (control-bar Advisors button → real handler). */
+  /** Toggle the advisors drawer (nav button / A key → real handler). */
   private toggleAdvisorsDrawer(force?: boolean): void {
     this.drawerOpen = force ?? !this.drawerOpen;
-    if (this.els.advisorsDrawer) {
-      this.els.advisorsDrawer.style.display = this.drawerOpen ? 'block' : 'none';
+    if (this.advisorDrawer) {
+      if (this.drawerOpen) this.advisorDrawer.open();
+      else this.advisorDrawer.close();
     }
     if (this.drawerOpen && this.main) {
       // Initial content on open (per-tick refresh still runs under the guard).
@@ -604,22 +465,22 @@ export class HUDScene extends Phaser.Scene {
     this.game.events.emit('advisor-open', this.drawerOpen);
   }
 
-  /** Toggle the overlay bar (control-bar Overlays button → real handler). */
+  /** Toggle the overlay bar (nav button → real handler). */
   private toggleOverlayBar(force?: boolean): void {
     this.overlayBarOpen = force ?? !this.overlayBarOpen;
-    if (this.els.overlayBar) {
-      this.els.overlayBar.style.display = this.overlayBarOpen ? 'block' : 'none';
+    if (this.sidebar?.overlayBar) {
+      asEl(this.sidebar.overlayBar).style.display = this.overlayBarOpen ? 'block' : 'none';
     }
     this.game.events.emit('overlay-bar', this.overlayBarOpen);
   }
 
-  /** Toggle the settings drawer (control-bar Settings button → real handler).
-   *  Values are pre-filled from loadOptions() each time it opens, so the panel
-   *  always reflects the persistent shell state (T-19-02: no data sinks). */
+  /** Toggle the settings drawer (nav button → real handler). Values are
+   *  pre-filled from loadOptions() each time it opens, so the panel always
+   *  reflects the persistent shell state (T-19-02: no data sinks). */
   private toggleSettingsDrawer(force?: boolean): void {
     this.settingsOpen = force ?? !this.settingsOpen;
-    if (this.els.settingsDrawer) {
-      this.els.settingsDrawer.style.display = this.settingsOpen ? 'block' : 'none';
+    if (this.sidebar?.settingsDrawer) {
+      asEl(this.sidebar.settingsDrawer).style.display = this.settingsOpen ? 'block' : 'none';
     }
     if (this.settingsOpen) this.fillSettingsControls();
   }
@@ -654,7 +515,7 @@ export class HUDScene extends Phaser.Scene {
     this.showToast('Options saved');
   }
 
-  /** Focus the message log (control-bar Messages button → real scene effect). */
+  /** Focus the message log (nav Messages button → real scene effect). */
   private toggleMessagesFocus(): void {
     const panel = this.els.logPanel;
     if (!panel) return;
@@ -667,21 +528,17 @@ export class HUDScene extends Phaser.Scene {
   /** Activate one advisor tab (real scene effect: active class + panel swap). */
   private selectAdvisor(id: string): void {
     this.activeAdvisor = id;
-    this.els.advisorTabs.querySelectorAll('.advisor-tab').forEach((t) => {
-      t.classList.toggle('active', (t as HTMLElement).dataset.advisor === id);
-    });
-    this.els.advisorPanels.querySelectorAll('.advisor-panel').forEach((p) => {
-      (p as HTMLElement).hidden = (p as HTMLElement).dataset.advisorPanel !== id;
-    });
+    this.advisorDrawer?.selectAdvisor(id);
   }
 
   /** Rebuild every advisor panel from the live composer (called under the
    *  tick-change guard + on drawer open). Sim-derived strings are rendered via
-   *  textContent — never innerHTML — per T-18-01. */
+   *  textContent — DOM safety per UI-RED-08. */
   private renderAdvisor(runner: SimRunner): void {
     const panels = advisorPanels(runner);
+    const hostRoot = this.els.advisorPanels;
     for (const panel of panels) {
-      const host = this.els.advisorPanels.querySelector(
+      const host = hostRoot.querySelector(
         `[data-advisor-panel="${panel.id}"]`,
       ) as HTMLElement | null;
       if (!host) continue;
@@ -788,7 +645,7 @@ export class HUDScene extends Phaser.Scene {
   }
 
   private renderLog(messages: { tick: number; type: string; text: string }[]): void {
-    this.els.log.innerHTML = '';
+    this.els.log.replaceChildren();
     const recent = messages.slice(-8).reverse();
     for (const m of recent) {
       const li = document.createElement('li');
@@ -861,8 +718,7 @@ export class HUDScene extends Phaser.Scene {
   }
 
   /** Build the shared popup shell (header + body + inspector nav). The header
-   *  title/close and every body row are created via createElement/textContent —
-   *  sim-derived strings never hit innerHTML (T-18-01). */
+   *  title/close and every body row are created via createElement/textContent. */
   private renderInspectorShell(
     title: string,
     bodyFn: (body: HTMLElement) => void,
@@ -1116,8 +972,7 @@ export class HUDScene extends Phaser.Scene {
   }
 }
 
-/** Append a label/value row to the popup body via createElement + textContent
- *  (sim-derived strings never hit innerHTML — T-18-01). */
+/** Append a label/value row to the popup body via createElement + textContent. */
 function appendRow(parent: HTMLElement, label: string, value: string): void {
   const rowEl = document.createElement('div');
   rowEl.className = 'row';
@@ -1137,14 +992,12 @@ function toUnit(v: string): number {
   return Math.min(1, Math.max(0, n));
 }
 
-/** Overlay bar toggle definitions (UI-03, locked shortcuts W/F/R/C/D + X). */
-const OVERLAY_KEYS: { id: OverlayId; label: string; key: string }[] = [
-  { id: 'water', label: 'Water', key: 'W' },
-  { id: 'food', label: 'Food', key: 'F' },
-  { id: 'risks', label: 'Risks', key: 'R' },
-  { id: 'coverage', label: 'Coverage', key: 'C' },
-  { id: 'desirability', label: 'Desirability', key: 'D' },
-];
+/** Top-bar date label from SimState.tick (SPEC §2, same rule as 18-UI-SPEC). */
+function dateLabel(tick: number): string {
+  const year = Math.floor(tick / 360);
+  const month = Math.floor((tick % 360) / 40) + 1;
+  return `YEAR ${year} · MONTH ${month}`;
+}
 
 /** Static legend band labels per overlay (safe — no sim-derived strings). */
 const OVERLAY_LABELS: Record<OverlayId, readonly string[]> = {
@@ -1162,16 +1015,4 @@ function overlayName(id: OverlayId): string {
     coverage: 'Service Coverage', desirability: 'Desirability',
   };
   return names[id] ?? id;
-}
-
-/** Human panel title for an advisor tab id (static display text). */
-function advisorTitle(id: string): string {
-  const titles: Record<string, string> = {
-    ratings: 'Ratings', finance: 'Finance', food: 'Food',
-    'production-logistics': 'Production', labor: 'Labor', trade: 'Trade',
-    housing: 'Housing', demography: 'Demography', 'safety-risks': 'Safety',
-    religion: 'Religion', governance: 'Governance', diplomacy: 'Diplomacy',
-    objectives: 'Objectives',
-  };
-  return titles[id] ?? id;
 }

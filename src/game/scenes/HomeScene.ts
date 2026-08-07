@@ -44,7 +44,9 @@ export class HomeScene extends Phaser.Scene {
 
     const seedRow = document.createElement('div');
     seedRow.className = 'home-row';
-    seedRow.innerHTML = '<label>Seed</label>';
+    const seedLabel = document.createElement('label');
+    seedLabel.textContent = 'Seed';
+    seedRow.appendChild(seedLabel);
     const seedInput = document.createElement('input');
     seedInput.type = 'number';
     seedInput.dataset.testid = 'seed-input';
@@ -59,7 +61,9 @@ export class HomeScene extends Phaser.Scene {
 
     const sizeRow = document.createElement('div');
     sizeRow.className = 'home-row';
-    sizeRow.innerHTML = '<label>Map size</label>';
+    const sizeLabel = document.createElement('label');
+    sizeLabel.textContent = 'Map size';
+    sizeRow.appendChild(sizeLabel);
     const sizeInput = document.createElement('select');
     sizeInput.dataset.testid = 'size-input';
     for (const n of [30, 40, 50]) {
@@ -111,10 +115,18 @@ export class HomeScene extends Phaser.Scene {
     howtoLabel.textContent = 'How to play';
     howto.dataset.testid = 'how-to-play';
     const p = document.createElement('p');
-    p.innerHTML =
+    const line1 = document.createElement('span');
+    line1.textContent =
       'Build roads, then place houses and support them with farms, granaries, markets, and wells. ' +
-      'Houses grow when fed, watered, and employed. Set tax and wages, and watch Population, Prosperity, and Happiness. <br/>' +
-      '<b>ESC</b> pauses. <b>Right-click</b> cancels build mode.';
+      'Houses grow when fed, watered, and employed. Set tax and wages, and watch Population, Prosperity, and Happiness. ';
+    const lineBreak = document.createElement('br');
+    const escKey = document.createElement('b');
+    escKey.textContent = 'ESC';
+    const rightClick = document.createElement('b');
+    rightClick.textContent = 'Right-click';
+    const line2 = document.createElement('span');
+    line2.append(escKey, ' pauses. ', rightClick, ' cancels build mode.');
+    p.append(line1, lineBreak, line2);
     howto.append(howtoLabel, p);
 
     card.append(newGame, load, howto);
@@ -130,8 +142,8 @@ export class HomeScene extends Phaser.Scene {
   /**
    * PERS-01: the validated load click-through. Only an {ok:true} save reaches
    * scene.start('Main', { save }); a rejected save disables the button and
-   * surfaces the typed reason via textContent (never innerHTML — storage/sim
-   * derived strings). The migrate/validate gate runs HERE, before any replay.
+   * surfaces the typed reason via textContent (never template-string HTML —
+   * storage/sim derived strings). The migrate/validate gate runs HERE, before any replay.
    */
   private loadSavedGame(): void {
     const res = loadSavedGame();

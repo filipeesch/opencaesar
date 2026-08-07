@@ -77,7 +77,10 @@ describe('sidebar controls (UI-RED-01/03)', () => {
     const buildings = dom.buildings();
     expect(buildings.length).toBe(17);
     for (const b of buildings) {
-      expect(b.cost).toBeGreaterThan(0);
+      // Roads are the free building by sim definition (BUILDINGS.road.cost = 0),
+      // so costs are non-negative — every entry still exposes its real cost
+      // seam and its category.
+      expect(b.cost).toBeGreaterThanOrEqual(0);
       expect(b.category).toBeTruthy();
       expect(b.seam).toBe('MainScene.setBuildMode');
     }

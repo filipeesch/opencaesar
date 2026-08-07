@@ -3,10 +3,20 @@ import { describe, it, expect } from 'vitest';
 // Imports the target module Wave 2 implements. Fails today: module absent.
 import { buildAdvisorDrawer } from '../../src/game/ui/advisorDrawer';
 import { ADVISOR_TAB_ORDER, advisorPanels } from '../../src/game/advisors';
+import { SimRunner } from '../../src/sim/runner';
+import { foodChainMap, buildFoodCity } from '../helpers';
+
+// advisorPanels(source) needs a live runner (the locked advisors.ts seam);
+// feed it the same happy-path city the other Phase-20 scaffolds use.
+function runnerPanels() {
+  const r = new SimRunner(42, foodChainMap());
+  buildFoodCity(r);
+  return advisorPanels(r);
+}
 
 describe('advisor drawer (13 tabs, UI-RED-01/02)', () => {
   it('builds a drawer with 13 tabs in ADVISOR_TAB_ORDER', () => {
-    const panels = advisorPanels();
+    const panels = runnerPanels();
     const dom = buildAdvisorDrawer(panels);
     expect(dom).toBeDefined();
     expect(dom.tabHost).toBeDefined();
@@ -16,7 +26,7 @@ describe('advisor drawer (13 tabs, UI-RED-01/02)', () => {
   });
 
   it('every advisor panel has a real runner feed (no orphan tab)', () => {
-    const panels = advisorPanels();
+    const panels = runnerPanels();
     const dom = buildAdvisorDrawer(panels);
     for (const tab of dom.tabs()) {
       expect(tab.feed, `advisor tab ${tab.id} has no runner feed`).toBeTruthy();
@@ -25,7 +35,7 @@ describe('advisor drawer (13 tabs, UI-RED-01/02)', () => {
   });
 
   it('tab labels are UPPERCASE verbatim from 18-UI-SPEC', () => {
-    const panels = advisorPanels();
+    const panels = runnerPanels();
     const dom = buildAdvisorDrawer(panels);
     for (const tab of dom.tabs()) {
       expect(tab.label, `advisor tab ${tab.id} label must be UPPERCASE`).toBe(tab.label.toUpperCase());
@@ -33,7 +43,7 @@ describe('advisor drawer (13 tabs, UI-RED-01/02)', () => {
   });
 
   it('selectAdvisor(id) reveals exactly one panel and marks the tab active', () => {
-    const panels = advisorPanels();
+    const panels = runnerPanels();
     const dom = buildAdvisorDrawer(panels);
     dom.selectAdvisor('finance');
     expect(dom.activeTab()).toBe('finance');
@@ -44,7 +54,7 @@ describe('advisor drawer (13 tabs, UI-RED-01/02)', () => {
   });
 
   it('the drawer is closed by default and opens on request (keyboard contract)', () => {
-    const panels = advisorPanels();
+    const panels = runnerPanels();
     const dom = buildAdvisorDrawer(panels);
     expect(dom.isOpen()).toBe(false);
     dom.open();

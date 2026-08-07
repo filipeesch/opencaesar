@@ -20,9 +20,13 @@ import { HOUSE_FOOT_TOP_Y, HOUSE_FRAME_H, houseFrame, isSheetLoaded, SHEET_BUILD
 import { drawBuilding } from '../buildingArt';
 import { BUILDING_COLORS, HOUSE_COLORS, TILE_H, TILE_W, WALKER_COLORS, OVERLAY_RAMPS, hexToPhaser } from '../palette';
 import type { OverlayId } from '../advisors';
+import { KeyRouter, type RouterCtx } from '../ui/keyboard';
+import type { HUDScene } from './HUDScene';
 
 const TILE_INDEX: Record<TileType, number> = { earth: 0, water: 1, fertile: 2, trees: 3, rock: 4, road: 5 };
 const BUILDABLE_TYPES: readonly BuildingType[] = ['road', 'house', 'garden', 'well', 'fountain', 'farm', 'orchard', 'granary', 'market', 'engineer_post', 'fire_station', 'clinic', 'school', 'library', 'temple', 'theatre', 'forum'];
+/** First advisor tab shown when the drawer opens without a prior selection. */
+const ADVISOR_DEFAULT_TAB = 'ratings';
 
 type RenderObj = Phaser.GameObjects.GameObject & {
   setDepth(depth: number): unknown;
@@ -141,27 +145,59 @@ export class MainScene extends Phaser.Scene {
 
     this.wireInput(cam);
 
-    this.input.keyboard?.on('keydown-ESC', () => {
-      // Precedence: build mode cancels first; otherwise toggle pause.
-      if (this.paused) {
-        this.setPaused(false);
-        return;
-      }
-      if (this.buildType) {
-        this.setBuildMode(null);
-        return;
-      }
-      this.setPaused(true);
-    });
-
-    // Keyboard overlay shortcuts (UI-03, locked): W/F/R/C/D + X to clear.
+    // Phase-20 single key router (UI-RED-07, SPEC §3): A/←/→/Escape/B/1-5 and
+    // the existing W/F/R/C/D/X all flow through KeyRouter so the precedence
+    // guard (drawer > inspector > build panel > pause) applies uniformly.
+    // handleKey is pure; this handler applies the returned diff to the scenes.
+    const router = new KeyRouter();
     const kb = this.input.keyboard;
-    kb?.on('keydown-W', () => this.setOverlay('water'));
-    kb?.on('keydown-F', () => this.setOverlay('food'));
-    kb?.on('keydown-R', () => this.setOverlay('risks'));
-    kb?.on('keydown-C', () => this.setOverlay('coverage'));
-    kb?.on('keydown-D', () => this.setOverlay('desirability'));
-    kb?.on('keydown-X', () => this.setOverlay(null));
+    kb?.on('keydown', (ev: KeyboardEvent) => {
+      const hud = this.scene.get('HUD') as HUDScene | null;
+      if (!hud) return; // key presses land only after create() finished
+      // Single-char keys normalize to uppercase so Playwright's 'A'/'a' and
+      // Shift-key presses all route identically; ArrowLeft/etc. pass through.
+      const key = ev.key.length === 1 ? ev.key.toUpperCase() : ev.key;
+      const ctx: RouterCtx = {
+        drawer: { open: hud.isDrawerOpen(), activeTab: hud.activeAdvisorId() ?? ADVISOR_DEFAULT_TAB },
+        inspector: { open: hud.isInspectorOpen(), card: null },
+        // 'build mode' = the sim build cursor (the surface B toggles). The
+        // sidebar panel stays visible by default (legacy e2e clicks build-*
+        // directly); B/ESC drive panel visibility through this same field.
+        buildMode: { active: this.buildType !== null },
+        pause: { paused: this.isPaused() },
+        overlay: this.overlay ? { [this.overlay]: true } : {},
+      };
+      const result = router.handleKey(key, ctx);
+
+      // Drawer: force open/close; a changed tab means A/←/→ cycled it.
+      if (result.drawer.open !== ctx.drawer.open) hud.toggleAdvisors(result.drawer.open);
+      if (result.drawer.activeTab !== ctx.drawer.activeTab) hud.selectAdvisorTab(result.drawer.activeTab);
+
+      // Inspector: Escape closes it; ←/→ walk the popup list (card flips).
+      if (!result.inspector.open && ctx.inspector.open) hud.closeInspector();
+      if (result.inspector.card !== ctx.inspector.card && ctx.inspector.open) {
+        hud.cycleInspector(result.inspector.card === 'walker' ? -1 : 1);
+      }
+
+      // Build panel: B toggles it via the router's buildMode; an Escape-driven
+      // close also cancels a live build cursor (the pre-Phase-20 behavior).
+      if (result.buildMode.active !== ctx.buildMode.active) {
+        hud.setBuildPanelOpen(result.buildMode.active);
+        if (key === 'Escape' && !result.buildMode.active && this.buildType) {
+          this.setBuildMode(null);
+        }
+      }
+
+      // Pause: the router's last-resort ESC fall-through (existing behavior).
+      if (result.pause.paused !== ctx.pause.paused) this.setPaused(result.pause.paused);
+
+      // Overlay: the router toggles ONE key; the radio only sees the diff —
+      // a key flipped on emits its id, flipped off emits 'none' (clears).
+      for (const [id, on] of Object.entries(result.overlay)) {
+        if ((ctx.overlay?.[id] ?? false) === on) continue;
+        this.game.events.emit('overlay-toggle', on ? (id as OverlayId) : 'none');
+      }
+    });
     // WR-04: register the bound handler and off() it on shutdown — game.events
     // is a global emitter that outlives scene restarts (restartToHome stops and
     // re-launches Main/HUD), so without cleanup every restart would call
