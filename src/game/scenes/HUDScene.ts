@@ -589,10 +589,15 @@ export class HUDScene extends Phaser.Scene {
     }
   }
 
-  /** Activate one advisor tab (real scene effect: active class + panel swap). */
+  /** Activate one advisor tab (real scene effect: active class + panel swap).
+   *  IN-04: the id is validated against the drawer's tab catalog BEFORE
+   *  activeAdvisor is written — an unknown id must never leak into the key
+   *  router's ctx (activeAdvisorId() feeds it; stepTab only self-heals after
+   *  the fact). */
   private selectAdvisor(id: string): void {
+    if (!this.advisorDrawer?.tabs().some((t) => t.id === id)) return;
     this.activeAdvisor = id;
-    this.advisorDrawer?.selectAdvisor(id);
+    this.advisorDrawer.selectAdvisor(id);
     // IN-01: a keyboard tab switch (A/←/→) renders the newly active panel
     // immediately — the per-tick refresh only rebuilds the active host now.
     if (this.drawerOpen && this.main) this.renderAdvisor(this.main.runner);
