@@ -113,6 +113,7 @@ test('build buttons disable when treasury < cost and track live treasury (UI-01)
   const errors = collectErrors(page);
   await openGame(page);
   await zoomOut(page);
+  await page.keyboard.press('B'); // WR-03: build panel is closed at boot
 
   // Fresh city: 1000 denarii covers every palette building → all enabled.
   await assertBuildDisabledTracksTreasury(page);
@@ -143,6 +144,7 @@ test('no decorative control audit (UI-01): every HUD/control-bar button is real'
   const errors = collectErrors(page);
   await openGame(page);
   await zoomOut(page);
+  await page.keyboard.press('B'); // WR-03: build panel is closed at boot
 
   // Every audited control carries a non-empty data-testid.
   await page.waitForSelector('.hud-control-bar button, .hud-build-btn');

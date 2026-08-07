@@ -7,6 +7,7 @@ import { getState, openGame, pickTile, runTicks, tileCenter, zoomOut } from './h
  */
 test('build menu toggles a real build mode', async ({ page }) => {
   await openGame(page);
+  await page.keyboard.press('B'); // WR-03: build panel is closed at boot
   await page.getByTestId('build-house').click();
   await expect(page.getByTestId('build-house')).toHaveClass(/active/);
   await page.keyboard.press('Escape');
@@ -29,6 +30,7 @@ test('pause halts simulated time and resume restores it', async ({ page }) => {
 test('placing a building actually adds it to the sim state', async ({ page }) => {
   await openGame(page);
   await zoomOut(page);
+  await page.keyboard.press('B'); // WR-03: build panel is closed at boot
   await page.getByTestId('build-road').click();
   const target = await pickTile(page, (tiles, x, y) => tiles[y][x] !== 'water');
   const point = await tileCenter(page, target!.tx, target!.ty);
@@ -50,6 +52,7 @@ test('policy sliders update live sim policy', async ({ page }) => {
 
 test('build menu exposes the full construction catalog (not just 6 types)', async ({ page }) => {
   await openGame(page);
+  await page.keyboard.press('B'); // WR-03: build panel is closed at boot
   for (const type of ['road', 'house', 'garden', 'fountain', 'orchard', 'granary', 'fire_station', 'clinic', 'school', 'temple', 'theatre', 'forum']) {
     await expect(page.getByTestId(`build-${type}`)).toBeVisible();
   }

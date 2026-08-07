@@ -69,6 +69,7 @@ test('build mode preview diamond aligns with the rendered tilemap tile', async (
   // Enter build mode and hover the picked tile: the ghost diamond must cover
   // exactly that tile's diamond and nothing else (green=valid, red=invalid,
   // either way the fill belongs to the hovered tile).
+  await page.keyboard.press('B'); // WR-03: build panel is closed at boot
   await page.getByTestId('build-house').click();
   await page.mouse.move(center.x, center.y);
   await page.waitForTimeout(200);
@@ -124,6 +125,7 @@ test('middle-drag pans the camera in any mode', async ({ page }) => {
   expect(after.scrollX - before.scrollX).toBeLessThan(-150);
 
   // And it must still pan while a build mode is active.
+  await page.keyboard.press('B'); // WR-03: build panel is closed at boot
   await page.getByTestId('build-road').click();
   const before2 = await getCamera(page);
   await page.mouse.move(640, 400);

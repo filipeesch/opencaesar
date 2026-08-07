@@ -9,9 +9,14 @@ test('right sidebar renders build panel, tools, speed, advisor drawer, overlays'
   const sidebar = page.locator('[data-testid="sidebar"]');
   await expect(sidebar).toBeVisible();
 
-  // Build panel: 13-category tabs + 17-building grid (seam: setBuildMode).
+  // Build panel: WR-03 — closed at boot (B toggles it), then 13-category tabs
+  // + 'all' reset + 17-building grid (seam: setBuildMode).
+  await expect(page.locator('[data-testid="sidebar-build-panel"]')).toBeHidden();
+  await page.keyboard.press('B');
   await expect(page.locator('[data-testid="sidebar-build-panel"]')).toBeVisible();
-  await expect(page.locator('[data-testid="sidebar-category-tabs"] [data-testid^="category-"]')).toHaveCount(13);
+  await expect(page.locator('[data-testid="sidebar-category-tabs"] [data-testid^="category-"]')).toHaveCount(14);
+  // WR-02: the 'all' reset tab is the default active filter.
+  await expect(page.getByTestId('category-all')).toHaveClass(/active/);
   await expect(page.locator('[data-testid="sidebar-build-grid"] [data-testid^="building-"]')).toHaveCount(17);
 
   // Tools panel: policy sliders + settings drawer.

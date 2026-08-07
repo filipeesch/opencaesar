@@ -7,6 +7,7 @@ test('builds a road and a house by clicking the canvas in build mode', async ({ 
   await openGame(page);
   await zoomOut(page);
 
+  await page.keyboard.press('B'); // WR-03: build panel is closed at boot
   await page.getByTestId('build-road').click();
   await expect(page.getByTestId('build-road')).toHaveClass(/active/);
 
@@ -43,6 +44,7 @@ test('farm only places on fertile terrain, otherwise shows a toast', async ({ pa
   await openGame(page);
   await zoomOut(page);
 
+  await page.keyboard.press('B'); // WR-03: build panel is closed at boot
   await page.getByTestId('build-farm').click();
 
   const site = await pickTile(page, (tiles, x, y) => {
@@ -82,6 +84,7 @@ test('farm only places on fertile terrain, otherwise shows a toast', async ({ pa
 test('drag-paints a row of road tiles in build mode', async ({ page }) => {
   await openGame(page);
   await zoomOut(page);
+  await page.keyboard.press('B'); // WR-03: build panel is closed at boot
 
   const start = await pickTile(page, (tiles, x, y) => {
     if (x + 3 >= tiles[0].length) return false;
@@ -116,6 +119,7 @@ test('a full supply chain grows the HUD population with no console errors', asyn
   });
   await openGame(page);
   await zoomOut(page);
+  await page.keyboard.press('B'); // WR-03: build panel is closed at boot
 
   // Ratings baseline: prosperity on an empty map (stable — no buildings yet).
   const prosperityStart = Number(await page.getByTestId('stat-prosperity').textContent());

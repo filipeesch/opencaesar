@@ -16,6 +16,7 @@ test('home screen shows at launch and New Game starts a city', async ({ page }) 
 test('ESC with build mode cancels instead of pausing', async ({ page }) => {
   await openGame(page);
   // Enter build mode via the HUD.
+  await page.keyboard.press('B'); // WR-03: build panel is closed at boot
   await page.getByTestId('build-road').click();
   await page.waitForTimeout(100);
   await expect(page.getByTestId('build-road')).toHaveClass(/active/);

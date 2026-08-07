@@ -76,8 +76,11 @@ export class HUDScene extends Phaser.Scene {
   private settingsOpen = false;
   /** Currently active advisor tab id (defaults to 'ratings'). */
   private activeAdvisor: string | null = null;
-  /** Whether the sidebar build panel is shown (B key toggles it). */
-  private buildPanelOpen = true;
+  /** Whether the sidebar build panel is shown (B key toggles it). WR-03: the
+   *  panel starts CLOSED so every B press produces a visible change — the
+   *  boot-visible panel made the first B press a no-op (the e2e asserted
+   *  'visible after B' against an already-visible panel). */
+  private buildPanelOpen = false;
 
   /** Wave-1 pure-builder trees (mounted in buildDom, refreshed each tick). */
   private topBar: TopBarDom | null = null;
@@ -311,6 +314,9 @@ export class HUDScene extends Phaser.Scene {
 
     this.collectEls();
     this.wireSidebar();
+    // WR-03: the build panel is closed at boot (B opens it) so the panel
+    // visibility always tracks the buildMode state the key router toggles.
+    this.setBuildPanelOpen(false);
     // Default active tab is ratings (fallback when no critical alert directs one).
     this.selectAdvisor('ratings');
   }

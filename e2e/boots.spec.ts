@@ -9,6 +9,7 @@ test('boots the game shell with HUD and test API', async ({ page }) => {
   });
 
   await openGame(page);
+  await page.keyboard.press('B'); // WR-03: build panel is closed at boot
 
   await expect(page.locator('canvas')).toBeVisible();
   await expect(page.getByText('Roman City Builder')).toBeVisible();
@@ -37,6 +38,7 @@ test('placement errors surface as a HUD toast', async ({ page }) => {
   await openGame(page);
   await zoomOut(page);
 
+  await page.keyboard.press('B'); // WR-03: build panel is closed at boot
   await page.getByTestId('build-house').click();
   await expect(page.getByTestId('build-house')).toHaveClass(/active/);
 
