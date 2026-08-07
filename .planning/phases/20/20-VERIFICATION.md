@@ -5,6 +5,7 @@ verifier: gsd-verifier (openai/deepseek-v4-flash-free)
 date: 2026-08-07
 status: passed
 score: 8/8 goals verified
+re-verified: 2026-08-07 (after verify:post hooks — docs-only changes)
 ---
 
 # Phase 20 Verification Report — UI Redesign: Caesar III Sidebar & Advisors
@@ -13,7 +14,9 @@ score: 8/8 goals verified
 
 Phase 20 was verified goal-backward against the ROADMAP requirements (UI-RED-01..08, UI-FIX-01..03) and the VERIFY20-DISPATCH evidence checklist. **Verdict: PASS** — all 8 goals verified against the actual codebase (files read, gates re-run, not trusted from reports).
 
-Evidence was gathered directly: the seven new `src/game/ui/*` modules were read in full; the `HUDScene`/`MainScene`/`HomeScene` diffs vs baseline `61d2c8c` were reviewed; all three audit gates re-run; both test suites re-run (vitest: 129 files / 1028 tests passed; Playwright: 28/28 passed across the four dispatched specs). No SUMMARY.md exists in `.planning/phases/20/` (Wave 5 report never committed), but code verification supersedes the missing report — nothing in the report could not be confirmed directly.
+**Re-verification (2026-08-07):** Re-ran after verify:post hooks — docs-only changes. Since the initial verification commit `564fbfd`, only three docs files were added (`.planning/phases/20/20-SUMMARY.md`, `20-SECURITY.md`, `20-VALIDATION.md`); zero source changes (`git diff 564fbfd HEAD -- src/ tests/ index.html e2e/` empty). All seven gates re-run from scratch and re-confirmed green — see Truth Tests below.
+
+Evidence was gathered directly: the seven new `src/game/ui/*` modules were read in full; the `HUDScene`/`MainScene`/`HomeScene` diffs vs baseline `61d2c8c` were reviewed; all three audit gates re-run; both test suites re-run (vitest: 129 files / 1028 tests passed; Playwright: 28/28 passed across the four dispatched specs). The phase summary (`20-SUMMARY.md`, committed `5a12304`) was also reviewed — its claims match the re-run gate evidence.
 
 ## Goals vs Evidence
 
@@ -35,7 +38,7 @@ Evidence was gathered directly: the seven new `src/game/ui/*` modules were read 
 | Typecheck | `npm run typecheck` (tsc --noEmit) | clean | PASS |
 | Unit/integration/determinism/golden | `NODE_OPTIONS="--max-old-space-size=4096" npx vitest run --maxWorkers=4` | **129 files / 1028 tests passed** (2 post-run worker RPC teardown timeouts after completion — not test failures; 1028/1028 green) | PASS |
 | Military gate | `npm run check:military` | clean (no forbidden tokens in src/ or data/) | PASS |
-| E2E (dispatched 4 specs) | `npx playwright test e2e/keyboard.spec.ts e2e/sidebar.spec.ts e2e/inspect.spec.ts e2e/management-ui.spec.ts` | **28/28 passed** (47.4s) | PASS |
+| E2E (dispatched 4 specs) | `npx playwright test e2e/keyboard.spec.ts e2e/sidebar.spec.ts e2e/inspect.spec.ts e2e/management-ui.spec.ts` | **28/28 passed** (48.5s) | PASS |
 | XSS audit | `grep -rn 'innerHTML' src/game index.html` | 0 hits | PASS |
 | View-only sim | `git diff 61d2c8c HEAD -- src/sim` | **empty** (0 lines; incl. advisors.ts, save.ts, options.ts, runner.ts all 0-diff) | PASS |
 | Golden fixtures | `git status --porcelain tests/golden` | **empty** (byte-identical) | PASS |
@@ -49,9 +52,8 @@ Behavior-dependent truths (keyboard precedence, tick-change advisor re-render, i
 **Overall: PASS (8/8 goals).** Phase goal achieved: the top HUD is replaced by the Caesar III-style right sidebar + minimal top status bar; all 13 advisor panels render live runner-getter data under a tick-change guard; the full A/←/→/Escape/B/1-5 keyboard map works with the locked precedence; per-service overlay ramps, legends, and click-through all function; sidebar inspectors show real internals with close/Next cycling; UPPERCASE is case-only via CSS; zero `innerHTML` remains in src/ or index.html; and the sim core is byte-identical to the baseline (src/sim 0-diff, goldens untouched, SaveData shape unchanged).
 
 Minor observations (non-blocking, no action required):
-- `.planning/phases/20/SUMMARY.md` (PLAN Wave-5 deliverable) was never committed; verification was performed directly against code + gates instead.
 - `SERVICE_HUES` lives in `src/game/ui/overlays.ts` rather than `src/game/palette.ts` as the PLAN named — same view-only intent, locked by tests.
 - `tests/determinism/population-determinism.test.ts` changed 4 lines: a source-audit pattern update (`appendRow(body,` → `push(`) matching the Wave-4 card-builder refactor — the audited behavior (real per-residence rows behind a live-cohort guard) is preserved.
 
-_Verified: 2026-08-07_
+_Verified: 2026-08-07 (initial: `564fbfd`; re-verified: after verify:post hooks — docs-only changes)_
 _Verifier: gsd-verifier agent_
