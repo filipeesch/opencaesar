@@ -43,6 +43,10 @@ export interface RouterCtx {
   buildMode: { active: boolean };
   pause: { paused: boolean };
   overlay?: Record<string, boolean>;
+  /** WR-05: the sidebar settings drawer and overlay bar are surfaces too —
+   *  optional so pre-existing callers (tests) keep compiling with defaults. */
+  settings?: { open: boolean };
+  overlayBar?: { open: boolean };
 }
 
 export interface RouterResult {
@@ -52,6 +56,8 @@ export interface RouterResult {
   pause: { paused: boolean };
   /** Overlay toggle deltas; a key is only present when this press touched it. */
   overlay: Record<string, boolean>;
+  settings: { open: boolean };
+  overlayBar: { open: boolean };
 }
 
 /** The inspector card cycle list (a building card and a walker card). */
@@ -66,6 +72,8 @@ export class KeyRouter {
       buildMode: { active: ctx.buildMode.active },
       pause: { paused: ctx.pause.paused },
       overlay: { ...(ctx.overlay ?? {}) },
+      settings: { open: ctx.settings?.open ?? false },
+      overlayBar: { open: ctx.overlayBar?.open ?? false },
     };
     const action = KEY_MAP[key];
     if (!action) return r; // unknown keys are ignored (no crash, no leak)
@@ -90,8 +98,13 @@ export class KeyRouter {
         break;
       }
       case 'close-surface': {
+        // WR-05: the settings drawer and overlay bar sit above build/pause in
+        // the precedence chain — Escape never falls through to pause while an
+        // interactive sidebar surface is what the user is looking at.
         if (r.drawer.open) r.drawer.open = false;
         else if (r.inspector.open) r.inspector.open = false;
+        else if (r.settings.open) r.settings.open = false;
+        else if (r.overlayBar.open) r.overlayBar.open = false;
         else if (r.buildMode.active) r.buildMode.active = false;
         else r.pause.paused = !r.pause.paused; // existing ESC fall-through
         break;

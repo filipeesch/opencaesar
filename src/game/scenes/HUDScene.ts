@@ -237,6 +237,16 @@ export class HUDScene extends Phaser.Scene {
     return this.popupEl !== null;
   }
 
+  /** WR-05: the settings drawer open state for the key-router's Escape chain. */
+  isSettingsOpen(): boolean {
+    return this.settingsOpen;
+  }
+
+  /** WR-05: the overlay bar open state for the key-router's Escape chain. */
+  isOverlayBarOpen(): boolean {
+    return this.overlayBarOpen;
+  }
+
   toggleAdvisors(force?: boolean): void {
     this.toggleAdvisorsDrawer(force);
   }

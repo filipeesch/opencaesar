@@ -184,6 +184,10 @@ export class MainScene extends Phaser.Scene {
         buildMode: { active: this.buildModeEngaged || this.buildType !== null },
         pause: { paused: this.isPaused() },
         overlay: this.overlay ? { [this.overlay]: true } : {},
+        // WR-05: the settings drawer and overlay bar are Escape surfaces too —
+        // Escape closes them before falling through to build/pause.
+        settings: { open: hud.isSettingsOpen() },
+        overlayBar: { open: hud.isOverlayBarOpen() },
       };
       const result = router.handleKey(key, ctx);
 
@@ -209,6 +213,11 @@ export class MainScene extends Phaser.Scene {
           this.setBuildMode(null);
         }
       }
+
+      // WR-05: Escape closes the settings drawer / overlay bar when open
+      // (drawer > inspector > settings > overlay-bar > build > pause).
+      if (result.settings.open !== ctx.settings.open) hud.toggleSettingsDrawer(result.settings.open);
+      if (result.overlayBar.open !== ctx.overlayBar.open) hud.toggleOverlayBar(result.overlayBar.open);
 
       // Pause: the router's last-resort ESC fall-through (existing behavior).
       if (result.pause.paused !== ctx.pause.paused) this.setPaused(result.pause.paused);

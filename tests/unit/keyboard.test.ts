@@ -97,6 +97,32 @@ describe('keyboard router (precedence + key map)', () => {
     expect(s4.pause.paused).toBe(true);
   });
 
+  it('WR-05: Escape closes the settings drawer / overlay bar above build and pause', () => {
+    const r = new KeyRouter();
+    // Settings open: Escape closes settings, build/pause untouched.
+    const settingsOpen = ctx({ buildMode: true, paused: true });
+    const s1 = r.handleKey('Escape', { ...settingsOpen, settings: { open: true } });
+    expect(s1.settings.open).toBe(false);
+    expect(s1.buildMode.active).toBe(true);
+    expect(s1.pause.paused).toBe(true);
+    // Overlay bar open (settings closed): Escape closes the bar, build intact.
+    const barOpen = ctx({ buildMode: true });
+    const s2 = r.handleKey('Escape', { ...barOpen, overlayBar: { open: true } });
+    expect(s2.overlayBar.open).toBe(false);
+    expect(s2.buildMode.active).toBe(true);
+    // Precedence: drawer still beats settings (drawer > inspector > settings).
+    const both = ctx({ drawer: true, buildMode: true });
+    const s3 = r.handleKey('Escape', { ...both, settings: { open: true } });
+    expect(s3.drawer.open).toBe(false);
+    expect(s3.settings.open).toBe(true);
+    // Absent flags default closed — pre-existing ctx callers unchanged.
+    const plain = ctx({ paused: false });
+    const s4 = r.handleKey('Escape', plain);
+    expect(s4.settings.open).toBe(false);
+    expect(s4.overlayBar.open).toBe(false);
+    expect(s4.pause.paused).toBe(true);
+  });
+
   it('B toggles build panel — never while drawer/inspector open', () => {
     const r = new KeyRouter();
     const open = ctx({ drawer: true, buildMode: false });

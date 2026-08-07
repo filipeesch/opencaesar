@@ -59,6 +59,26 @@ test('B toggles the build panel only when no drawer/inspector is open', async ({
   await expect(page.locator('[data-testid="sidebar-build-panel"]')).toBeHidden(); // toggled off
 });
 
+test('Escape closes the settings drawer and overlay bar instead of pausing (WR-05)', async ({ page }) => {
+  await openGame(page);
+
+  // Settings drawer open: Escape closes it — the pause overlay never appears.
+  await page.getByTestId('controls-settings').click();
+  await expect(page.getByTestId('settings-drawer')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('settings-drawer')).toBeHidden();
+  await expect(page.getByTestId('pause-overlay')).toBeHidden();
+
+  // Overlay bar open: Escape closes it; only then does Escape pause.
+  await page.getByTestId('controls-overlays').click();
+  await expect(page.getByTestId('overlay-bar')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('overlay-bar')).toBeHidden();
+  await expect(page.getByTestId('pause-overlay')).toBeHidden();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('pause-overlay')).toBeVisible();
+});
+
 test('1-5 toggle overlays; existing W/F/R/C/D/X stay wired (back-compat)', async ({ page }) => {
   await openGame(page);
 
