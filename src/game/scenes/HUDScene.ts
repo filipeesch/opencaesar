@@ -352,7 +352,6 @@ export class HUDScene extends Phaser.Scene {
   private collectEls(): void {
     const sb = this.sidebar!;
     const root = asEl(sb.root);
-    this.els.pop = asEl(this.topBar!.valueNodes.population);
     this.els.treasury = asEl(this.topBar!.valueNodes.treasury);
     this.els.log = root.querySelector('[data-testid="message-log"]') as HTMLElement;
     this.els.logPanel = root.querySelector('[data-testid="log-panel"]') as HTMLElement;
@@ -529,7 +528,6 @@ export class HUDScene extends Phaser.Scene {
       // Initial content on open (per-tick refresh still runs under the guard).
       this.renderAdvisor(this.main.runner);
     }
-    this.game.events.emit('advisor-open', this.drawerOpen);
   }
 
   /** Toggle the overlay bar (nav button → real handler). */
@@ -538,7 +536,6 @@ export class HUDScene extends Phaser.Scene {
     if (this.sidebar?.overlayBar) {
       asEl(this.sidebar.overlayBar).style.display = this.overlayBarOpen ? 'block' : 'none';
     }
-    this.game.events.emit('overlay-bar', this.overlayBarOpen);
   }
 
   /** Toggle the settings drawer (nav button → real handler). Values are
