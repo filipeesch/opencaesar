@@ -51,6 +51,10 @@ export class MainScene extends Phaser.Scene {
   /** Walker continuous positions at the previous tick (for smooth motion). */
   private walkerPrev = new Map<number, { x: number; y: number }>();
   private buildType: BuildingType | null = null;
+  /** B/ESC-toggled "build panel engaged" state (SPEC §3): persists across key
+   *  presses independently of the build cursor, so B then Escape closes the
+   *  panel instead of falling through to pause. */
+  private buildModeEngaged = false;
   private dragging = false;
   private dragRight = false;
   private camStart = { x: 0, y: 0, scrollX: 0, scrollY: 0 };
@@ -160,10 +164,10 @@ export class MainScene extends Phaser.Scene {
       const ctx: RouterCtx = {
         drawer: { open: hud.isDrawerOpen(), activeTab: hud.activeAdvisorId() ?? ADVISOR_DEFAULT_TAB },
         inspector: { open: hud.isInspectorOpen(), card: null },
-        // 'build mode' = the sim build cursor (the surface B toggles). The
-        // sidebar panel stays visible by default (legacy e2e clicks build-*
-        // directly); B/ESC drive panel visibility through this same field.
-        buildMode: { active: this.buildType !== null },
+        // 'build mode' = the build PANEL engagement (the surface B toggles).
+        // Seeded from the persisted flag OR the live cursor so a clicked
+        // build-* button also engages build mode (legacy ESC cancels it).
+        buildMode: { active: this.buildModeEngaged || this.buildType !== null },
         pause: { paused: this.isPaused() },
         overlay: this.overlay ? { [this.overlay]: true } : {},
       };
@@ -182,6 +186,7 @@ export class MainScene extends Phaser.Scene {
       // Build panel: B toggles it via the router's buildMode; an Escape-driven
       // close also cancels a live build cursor (the pre-Phase-20 behavior).
       if (result.buildMode.active !== ctx.buildMode.active) {
+        this.buildModeEngaged = result.buildMode.active;
         hud.setBuildPanelOpen(result.buildMode.active);
         if (key === 'Escape' && !result.buildMode.active && this.buildType) {
           this.setBuildMode(null);

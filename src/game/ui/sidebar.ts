@@ -49,6 +49,8 @@ export interface SidebarDom {
   toolsPanel: UiNode; // [data-testid="sidebar-tools-panel"]
   policyTax: UiNode; // <input data-testid="policy-tax">
   policyWage: UiNode; // <input data-testid="policy-wage">
+  policyTaxValue: UiNode; // <span data-testid="policy-tax-value"> (legacy label, placement.spec)
+  policyWageValue: UiNode; // <span data-testid="policy-wage-value">
   speedRow: UiNode; // [data-testid="sidebar-speed-row"]
   advisorButton: UiNode; // [data-testid="sidebar-advisor-button"]
   overlayGroup: UiNode; // [data-testid="sidebar-overlay-group"]
@@ -135,10 +137,13 @@ export function buildSidebarDom(state: SimState, _derived: DerivedSnapshot): Sid
     className: 'sidebar-policy', testid: 'policy-wage', type: 'range', min: '0', max: '100',
     value: String(Math.round(state.policy.wageRate * 100)),
   });
+  // Legacy value labels (placement.spec): show the slider's percent next to it.
+  const policyTaxValue = el('span', { className: 'sidebar-policy-value', testid: 'policy-tax-value', text: `${Math.round(state.policy.taxRate * 100)}%` });
+  const policyWageValue = el('span', { className: 'sidebar-policy-value', testid: 'policy-wage-value', text: `${Math.round(state.policy.wageRate * 100)}%` });
   const toolsPanel = el('div', { className: 'hud-panel sidebar-tools-panel', testid: 'sidebar-tools-panel' },
     el('div', { className: 'hud-subtitle', text: 'TOOLS' }),
-    el('label', { className: 'sidebar-tool', testid: 'sidebar-policy-tax', text: 'TAX' }, policyTax),
-    el('label', { className: 'sidebar-tool', testid: 'sidebar-policy-wage', text: 'WAGE' }, policyWage),
+    el('label', { className: 'sidebar-tool', testid: 'sidebar-policy-tax', text: 'TAX' }, policyTax, policyTaxValue),
+    el('label', { className: 'sidebar-tool', testid: 'sidebar-policy-wage', text: 'WAGE' }, policyWage, policyWageValue),
   );
 
   // --- Speed row (seam: setSpeed) ---
@@ -191,6 +196,10 @@ export function buildSidebarDom(state: SimState, _derived: DerivedSnapshot): Sid
 
   // --- Settings drawer (legacy opt-* controls; values pre-filled on open) ---
   const settingsDrawer = buildSettingsDrawer();
+  // Hidden until the nav button toggles it (wave-0 behavior): the drawer is a
+  // fixed-position overlay with pointer-events: auto, so leaving it visible at
+  // startup would swallow mid-screen clicks/drags (alignment pan e2e).
+  settingsDrawer.style.display = 'none';
 
   // --- Hosts: advisor drawer (module root mounts here), inspector, log,
   //     overlay legend, toast. ---
@@ -241,6 +250,8 @@ export function buildSidebarDom(state: SimState, _derived: DerivedSnapshot): Sid
     toolsPanel,
     policyTax,
     policyWage,
+    policyTaxValue,
+    policyWageValue,
     speedRow,
     advisorButton,
     overlayGroup,

@@ -164,6 +164,13 @@ export class HUDScene extends Phaser.Scene {
     vn.prosperity.textContent = String(state.ratings.prosperity);
     vn.happiness.textContent = String(state.ratings.happiness);
 
+    // Policy value labels (legacy placement.spec): sync from the sim state so
+    // load/save or programmatic setPolicy always reflects the live policy.
+    if (this.els.taxValue) {
+      this.els.taxValue.textContent = `${Math.round(state.policy.taxRate * 100)}%`;
+      this.els.wageValue.textContent = `${Math.round(state.policy.wageRate * 100)}%`;
+    }
+
     const derived = this.main?.runner.getDerived();
     if (derived) {
       vn.culture.textContent = String(derived.culture);
@@ -326,6 +333,8 @@ export class HUDScene extends Phaser.Scene {
     this.els.build = root.querySelector('[data-testid="sidebar-build-grid"]') as HTMLElement;
     this.els.taxInput = root.querySelector('[data-testid="policy-tax"]') as HTMLInputElement;
     this.els.wageInput = root.querySelector('[data-testid="policy-wage"]') as HTMLInputElement;
+    this.els.taxValue = root.querySelector('[data-testid="policy-tax-value"]') as HTMLElement;
+    this.els.wageValue = root.querySelector('[data-testid="policy-wage-value"]') as HTMLElement;
     this.els.optGraphics = root.querySelector('[data-testid="opt-graphics"]') as HTMLSelectElement;
     this.els.optMusic = root.querySelector('[data-testid="opt-music"]') as HTMLInputElement;
     this.els.optSfx = root.querySelector('[data-testid="opt-sfx"]') as HTMLInputElement;
@@ -377,9 +386,11 @@ export class HUDScene extends Phaser.Scene {
     const wage = this.els.wageInput as HTMLInputElement;
     const applyTax = (): void => {
       this.main?.runner.setPolicy(tax.valueAsNumber / 100, this.main.runner.getPolicy().wageRate);
+      if (this.els.taxValue) this.els.taxValue.textContent = `${tax.valueAsNumber}%`;
     };
     const applyWage = (): void => {
       this.main?.runner.setPolicy(this.main.runner.getPolicy().taxRate, wage.valueAsNumber / 100);
+      if (this.els.wageValue) this.els.wageValue.textContent = `${wage.valueAsNumber}%`;
     };
     tax.addEventListener('input', applyTax);
     tax.addEventListener('change', applyTax);

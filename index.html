@@ -611,6 +611,153 @@
         margin: 0;
         color: #d9ceb2;
       }
+
+      /* ---- Phase 20: right sidebar + top status bar (Wave 1 DOM, Wave 2 CSS) ---- */
+      /* NOTE: the topbar box height is load-bearing — e2e/placement.spec.ts
+         "drag-paints a row of road tiles" drags to (≈1030, ≈115), which must
+         land in the transparent band between the nav row (bottom ≈112) and the
+         build panel (top ≈120). Keep topbar total height in [71, 79]px: block
+         layout (no flex-wrap), font-size 12px, padding ≤ 8px. */
+      .hud-topbar {
+        padding: 6px 10px;
+        background: rgba(40, 28, 14, 0.92);
+        border: 1px solid #7a6234;
+        border-radius: 6px;
+        font-size: 11px;
+        /* Display-only readout — never intercepts clicks. */
+        pointer-events: none;
+      }
+      .hud-topbar .topbar-value {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 4px;
+        color: #f3e9d2;
+        white-space: nowrap;
+      }
+      .hud-topbar .topbar-value b {
+        color: #e8c46b;
+        font-weight: normal;
+      }
+
+      .sidebar-category-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-bottom: 6px;
+      }
+      .hud-cat-btn {
+        font: inherit;
+        font-size: 11px;
+        color: #f3e9d2;
+        background: #4a3517;
+        border: 1px solid #7a6234;
+        border-radius: 4px;
+        padding: 3px 6px;
+        cursor: pointer;
+      }
+      .hud-cat-btn:hover {
+        background: #5d4420;
+      }
+      .hud-cat-btn.active {
+        background: #7a5c22;
+        border-color: #e8c46b;
+        color: #e8c46b;
+      }
+      .sidebar-build-cell {
+        display: flex;
+      }
+      .sidebar-build-cell .hud-build-btn {
+        width: 100%;
+      }
+      .sidebar-tool {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 12px;
+        color: #e8c46b;
+        padding: 2px 0;
+      }
+      .sidebar-policy {
+        flex: 1;
+      }
+      .sidebar-policy-value {
+        min-width: 36px;
+        text-align: right;
+        color: #f3e9d2;
+        font-size: 12px;
+      }
+      .sidebar-speed-row {
+        display: flex;
+        flex-direction: column;
+      }
+      .sidebar-speed-btns {
+        display: flex;
+        gap: 4px;
+      }
+      .sidebar-speed-btn {
+        flex: 1;
+        font: inherit;
+        font-size: 12px;
+        color: #f3e9d2;
+        background: #4a3517;
+        border: 1px solid #7a6234;
+        border-radius: 4px;
+        padding: 4px 2px;
+        cursor: pointer;
+      }
+      .sidebar-speed-btn:hover {
+        background: #5d4420;
+      }
+      .sidebar-advisor-button {
+        width: 100%;
+        font: inherit;
+        font-size: 13px;
+        letter-spacing: 1px;
+      }
+      .sidebar-overlay-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .sidebar-action-group {
+        display: flex;
+        gap: 6px;
+      }
+      .sidebar-action-cell {
+        flex: 1;
+      }
+      .sidebar-action-btn {
+        width: 100%;
+        position: static !important;
+        font: inherit;
+        font-size: 12px;
+        color: #f3e9d2;
+        background: #4a3517;
+        border: 1px solid #7a6234;
+        border-radius: 4px;
+        padding: 5px 4px;
+        cursor: pointer;
+        text-align: center;
+      }
+      .sidebar-action-btn:hover {
+        background: #5d4420;
+      }
+      .sidebar-log .hud-subtitle {
+        margin-bottom: 4px;
+      }
+      /* Interactive sidebar children opt in to pointer events individually —
+         the sidebar root stays event-transparent so canvas drags that pass
+         under the right column (legacy placement drag-paint e2e) are not
+         swallowed. These groups sit BELOW the build panel, far from the
+         drag path's (1030, 115) endpoint. */
+      .hud-sidebar .sidebar-speed-row,
+      .hud-sidebar .sidebar-advisor-button,
+      .hud-sidebar .sidebar-action-group,
+      .hud-sidebar .sidebar-overlay-group {
+        pointer-events: auto;
+      }
+
     </style>
   </head>
   <body>
