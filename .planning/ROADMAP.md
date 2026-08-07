@@ -50,7 +50,7 @@ slice at a time, keeping golden determinism.
 
 **Milestone Goal:** Replace the top HUD with a Caesar III-style right sidebar; deliver advisor panels, overlays, and inspectors as sidebar-driven UI with keyboard-first navigation, UPPERCASE labels, and XSS-safe DOM — view-only, sim core byte-identical.
 
-- [ ] **Phase 20: UI Redesign — Caesar III Sidebar & Advisors** — Replace current HUD with Caesar III-style sidebar, 13 advisor panels with live sim data, overlay system (fire/danger/collapse/crime/food), building inspector, redesigned build panel. (INSERTED — ui-redesign)
+- [x] **Phase 20: UI Redesign — Caesar III Sidebar & Advisors** — Replace current HUD with Caesar III-style sidebar, 13 advisor panels with live sim data, overlay system (fire/danger/collapse/crime/food), building inspector, redesigned build panel. (INSERTED — ui-redesign)
 
 ### Phase 20: UI Redesign — Caesar III Sidebar & Advisors
 **Goal**: Replace the top HUD with a Caesar III-style right sidebar (build panel, tools, speed controls) and rebuild advisors, overlays, and inspectors as sidebar-driven panels with keyboard-first navigation, UPPERCASE labels, and XSS-safe DOM — view-only, sim core byte-identical.
@@ -64,12 +64,12 @@ slice at a time, keeping golden determinism.
   5. Player can inspect buildings/walkers from the sidebar; inspectors show real internals (getInspector/getWalkerInternals) and cycle with close/Next.
   6. Overlay and advisor labels render UPPERCASE (Caesar III style), all DOM labels are composed via textContent/createElement (no innerHTML), and save/load goldens remain byte-identical.
 **Plans**: 6 plans
-- [ ] 20-01: Sidebar scaffold — replace top HUD with right-sidebar build panel, tools, speed controls; all DOM via textContent/createElement (XSS-safe) [UI-RED-01, UI-RED-08]
-- [ ] 20-02: Advisor drawer + keyboard — 13 advisor panels with live runner-getter data under tick-change guard; A/←/→/Escape bindings [UI-RED-02, UI-RED-03, UI-RED-07, UI-FIX-01]
-- [ ] 20-03: Overlay hues & legends — 5 overlays (fire/danger/collapse/crime/food + water/desirability), per-service color ramps, legends, click-through [UI-RED-04, UI-FIX-02]
-- [ ] 20-04: Inspectors — building/walker inspectors fed by getInspector/getWalkerInternals, close/Next cycling [UI-RED-05]
-- [ ] 20-05: UPPERCASE labels — text-transform uppercase on overlay/advisor labels [UI-RED-06, UI-FIX-03]
-- [ ] 20-06: Verification — golden byte-identical save/load, tsc --noEmit clean, Playwright e2e for keyboard/sidebar/overlay/inspector flows, no-innerHTML audit [verification]
+- [x] 20-01: Sidebar scaffold — replace top HUD with right-sidebar build panel, tools, speed controls; all DOM via textContent/createElement (XSS-safe) [UI-RED-01, UI-RED-08]
+- [x] 20-02: Advisor drawer + keyboard — 13 advisor panels with live runner-getter data under tick-change guard; A/←/→/Escape bindings [UI-RED-02, UI-RED-03, UI-RED-07, UI-FIX-01]
+- [x] 20-03: Overlay hues & legends — 5 overlays (fire/danger/collapse/crime/food + water/desirability), per-service color ramps, legends, click-through [UI-RED-04, UI-FIX-02]
+- [x] 20-04: Inspectors — building/walker inspectors fed by getInspector/getWalkerInternals, close/Next cycling [UI-RED-05]
+- [x] 20-05: UPPERCASE labels — text-transform uppercase on overlay/advisor labels [UI-RED-06, UI-FIX-03]
+- [x] 20-06: Verification — golden byte-identical save/load, tsc --noEmit clean, Playwright e2e for keyboard/sidebar/overlay/inspector flows, no-innerHTML audit [verification]
 **UI hint**: yes
 
 ## Progress
@@ -96,4 +96,4 @@ slice at a time, keeping golden determinism.
 | 18. Management UI | v1.0 | 2/2 | Complete | 2026-08-06 |
 | 19. Persistence & Options | v1.0 | 2/2 | Complete | 2026-08-06 |
 | 19.1. Population & Labor | v1.0 | 1/1 | Complete | 2026-08-06 |
-| 20. UI Redesign — Sidebar & Advisors | v1.1 | 0/6 | Not started | - |
+| 20. UI Redesign — Sidebar & Advisors | v1.1 | 6/6 | Complete | 2026-08-07 |

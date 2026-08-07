@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: UI Redesign — Caesar III Sidebar & Advisors
 status: executing
-last_updated: "2026-08-07T14:45:00.000Z"
+last_updated: "2026-08-07T15:05:00.000Z"
 last_activity: 2026-08-07
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 6
-  completed_plans: 2
-  percent: 33
+  completed_plans: 6
+  percent: 100
 ---
 
 # Project State
@@ -19,8 +19,8 @@ progress:
 
 Phase: 20 — UI Redesign — Caesar III Sidebar & Advisors (1 of 1)
 Plan: 20-plan (Waves 0-5; 10 tasks)
-Status: Waves 0-4 complete (inventory/SPEC + sidebar/topbar/advisor/keyboard + drawer live-tick/keyboard e2e + per-service overlay hues/legends/click-through + sidebar inspector cards w/ close × / Next cycling)
-Last activity: 2026-08-07 — Phase 20 Wave 4 done: inspector relocated into the sidebar host as a card (building-popup testid preserved), close × + Next/Prev same-kind cycling via new pure ui/inspector.ts builder + navState(), ←/→/Escape key routing fixed (directional stepping), 0 innerHTML, src/sim untouched, goldens byte-identical; 128 files / 1020 unit tests green; e2e inspect/keyboard/sidebar/management-ui 25/25
+Status: Waves 0-5 complete (inventory/SPEC + sidebar/topbar/advisor/keyboard + drawer live-tick/keyboard e2e + per-service overlay hues/legends/click-through + sidebar inspector cards w/ close × / Next cycling + UPPERCASE labels + full close gate) — phase ready for verification
+Last activity: 2026-08-07 — Phase 20 Wave 5 done: UPPERCASE labels via .uppercase CSS utility (UI-RED-06/UI-FIX-03 — case-only, canonical DOM wording kept; advisor drawer JS toUpperCase removed), then full close gate: typecheck clean; 129 files / 1026 unit tests green; goldens byte-identical; 0 innerHTML; src/sim zero-diff; check:military clean; Playwright 57 passed / 3 failed (boots/campaign/placement-population — pre-existing wave-0 baseline flakes, identical); precedence regression green
 
 ## Performance Metrics
 
@@ -63,12 +63,13 @@ Last activity: 2026-08-07 — Phase 20 Wave 4 done: inspector relocated into the
 - [Phase 20 Wave 2]: Advisor drawer live-tick re-render under the tick-change guard (never per-frame; composer reads from the locked advisors.ts seam — zero diffs), verbatim empty states, 13 tabs in ADVISOR_TAB_ORDER. Keyboard e2e green (A cycles, ←/→ switch panels, Escape precedence, B toggle, 1-5 overlays; W/F/R/C/D/X regression-locked). Fixed wave-1 e2e regressions: settings drawer startup overlay swallowing mid-screen drags/wheel (display:none at build), legacy policy % value labels, build-mode ESC precedence, compact topbar CSS preserving the drag e2e's transparent band. e2e suite 53 passed / 3 failed (boots, campaign, placement-population — all fail at wave-0 baseline, documented not chased).
 - [Phase 20 Wave 3]: Per-service overlay ramps wired for ALL overlays — MainScene paints via overlayHue(id, band) (SPEC §4 locks: water=blue, food=green, fire=red, danger=orange, collapse=brown, crime=purple, coverage/desirability=teal); the merged risks overlay resolves the dominant risk service per tile (dominantRiskService, fire>danger>collapse>crime tie-break) so service identity survives max() — 18-UI-REVIEW finding #2 fixed. Legend swatches come from the service's own ramp; risks legend renders one 5-swatch row per service. palette.ts OVERLAY_RAMPS deleted (dead). Click-through (emitInspect → building/walker inspector) verified untouched (depth-1 heatmap never takes input) and locked in e2e: walker click-through under an active overlay + risks per-service legend rows. e2e suite 55 passed / 3 failed (same pre-existing baseline).
 - [Phase 20 Wave 4]: Inspector relocated from the Phase-18 fixed popup into a CARD inside the sidebar inspector host (sidebar-inspector-host testid; card keeps the legacy building-popup testid + hud-popup classes for spec compatibility). New pure ui/inspector.ts builder + navState() (position n/m label, boundary-disabled prev/next; single-entity list disables both; unit-locked). Close × + Next/Prev cycle same-kind lists in stable id order; keyboard fix: ←/→ step the selection list directionally (the symmetric router flip couldn't encode direction — both arrows advanced forward before) with Escape closing the card first (precedence kept). Rows refactored to InspectorRow[] fed read-only from getInspector/getWalkerInternals (CR-01 kind param preserved). Zero innerHTML (comment-scan audit green), src/sim zero diff, goldens byte-identical. 128 files / 1020 tests green; e2e inspect(8)+keyboard(5)+sidebar(3)+management-ui(9) = 25/25.
+- [Phase 20 Wave 5]: UPPERCASE labels (UI-RED-06/UI-FIX-03) as a case-only CSS transform — new `.uppercase` utility (text-transform: uppercase; letter-spacing: 1px) is the single place the case transform lives (T-20-06 accept); applied to overlay legend labels (HUDScene), advisor tabs + active-tab readout (advisorDrawer — JS toUpperCase removed so DOM text is the canonical 18-UI-SPEC title), sidebar nav + overlay toggles (sidebar), all 8 topbar labels. Zero reworded strings, zero src/sim diff, 0 innerHTML. Close gate (20-05-01) all green: typecheck clean; 129 files / 1026 tests passed; goldens byte-identical (porcelain empty); check:military clean; Playwright 57 passed / 3 failed (boots/campaign/placement-population = pre-existing wave-0 baseline flakes, failing identically, documented not chased); keyboard precedence regression green (drawer > inspector > build > pause; ESC + W/F/R/C/D/X locked). New locks: tests/unit/uppercase-labels.test.ts (6) + e2e computed-style UPPERCASE test.
 
 ## Session
 
-**Last session:** 2026-08-07T14:45:00.000Z
-**Stopped at:** Completed Phase 20 Wave 4 — sidebar inspector cards (close × / Next cycling) + directional ←/→ keyboard fix; 128 files / 1020 tests green; e2e inspect+keyboard+sidebar+management-ui 25/25
-**Resume file:** .planning/phases/20/PLAN.md (Wave 5 — UPPERCASE labels)
+**Last session:** 2026-08-07T15:05:00.000Z
+**Stopped at:** Completed Phase 20 Wave 5 — UPPERCASE labels + full close gate (all 8 gates PASS; phase ready for verification); 129 files / 1026 tests; e2e 57/3 (pre-existing baseline documented)
+**Resume file:** None — Phase 20 plans 20-01..20-06 complete; next: /gsd-verify-work or /gsd-audit-milestone
 
 ## Operator Next Steps
 
