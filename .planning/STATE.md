@@ -1,20 +1,20 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.1
-milestone_name: UI Redesign — Caesar III Sidebar & Advisors (In Progress)
+milestone_name: UI Redesign — Caesar III Sidebar & Advisors (Shipped)
 status: Awaiting next milestone
-stopped_at: Completed Phase 20 Wave 5 — UPPERCASE labels + full close gate (all 8 gates PASS; phase ready for verification); 129 files / 1026 tests; e2e 57/3 (pre-existing baseline documented)
-last_updated: "2026-08-07T15:57:10.156Z"
+stopped_at: Milestone v1.1 complete — Phase 20 shipped 2026-08-07 (sidebar, advisors, overlays, inspectors, keyboard, UPPERCASE); 129 files / 1028 tests; e2e 28/28 in-scope; 4 tech-debt items recorded in v1.1-MILESTONE-AUDIT.md
+last_updated: "2026-08-07T16:58:00.000Z"
 last_activity: 2026-08-07
 last_activity_desc: Milestone v1.1 completed and archived
 progress:
   total_phases: 1
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 1
-  completed_plans: 0
-  percent: 0
-current_phase: 20
-current_phase_name: 1 of 1
+  completed_plans: 1
+  percent: 100
+current_phase: null
+current_phase_name: null
 ---
 
 # Project State
@@ -36,6 +36,7 @@ Last activity: 2026-08-07 — Milestone v1.1 completed and archived
 | Phase 18 P18 | 91 | 10 tasks | 12 files |
 | Phase 19 P19-plan | 112 | 7 tasks | 15 files |
 | Phase 19.1 P19.1-plan | 138 | 7 tasks | 15 files |
+| Phase 20 P20-plan | — | 10 tasks | 11 files |
 
 ## Decisions
 
@@ -71,9 +72,9 @@ Last activity: 2026-08-07 — Milestone v1.1 completed and archived
 
 ## Session
 
-**Last session:** 2026-08-07T15:05:00.000Z
-**Stopped at:** Completed Phase 20 Wave 5 — UPPERCASE labels + full close gate (all 8 gates PASS; phase ready for verification); 129 files / 1026 tests; e2e 57/3 (pre-existing baseline documented)
-**Resume file:** None — Phase 20 plans 20-01..20-06 complete; next: /gsd-verify-work or /gsd-audit-milestone
+**Last session:** 2026-08-07T16:58:00.000Z
+**Stopped at:** Milestone v1.1 complete — Phase 20 shipped (sidebar, advisors, overlays, inspectors, keyboard, UPPERCASE); 129 files / 1028 tests; e2e 28/28 in-scope; 4 tech-debt items recorded in v1.1-MILESTONE-AUDIT.md
+**Resume file:** None — next: /gsd-new-milestone (define v2.0 requirements)
 
 ## Operator Next Steps
 
