@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 // Phase 20 Wave 0 RED scaffold: sidebar controls contract (UI-RED-01/03).
 // Imports the target module Wave 1 implements. Fails today: module absent.
-import { buildSidebarDom } from '../../src/game/ui/sidebar';
+import { buildSidebarDom, BUILD_CATEGORIES } from '../../src/game/ui/sidebar';
 import { SimRunner } from '../../src/sim/runner';
 import { foodChainMap, buildFoodCity } from '../helpers';
 
@@ -103,5 +103,20 @@ describe('sidebar controls (UI-RED-01/03)', () => {
     for (const s of speeds) {
       expect(s.seam).toBe('MainScene.setSpeed');
     }
+  });
+
+  it('WR-02: the category filter leads with the "all" reset tab (Phase-18 regression)', () => {
+    // Once a category tab is clicked the 17-building grid would be filtered
+    // forever without a reset — the 'all' tab restores the full catalog.
+    expect(BUILD_CATEGORIES[0]).toBe('all');
+    expect(BUILD_CATEGORIES).toContain('all');
+    expect(BUILD_CATEGORIES.length).toBe(14); // all + 13 categories
+    const r = runner();
+    const dom = buildSidebarDom(r.getState(), r.getDerived());
+    const allTab = dom.categoryTabs.children.find(
+      (c) => (c as unknown as { dataset: Record<string, string> }).dataset.cat === 'all',
+    );
+    expect(allTab).toBeDefined();
+    expect(allTab!.dataset.testid).toBe('category-all');
   });
 });

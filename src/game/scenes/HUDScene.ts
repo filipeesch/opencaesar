@@ -362,14 +362,23 @@ export class HUDScene extends Phaser.Scene {
     on('[data-testid="controls-settings"]', () => this.toggleSettingsDrawer());
     on('[data-testid="sidebar-advisor-button"]', () => this.toggleAdvisorsDrawer());
 
-    // Category tabs → active filter + grid visibility.
+    // Category tabs → active filter + grid visibility. WR-02: re-clicking the
+    // active category resets to 'all' (toggle behavior) so the full catalog is
+    // always one click away; the 'all' tab is the default active filter.
     root.querySelectorAll('.hud-cat-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         const cat = (btn as HTMLElement).dataset.cat as CategoryFilter;
-        this.activeCategory = cat;
-        root.querySelectorAll('.hud-cat-btn').forEach((b) => b.classList.toggle('active', b === btn));
+        const next = this.activeCategory === cat ? 'all' : cat;
+        this.activeCategory = next;
+        root.querySelectorAll('.hud-cat-btn').forEach((b) => {
+          b.classList.toggle('active', (b as HTMLElement).dataset.cat === next);
+        });
         this.filterGrid();
       });
+    });
+    // Boot state: the 'all' tab is active and the grid unfiltered (default).
+    root.querySelectorAll('.hud-cat-btn').forEach((b) => {
+      b.classList.toggle('active', (b as HTMLElement).dataset.cat === this.activeCategory);
     });
 
     // Build grid → toggle build mode (seam: MainScene.setBuildMode).

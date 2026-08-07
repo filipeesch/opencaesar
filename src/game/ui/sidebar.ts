@@ -20,8 +20,11 @@ import { el, type UiNode } from './dom';
 
 export const SPEEDS: readonly number[] = [0.5, 1, 2, 4, 8];
 
+// WR-02: the first tab is the 'all' reset (Phase-18 regression) — the 13
+// real categories follow. Clicking the active tab again also resets to 'all'
+// (toggle behavior, wired in HUDScene).
 export const BUILD_CATEGORIES: readonly string[] = [
-  'roads', 'housing', 'food', 'water', 'infrastructure', 'engineering', 'safety',
+  'all', 'roads', 'housing', 'food', 'water', 'infrastructure', 'engineering', 'safety',
   'health', 'education', 'entertainment', 'religion', 'government', 'ornament',
 ];
 
