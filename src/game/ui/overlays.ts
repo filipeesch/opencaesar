@@ -25,6 +25,16 @@ export const SERVICE_HUES: Record<string, string> = {
   desirability: '#2aa4a4', // teal — desirability
 };
 
+/** The four risk services merged by the `risks` overlay, in paint/legend
+ *  priority order (ties resolve to the earlier service). View-only — the sim
+ *  never imports this. */
+export const RISK_SERVICES: readonly { id: 'fire' | 'danger' | 'collapse' | 'crime'; label: string }[] = [
+  { id: 'fire', label: 'Fire' },
+  { id: 'danger', label: 'Danger' },
+  { id: 'collapse', label: 'Collapse' },
+  { id: 'crime', label: 'Crime' },
+];
+
 /** Luminance factors per band: band 4 keeps the base hue, band 0 is 20% of
  *  it — strictly decreasing luminance toward band 0. */
 const BAND_FACTORS: readonly number[] = [0.2, 0.4, 0.6, 0.8, 1.0];
@@ -60,4 +70,20 @@ export function overlayHue(id: string, band: number): string {
   if (!hue) throw new Error(`unknown overlay service: ${id}`);
   const b = Math.min(4, Math.max(0, Math.floor(band)));
   return darken(hue, BAND_FACTORS[b]);
+}
+
+/** The dominant risk service at tile (x, y): the max of the four risk grids,
+ *  with ties resolved to RISK_SERVICES order (fire > danger > collapse >
+ *  crime). Lets the `risks` overlay paint each tile with ITS OWN service ramp
+ *  (18-UI-REVIEW finding #2 — service identity was lost in a single max). */
+export function dominantRiskService(
+  fire: number[][], danger: number[][], collapse: number[][], crime: number[][],
+  x: number, y: number,
+): 'fire' | 'danger' | 'collapse' | 'crime' {
+  let best = fire[y][x];
+  let id: 'fire' | 'danger' | 'collapse' | 'crime' = 'fire';
+  if (danger[y][x] > best) { best = danger[y][x]; id = 'danger'; }
+  if (collapse[y][x] > best) { best = collapse[y][x]; id = 'collapse'; }
+  if (crime[y][x] > best) { best = crime[y][x]; id = 'crime'; }
+  return id;
 }

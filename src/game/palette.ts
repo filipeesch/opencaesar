@@ -39,19 +39,10 @@ export const WALKER_COLORS: Record<'market' | 'well' | 'labor' | 'buyer' | 'sell
 };
 
 /**
- * Overlay heatmap ramps (Phase 18, UI-03) — view-only 5-step hex ramps per the
- * UI-SPEC Color table (low → high). Consumed ONLY by the MainScene overlay
- * layer; never imported by the sim. Each ramp has exactly 5 bands indexed 0..4.
+ * Overlay heatmap ramps moved to src/game/ui/overlays.ts in Phase 20 Wave 3:
+ * per-service ramps (SERVICE_HUES + overlayHue) replaced the single shared
+ * OVERLAY_RAMPS table (18-UI-REVIEW finding #2). See ui/overlays.ts.
  */
-export type OverlayKey = 'water' | 'food' | 'risks' | 'coverage' | 'desirability';
-
-export const OVERLAY_RAMPS: Record<OverlayKey, readonly string[]> = {
-  water: ['#16324a', '#1f4f78', '#2b7cc4', '#4aa3df', '#8fd7ff'],
-  food: ['#3f1d2e', '#8f3f2c', '#c96a2c', '#d8b13c', '#6fcf5f'],
-  risks: ['#3a2c18', '#8f3a1f', '#c93a1f', '#e0642c', '#ffd36b'],
-  coverage: ['#1e3550', '#31638c', '#59c4ee', '#7ea6d6', '#a98fd1'],
-  desirability: ['#2b1d0e', '#4a6b3a', '#79b044', '#d8b13c', '#e8c46b'],
-};
 
 /** Convert a '#rrggbb' hex string to a Phaser color number (draw-time only). */
 export function hexToPhaser(hex: string): number {

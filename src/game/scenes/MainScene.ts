@@ -18,7 +18,8 @@ import { TimeSystem } from '../../sim/time';
 import { loadOptions } from '../options';
 import { HOUSE_FOOT_TOP_Y, HOUSE_FRAME_H, houseFrame, isSheetLoaded, SHEET_BUILDINGS, getSpriteMeta, BUILDING_RESOLUTIONS } from '../art';
 import { drawBuilding } from '../buildingArt';
-import { BUILDING_COLORS, HOUSE_COLORS, TILE_H, TILE_W, WALKER_COLORS, OVERLAY_RAMPS, hexToPhaser } from '../palette';
+import { BUILDING_COLORS, HOUSE_COLORS, TILE_H, TILE_W, WALKER_COLORS, hexToPhaser } from '../palette';
+import { dominantRiskService, overlayHue } from '../ui/overlays';
 import type { OverlayId } from '../advisors';
 import { KeyRouter, type RouterCtx } from '../ui/keyboard';
 import type { HUDScene } from './HUDScene';
@@ -244,7 +245,10 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** Draw the active overlay's heatmap from its pure per-tile grid, below the
-   *  building depths. Zero-value cells are not painted (the map stays legible). */
+   *  building depths. Zero-value cells are not painted (the map stays legible).
+   *  Every overlay paints with ITS OWN per-service ramp (SPEC §4, UI-FIX-02):
+   *  the `risks` overlay resolves the dominant risk service per tile so fire/
+   *  danger/collapse/crime cells keep their service identity. */
   private renderOverlay(state: SimState, overlayId: OverlayId): void {
     const gfx = this.overlayGfx;
     if (!gfx) return;
@@ -253,6 +257,8 @@ export class MainScene extends Phaser.Scene {
 
     let cells: number[][] | null = null;
     let bandOf: (v: number) => number;
+    /** Per-tile service hue override (only the merged `risks` overlay uses it). */
+    let serviceOf: ((x: number, y: number) => string) | null = null;
     const clampBand = (b: number): number => Math.min(4, Math.max(0, b));
 
     switch (overlayId) {
@@ -289,6 +295,7 @@ export class MainScene extends Phaser.Scene {
           ),
         );
         bandOf = (v) => clampBand(Math.floor(v / 0.25));
+        serviceOf = (x, y) => dominantRiskService(fire, danger, collapse, crime, x, y);
         break;
       }
       case 'coverage': {
@@ -324,14 +331,16 @@ export class MainScene extends Phaser.Scene {
     }
     if (!cells) return;
 
-    const ramp = OVERLAY_RAMPS[overlayId];
     gfx.clear();
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const v = cells[y][x];
         if (!v || v === 0) continue;
         const band = clampBand(bandOf(v));
-        const color = hexToPhaser(ramp[band]);
+        // Per-service ramp: the overlay's own hue, or (risks) the dominant
+        // risk service's hue at this tile.
+        const hueId = serviceOf ? serviceOf(x, y) : overlayId;
+        const color = hexToPhaser(overlayHue(hueId, band));
         const top = tileTop(x, y);
         drawDiamond(gfx, top.x, top.y, TILE_W / 2, TILE_H / 2, color, 0.55);
       }

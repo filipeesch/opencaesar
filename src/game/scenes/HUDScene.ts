@@ -24,7 +24,7 @@ import {
 import { WORKSHOP_BUILDING_TYPES, EXTRACTION_BUILDING_TYPES } from '../../sim/production';
 import { advisorPanels } from '../advisors';
 import type { AdvisorAction, OverlayId } from '../advisors';
-import { OVERLAY_RAMPS } from '../palette';
+import { overlayHue, RISK_SERVICES } from '../ui/overlays';
 import type { SimRunner } from '../../sim/runner';
 import type { BuildingCategory, BuildingState, BuildingType, SimState, Vec2, WalkerState } from '../../sim/types';
 import type { BuildingInstance, WalkerInstance } from '../../sim/walkers';
@@ -639,18 +639,43 @@ export class HUDScene extends Phaser.Scene {
     head.className = 'hud-subtitle';
     head.textContent = overlayName(id);
     legend.appendChild(head);
-    const ramp = OVERLAY_RAMPS[id];
-    const labels = OVERLAY_LABELS[id];
-    for (let i = 0; i < ramp.length; i++) {
-      const rowEl = document.createElement('div');
-      rowEl.className = 'legend-row';
-      const swatch = document.createElement('span');
-      swatch.className = 'legend-swatch';
-      swatch.style.background = ramp[i];
-      const lab = document.createElement('span');
-      lab.textContent = labels[i];
-      rowEl.append(swatch, lab);
-      legend.appendChild(rowEl);
+    if (id === 'risks') {
+      // The risks heatmap paints each tile with its DOMINANT service's ramp
+      // (fire/danger/collapse/crime) — the legend mirrors that per-service
+      // identity with one 5-swatch row per service (UI-FIX-02).
+      for (const s of RISK_SERVICES) {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'legend-row legend-service-row';
+        rowEl.dataset.testid = `legend-service-${s.id}`;
+        const name = document.createElement('span');
+        name.className = 'legend-service-name';
+        name.textContent = s.label;
+        const rampHost = document.createElement('span');
+        rampHost.className = 'legend-ramp';
+        for (let b = 0; b < 5; b++) {
+          const swatch = document.createElement('span');
+          swatch.className = 'legend-swatch';
+          swatch.style.background = overlayHue(s.id, b);
+          rampHost.appendChild(swatch);
+        }
+        rowEl.append(name, rampHost);
+        legend.appendChild(rowEl);
+      }
+    } else {
+      // Single-service overlays: one row per band, swatches from the
+      // service's own 5-step ramp (SPEC §4), labels from the static table.
+      const labels = OVERLAY_LABELS[id];
+      for (let b = 0; b < 5; b++) {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'legend-row';
+        const swatch = document.createElement('span');
+        swatch.className = 'legend-swatch';
+        swatch.style.background = overlayHue(id, b);
+        const lab = document.createElement('span');
+        lab.textContent = labels[b];
+        rowEl.append(swatch, lab);
+        legend.appendChild(rowEl);
+      }
     }
     legend.style.display = 'block';
   }
