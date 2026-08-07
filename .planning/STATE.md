@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: UI Redesign — Caesar III Sidebar & Advisors
 status: executing
-last_updated: "2026-08-07T06:55:00.000Z"
+last_updated: "2026-08-07T14:45:00.000Z"
 last_activity: 2026-08-07
 progress:
   total_phases: 1
@@ -19,8 +19,8 @@ progress:
 
 Phase: 20 — UI Redesign — Caesar III Sidebar & Advisors (1 of 1)
 Plan: 20-plan (Waves 0-5; 10 tasks)
-Status: Waves 0-3 complete (inventory/SPEC + sidebar/topbar/advisor/keyboard + drawer live-tick/keyboard e2e + per-service overlay hues/legends/click-through)
-Last activity: 2026-08-07 — Phase 20 Waves 0-3 done (127 files / 1008 tests green, goldens byte-identical, 0 innerHTML; e2e 55 passed, 3 pre-existing fails documented; per-service overlay ramps wired for all 7 services, risks paints per dominant service; click-through locked)
+Status: Waves 0-4 complete (inventory/SPEC + sidebar/topbar/advisor/keyboard + drawer live-tick/keyboard e2e + per-service overlay hues/legends/click-through + sidebar inspector cards w/ close × / Next cycling)
+Last activity: 2026-08-07 — Phase 20 Wave 4 done: inspector relocated into the sidebar host as a card (building-popup testid preserved), close × + Next/Prev same-kind cycling via new pure ui/inspector.ts builder + navState(), ←/→/Escape key routing fixed (directional stepping), 0 innerHTML, src/sim untouched, goldens byte-identical; 128 files / 1020 unit tests green; e2e inspect/keyboard/sidebar/management-ui 25/25
 
 ## Performance Metrics
 
@@ -62,12 +62,13 @@ Last activity: 2026-08-07 — Phase 20 Waves 0-3 done (127 files / 1008 tests gr
 - [Phase 20 Wave 0]: Sidebar & advisor redesign — control-to-runner-seam inventory verified (0 decorative controls in HUDScene.ts); SPEC.md locks the target sidebar/topbar DOM tree, keyboard precedence (drawer > inspector > build > pause), per-service overlay hue table, and the tick→year/month date rule (year=floor(tick/360), month=floor((tick%360)/40)+1). 8 RED scaffolds (6 unit + 2 e2e) committed against the Wave 1+ target API; all verified failing today (module-absent RED + the 8 real innerHTML sites: 5 in HUDScene.ts, 3 in HomeScene.ts).
 - [Phase 20 Wave 2]: Advisor drawer live-tick re-render under the tick-change guard (never per-frame; composer reads from the locked advisors.ts seam — zero diffs), verbatim empty states, 13 tabs in ADVISOR_TAB_ORDER. Keyboard e2e green (A cycles, ←/→ switch panels, Escape precedence, B toggle, 1-5 overlays; W/F/R/C/D/X regression-locked). Fixed wave-1 e2e regressions: settings drawer startup overlay swallowing mid-screen drags/wheel (display:none at build), legacy policy % value labels, build-mode ESC precedence, compact topbar CSS preserving the drag e2e's transparent band. e2e suite 53 passed / 3 failed (boots, campaign, placement-population — all fail at wave-0 baseline, documented not chased).
 - [Phase 20 Wave 3]: Per-service overlay ramps wired for ALL overlays — MainScene paints via overlayHue(id, band) (SPEC §4 locks: water=blue, food=green, fire=red, danger=orange, collapse=brown, crime=purple, coverage/desirability=teal); the merged risks overlay resolves the dominant risk service per tile (dominantRiskService, fire>danger>collapse>crime tie-break) so service identity survives max() — 18-UI-REVIEW finding #2 fixed. Legend swatches come from the service's own ramp; risks legend renders one 5-swatch row per service. palette.ts OVERLAY_RAMPS deleted (dead). Click-through (emitInspect → building/walker inspector) verified untouched (depth-1 heatmap never takes input) and locked in e2e: walker click-through under an active overlay + risks per-service legend rows. e2e suite 55 passed / 3 failed (same pre-existing baseline).
+- [Phase 20 Wave 4]: Inspector relocated from the Phase-18 fixed popup into a CARD inside the sidebar inspector host (sidebar-inspector-host testid; card keeps the legacy building-popup testid + hud-popup classes for spec compatibility). New pure ui/inspector.ts builder + navState() (position n/m label, boundary-disabled prev/next; single-entity list disables both; unit-locked). Close × + Next/Prev cycle same-kind lists in stable id order; keyboard fix: ←/→ step the selection list directionally (the symmetric router flip couldn't encode direction — both arrows advanced forward before) with Escape closing the card first (precedence kept). Rows refactored to InspectorRow[] fed read-only from getInspector/getWalkerInternals (CR-01 kind param preserved). Zero innerHTML (comment-scan audit green), src/sim zero diff, goldens byte-identical. 128 files / 1020 tests green; e2e inspect(8)+keyboard(5)+sidebar(3)+management-ui(9) = 25/25.
 
 ## Session
 
-**Last session:** 2026-08-07T14:25:00.000Z
-**Stopped at:** Completed Phase 20 Wave 3 — per-service overlay hues + legends + click-through locked; e2e 55/3 (pre-existing documented)
-**Resume file:** .planning/phases/20/PLAN.md (Wave 4 — sidebar inspectors)
+**Last session:** 2026-08-07T14:45:00.000Z
+**Stopped at:** Completed Phase 20 Wave 4 — sidebar inspector cards (close × / Next cycling) + directional ←/→ keyboard fix; 128 files / 1020 tests green; e2e inspect+keyboard+sidebar+management-ui 25/25
+**Resume file:** .planning/phases/20/PLAN.md (Wave 5 — UPPERCASE labels)
 
 ## Operator Next Steps
 
