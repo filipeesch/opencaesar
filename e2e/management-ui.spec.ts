@@ -225,6 +225,12 @@ test('overlay toggle shows a legend and clicking a highlighted tile opens the in
   await page.getByTestId('overlay-water').click();
   await expect(page.getByTestId('overlay-legend')).toBeVisible();
 
+  // Legend renders the water service's OWN 5-step ramp (band scale + swatches).
+  const legend = page.getByTestId('overlay-legend');
+  await expect(legend.locator('.legend-row')).toHaveCount(5);
+  await expect(legend.locator('.legend-swatch')).toHaveCount(5);
+  await expect(legend).toContainText('Water');
+
   // Clicking the highlighted well tile opens its inspector (click-through).
   const point = await tileCenter(page, earth!.tx, earth!.ty + 1);
   await page.mouse.click(point.x, point.y);
@@ -234,6 +240,81 @@ test('overlay toggle shows a legend and clicking a highlighted tile opens the in
   // Exactly one overlay is active (radio) — clear it via None.
   await page.getByTestId('overlay-none').click();
   await expect(page.getByTestId('overlay-legend')).toBeHidden();
+
+  expect(errors).toEqual([]);
+});
+
+test('risks overlay legend lists each risk service ramp (UI-FIX-02)', async ({ page }) => {
+  const errors = collectErrors(page);
+  await openGame(page);
+  await zoomOut(page);
+
+  await page.getByTestId('controls-overlays').click();
+  await page.getByTestId('overlay-risks').click();
+  const legend = page.getByTestId('overlay-legend');
+  await expect(legend).toBeVisible();
+
+  // The risks heatmap paints per dominant service — the legend mirrors it with
+  // one row per service (fire/danger/collapse/crime), each a 5-swatch ramp.
+  for (const id of ['fire', 'danger', 'collapse', 'crime']) {
+    const row = legend.getByTestId(`legend-service-${id}`);
+    await expect(row).toBeVisible();
+    await expect(row.locator('.legend-swatch')).toHaveCount(5);
+  }
+  await expect(legend).toContainText('Fire');
+  await expect(legend).toContainText('Collapse');
+
+  expect(errors).toEqual([]);
+});
+
+test('walkers stay click-through-able while an overlay is active (UI-03 / T-18-04)', async ({ page }) => {
+  const errors = collectErrors(page);
+  await openGame(page);
+  await zoomOut(page);
+
+  // The proven walker-spawning city (inspect.spec layout) on seed 1337.
+  const roads: [number, number][] = [
+    [2, 15], [4, 15], [5, 15], [6, 15],
+    [2, 16], [2, 17], [2, 18], [3, 18], [4, 18], [5, 18], [1, 18],
+  ];
+  for (const [x, y] of roads) expect((await placeOn(page, 'road', x, y)).ok, `road@${x},${y}`).toBe(true);
+  for (const [type, x, y] of [
+    ['farm', 3, 16], ['granary', 5, 16], ['market', 6, 18], ['well', 1, 19],
+  ] as const) {
+    expect((await placeOn(page, type, x, y)).ok, `${type}@${x},${y}`).toBe(true);
+  }
+  for (const [x, y] of [[2, 19], [3, 19], [4, 19], [5, 19]] as const) {
+    expect((await placeOn(page, 'house', x, y)).ok, `house@${x},${y}`).toBe(true);
+  }
+  await runTicks(page, 400); // let walkers spawn and circulate
+
+  // Activate an overlay: the heatmap layer must never swallow tile clicks.
+  await page.getByTestId('controls-overlays').click();
+  await page.getByTestId('overlay-water').click();
+  await expect(page.getByTestId('overlay-legend')).toBeVisible();
+
+  // Click a tile currently holding a walker, retrying within a short window
+  // while the sim runs (walkers move on the tick cadence).
+  let opened = false;
+  let tries = 0;
+  while (!opened && tries < 40) {
+    const state = await getState(page);
+    const walker = state.walkers[0];
+    if (walker) {
+      const point = await tileCenter(page, walker.x, walker.y);
+      await page.mouse.click(point.x, point.y);
+      await page.waitForTimeout(80);
+      const popup = page.getByTestId('building-popup');
+      const visible = await popup.isVisible().catch(() => false);
+      if (visible) {
+        opened = true;
+        await expect(popup).toContainText(/Walker/);
+        break;
+      }
+    }
+    tries += 1;
+  }
+  expect(opened, 'expected the walker inspector to open on a walker tile click under an active overlay').toBe(true);
 
   expect(errors).toEqual([]);
 });
