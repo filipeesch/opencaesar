@@ -395,6 +395,20 @@ export class HUDScene extends Phaser.Scene {
     on('[data-testid="controls-settings"]', () => this.toggleSettingsDrawer());
     on('[data-testid="sidebar-advisor-button"]', () => this.toggleAdvisorsDrawer());
 
+    // Advisor tab clicks: the drawer swaps the visible panel itself; this
+    // second listener keeps HUDScene.activeAdvisor in sync so the per-tick
+    // render refreshes the CLICKED panel (IN-01: only the active host is
+    // rebuilt now — without the sync a clicked tab would stay stale).
+    asEl(this.advisorDrawer!.tabHost).querySelectorAll('.advisor-tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const id = (tab as HTMLElement).dataset.advisor as string;
+        if (this.activeAdvisor !== id) {
+          this.activeAdvisor = id;
+          if (this.drawerOpen && this.main) this.renderAdvisor(this.main.runner);
+        }
+      });
+    });
+
     // Category tabs → active filter + grid visibility. WR-02: re-clicking the
     // active category resets to 'all' (toggle behavior) so the full catalog is
     // always one click away; the 'all' tab is the default active filter.
@@ -582,55 +596,62 @@ export class HUDScene extends Phaser.Scene {
   private selectAdvisor(id: string): void {
     this.activeAdvisor = id;
     this.advisorDrawer?.selectAdvisor(id);
+    // IN-01: a keyboard tab switch (A/←/→) renders the newly active panel
+    // immediately — the per-tick refresh only rebuilds the active host now.
+    if (this.drawerOpen && this.main) this.renderAdvisor(this.main.runner);
   }
 
-  /** Rebuild every advisor panel from the live composer (called under the
-   *  tick-change guard + on drawer open). Sim-derived strings are rendered via
-   *  textContent — DOM safety per UI-RED-08. */
+  /** Rebuild the ACTIVE advisor panel from the live composer (called under the
+   *  tick-change guard + on drawer open + on tab switch). IN-01: only the
+   *  active panel's host is rebuilt — re-rendering all 13 hosts per tick
+   *  recomposed the whole drawer every tick and reset user scroll position in
+   *  long panels. Sim-derived strings are rendered via textContent — DOM
+   *  safety per UI-RED-08. */
   private renderAdvisor(runner: SimRunner): void {
+    const activeId = this.activeAdvisor;
+    if (!activeId) return;
     const panels = advisorPanels(runner);
     const hostRoot = this.els.advisorPanels;
-    for (const panel of panels) {
-      const host = hostRoot.querySelector(
-        `[data-advisor-panel="${panel.id}"]`,
-      ) as HTMLElement | null;
-      if (!host) continue;
-      host.textContent = '';
-      if (panel.noData) {
-        const empty = document.createElement('div');
-        empty.className = 'advisor-empty';
-        const head = document.createElement('div');
-        head.className = 'hud-subtitle';
-        head.textContent = 'No data yet';
-        const body = document.createElement('p');
-        body.textContent = 'The city is still growing. Advance the simulation, then open this advisor again.';
-        empty.append(head, body);
-        host.appendChild(empty);
-        continue;
-      }
-      for (const r of panel.rows) {
-        const rowEl = document.createElement('div');
-        rowEl.className = 'row';
-        const lab = document.createElement('span');
-        lab.textContent = r.label;
-        const val = document.createElement('b');
-        val.textContent = r.value;
-        if (r.tone) val.classList.add(r.tone);
-        rowEl.append(lab, val);
-        host.appendChild(rowEl);
-      }
-      if (panel.alerts && panel.alerts.length > 0) {
-        const ul = document.createElement('ul');
-        ul.className = 'advisor-alerts';
-        for (const a of panel.alerts) {
-          const li = document.createElement('li');
-          li.textContent = a;
-          ul.appendChild(li);
-        }
-        host.appendChild(ul);
-      }
-      if (panel.action) host.appendChild(this.buildAdvisorAction(panel.action));
+    const panel = panels.find((p) => p.id === activeId);
+    const host = hostRoot.querySelector(
+      `[data-advisor-panel="${activeId}"]`,
+    ) as HTMLElement | null;
+    if (!host) return;
+    host.textContent = '';
+    if (!panel || panel.noData) {
+      const empty = document.createElement('div');
+      empty.className = 'advisor-empty';
+      const head = document.createElement('div');
+      head.className = 'hud-subtitle';
+      head.textContent = 'No data yet';
+      const body = document.createElement('p');
+      body.textContent = 'The city is still growing. Advance the simulation, then open this advisor again.';
+      empty.append(head, body);
+      host.appendChild(empty);
+      return;
     }
+    for (const r of panel.rows) {
+      const rowEl = document.createElement('div');
+      rowEl.className = 'row';
+      const lab = document.createElement('span');
+      lab.textContent = r.label;
+      const val = document.createElement('b');
+      val.textContent = r.value;
+      if (r.tone) val.classList.add(r.tone);
+      rowEl.append(lab, val);
+      host.appendChild(rowEl);
+    }
+    if (panel.alerts && panel.alerts.length > 0) {
+      const ul = document.createElement('ul');
+      ul.className = 'advisor-alerts';
+      for (const a of panel.alerts) {
+        const li = document.createElement('li');
+        li.textContent = a;
+        ul.appendChild(li);
+      }
+      host.appendChild(ul);
+    }
+    if (panel.action) host.appendChild(this.buildAdvisorAction(panel.action));
   }
 
   /** The per-panel "more detail" action — a real, wired button (UI-02). */
