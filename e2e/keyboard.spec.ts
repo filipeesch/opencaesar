@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { openGame } from './helpers';
+import { openGame, pickTile, placeOn, runTicks, tileCenter, zoomOut } from './helpers';
 // Phase 20 Wave 0 RED scaffold (e2e): keyboard router contract.
 // FAILS TODAY: no KeyRouter on the page — Wave 3+ lands it.
 
@@ -71,4 +71,41 @@ test('1-5 toggle overlays; existing W/F/R/C/D/X stay wired (back-compat)', async
   await expect(page.locator('[data-testid="overlay-water"]')).not.toHaveClass(/active/);
   await page.keyboard.press('W');
   await expect(page.locator('[data-testid="overlay-water"]')).toHaveClass(/active/);
+});
+
+test('arrow keys on a focused slider never flip the inspector card (WR-01)', async ({ page }) => {
+  await openGame(page);
+  await zoomOut(page);
+
+  // Two houses so the same-kind cycling list has 2 entries — without the
+  // focus guard, ArrowRight on the focused policy slider would step the card.
+  const s1 = await pickTile(page, (t, x, y) => t[y][x] === 'earth');
+  expect(s1).not.toBeNull();
+  await placeOn(page, 'road', s1!.tx, s1!.ty);
+  expect((await placeOn(page, 'house', s1!.tx, s1!.ty + 1)).ok).toBe(true);
+  const s2 = await pickTile(
+    page,
+    (t, x, y) => t[y][x] === 'earth' && !(x === s1!.tx && (y === s1!.ty || y === s1!.ty + 1)),
+  );
+  expect(s2).not.toBeNull();
+  await placeOn(page, 'road', s2!.tx, s2!.ty);
+  expect((await placeOn(page, 'house', s2!.tx, s2!.ty + 1)).ok).toBe(true);
+  await runTicks(page, 2);
+
+  const p1 = await tileCenter(page, s1!.tx, s1!.ty + 1);
+  await page.mouse.click(p1.x, p1.y);
+  await page.waitForTimeout(200);
+  const card = page.getByTestId('building-popup');
+  await expect(card).toBeVisible();
+  const navLabel = page.getByTestId('inspector-nav-label');
+  await expect(navLabel).toHaveText(/1\/2/);
+
+  // Focus the tax slider (a range input the browser owns) and arrow it: the
+  // router must not leak ←/→ to the inspector card.
+  await page.getByTestId('policy-tax').click();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(150);
+  await expect(navLabel).toHaveText(/1\/2/);
+  await expect(card).toContainText('House');
 });

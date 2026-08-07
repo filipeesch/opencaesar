@@ -157,6 +157,19 @@ export class MainScene extends Phaser.Scene {
     const router = new KeyRouter();
     const kb = this.input.keyboard;
     kb?.on('keydown', (ev: KeyboardEvent) => {
+      // WR-01: Phaser's KeyboardManager attaches to window and never filters by
+      // event.target, so the router would fire into focused form controls —
+      // arrow-keying the tax/wage slider would step the inspector card and
+      // letter keys on a focused <select> would toggle overlays. The browser
+      // owns keys while a form control has focus, so routing stops there.
+      // BUTTON is deliberately NOT guarded: buttons do not consume arrow/letter
+      // keys, and a guard would break the natural flow of clicking a build
+      // button and pressing Escape to cancel (the ESC regression locks).
+      const target = ev.target as HTMLElement | null;
+      if (target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) return;
+      // IN-06: key auto-repeat (holding A/←/→/Escape) must not cycle surfaces
+      // at the OS repeat rate — each press is one state step.
+      if (ev.repeat) return;
       const hud = this.scene.get('HUD') as HUDScene | null;
       if (!hud) return; // key presses land only after create() finished
       // Single-char keys normalize to uppercase so Playwright's 'A'/'a' and
