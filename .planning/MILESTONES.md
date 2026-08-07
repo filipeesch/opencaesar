@@ -1,5 +1,21 @@
 # Milestones
 
+## v1.1 UI Redesign — Caesar III Sidebar & Advisors (Shipped: 2026-08-07)
+
+**Phases completed:** 1 phases, 6 plans, 10 tasks
+
+**Key accomplishments:**
+
+- Caesar III-style right sidebar hub (build panel with 13 categories + 17 buildings, policy tools, 0.5-8x speed, overlay group, settings) replacing the top HUD, plus a minimal top status bar (population/date/treasury/5 ratings) — every control wired to a real runner seam, 0 decorative controls.
+- 13-advisor drawer with live sim data via advisorPanels(runner) under a tick-change guard, verbatim empty states, and keyboard-first navigation (A/←/→/Escape/B/1-5) with precedence drawer > inspector > settings > overlay-bar > build > pause and form-focus guard.
+- Per-service overlay color ramps (fire red, danger orange, collapse brown, crime purple, food green, water blue, desirability/coverage teal) with 5-band legends and click-through to inspectors — the risks overlay resolves each tile's dominant risk service to preserve identity.
+- Sidebar inspector cards fed read-only by getInspector(kind,id)/getWalkerInternals with close/Next/Prev same-kind cycling, live walker refresh and auto-close on death, arrow-key driven.
+- UPPERCASE labels as a case-only CSS utility (text-transform + 1px letter-spacing) with canonical DOM wording, and all DOM composed via textContent/createElement — zero innerHTML (UI-RED-08 audit green).
+- View-only milestone: src/sim/ byte-identical, goldens untouched, 1028 vitest + 28 e2e green, military gate clean, Nyquist COMPLIANT 11/11, Security SECURED 7/7 threats, code review 0 CR / 5 WR / 6 IN all fixed.
+- All three deferred Phase-18 UI-review fixes delivered: keyboard A/←/→ bindings (UI-FIX-01), per-service coverage hues (UI-FIX-02), UPPERCASE labels (UI-FIX-03).
+
+---
+
 ## v1.0 OpenCaesar v1.0 (Shipped: 2026-08-06)
 
 **Phases completed:** 20 phases, 34 plans, 101 tasks

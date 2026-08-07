@@ -1,26 +1,30 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.1
-milestone_name: UI Redesign — Caesar III Sidebar & Advisors
-status: executing
-last_updated: "2026-08-07T15:05:00.000Z"
+milestone_name: UI Redesign — Caesar III Sidebar & Advisors (In Progress)
+status: Awaiting next milestone
+stopped_at: Completed Phase 20 Wave 5 — UPPERCASE labels + full close gate (all 8 gates PASS; phase ready for verification); 129 files / 1026 tests; e2e 57/3 (pre-existing baseline documented)
+last_updated: "2026-08-07T15:57:10.156Z"
 last_activity: 2026-08-07
+last_activity_desc: Milestone v1.1 completed and archived
 progress:
   total_phases: 1
   completed_phases: 0
-  total_plans: 6
-  completed_plans: 6
-  percent: 100
+  total_plans: 1
+  completed_plans: 0
+  percent: 0
+current_phase: 20
+current_phase_name: 1 of 1
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 20 — UI Redesign — Caesar III Sidebar & Advisors (1 of 1)
-Plan: 20-plan (Waves 0-5; 10 tasks)
-Status: Waves 0-5 complete (inventory/SPEC + sidebar/topbar/advisor/keyboard + drawer live-tick/keyboard e2e + per-service overlay hues/legends/click-through + sidebar inspector cards w/ close × / Next cycling + UPPERCASE labels + full close gate) — phase ready for verification
-Last activity: 2026-08-07 — Phase 20 Wave 5 done: UPPERCASE labels via .uppercase CSS utility (UI-RED-06/UI-FIX-03 — case-only, canonical DOM wording kept; advisor drawer JS toUpperCase removed), then full close gate: typecheck clean; 129 files / 1026 unit tests green; goldens byte-identical; 0 innerHTML; src/sim zero-diff; check:military clean; Playwright 57 passed / 3 failed (boots/campaign/placement-population — pre-existing wave-0 baseline flakes, identical); precedence regression green
+Phase: Milestone v1.1 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-08-07 — Milestone v1.1 completed and archived
 
 ## Performance Metrics
 
