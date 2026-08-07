@@ -787,6 +787,14 @@
         max-height: 32vh;
         margin: 8px 0 0;
       }
+      /* Wave 5 (UI-RED-06 / UI-FIX-03): UPPERCASE is a CSS-only presentation
+         (Caesar III style, 1px letter-spacing). The DOM text stays as-authored
+         — canonical 18-UI-SPEC wording — so accessibility trees and unit
+         golden cases see the real strings (T-20-06: accept). */
+      .uppercase {
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
 
     </style>
   </head>

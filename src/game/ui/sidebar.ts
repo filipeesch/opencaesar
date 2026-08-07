@@ -89,11 +89,13 @@ const CONTROL_SEAMS: Record<string, string> = {
 
 export function buildSidebarDom(state: SimState, _derived: DerivedSnapshot): SidebarDom {
   // --- Nav (legacy .hud-control-bar with controls-* buttons) ---
+  // UI-RED-06: labels render UPPERCASE via the .uppercase CSS utility (the
+  // single place the case transform lives — DOM text stays as-authored).
   const nav = el('nav', { className: 'hud-control-bar sidebar-nav' },
-    el('button', { className: 'hud-control-btn', testid: 'controls-advisors', text: 'Advisors' }),
-    el('button', { className: 'hud-control-btn', testid: 'controls-overlays', text: 'Overlays' }),
-    el('button', { className: 'hud-control-btn', testid: 'controls-messages', text: 'Messages' }),
-    el('button', { className: 'hud-control-btn', testid: 'controls-settings', text: 'Settings' }),
+    el('button', { className: 'hud-control-btn uppercase', testid: 'controls-advisors', text: 'Advisors' }),
+    el('button', { className: 'hud-control-btn uppercase', testid: 'controls-overlays', text: 'Overlays' }),
+    el('button', { className: 'hud-control-btn uppercase', testid: 'controls-messages', text: 'Messages' }),
+    el('button', { className: 'hud-control-btn uppercase', testid: 'controls-settings', text: 'Settings' }),
   );
 
   // --- Build panel: 13 category tabs + 17-building grid (seam: setBuildMode) ---
@@ -158,14 +160,15 @@ export function buildSidebarDom(state: SimState, _derived: DerivedSnapshot): Sid
   const advisorButton = el('button', { className: 'sidebar-advisor-button hud-control-btn', testid: 'sidebar-advisor-button', text: 'ADVISORS' });
 
   // --- Overlay group (legacy overlay-bar with overlay-* toggles + None) ---
+  // UI-RED-06/UI-FIX-03: toggle names render UPPERCASE via .uppercase (CSS-only).
   const overlayToggles = el('div', { className: 'overlay-toggles' },
     ...OVERLAY_KEYS.map((o) =>
       el('button', { className: 'overlay-toggle', testid: `overlay-${o.id}`, dataset: { overlay: o.id } },
-        el('span', { text: o.label }),
+        el('span', { className: 'uppercase', text: o.label }),
         el('span', { className: 'shortcut', text: o.key }),
       )),
     el('button', { className: 'overlay-toggle', testid: 'overlay-none', dataset: { overlay: 'none' } },
-      el('span', { text: 'None' }),
+      el('span', { className: 'uppercase', text: 'None' }),
       el('span', { className: 'shortcut', text: 'X' }),
     ),
   );

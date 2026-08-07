@@ -62,7 +62,7 @@ export function buildTopBarDom(state: SimState, derived: DerivedSnapshot): TopBa
     const valueEl = el('b', { className: 'topbar-value', testid: valueTestid, text: value });
     return {
       node: el('div', { className: cls, testid: wrapperTestid },
-        el('span', { className: 'topbar-label', text: label }),
+        el('span', { className: 'topbar-label uppercase', text: label }),
         valueEl),
       value: valueEl,
     };
@@ -88,11 +88,11 @@ export function buildTopBarDom(state: SimState, derived: DerivedSnapshot): TopBa
     dateNode,
     treasuryNode,
     el('div', { className: 'topbar-ratings', testid: 'topbar-ratings' },
-      el('span', { className: 'topbar-rating', testid: 'topbar-prosperity' }, el('span', { className: 'topbar-label', text: 'PROSPERITY' }), prosperityNode),
-      el('span', { className: 'topbar-rating', testid: 'topbar-happiness' }, el('span', { className: 'topbar-label', text: 'HAPPINESS' }), happinessNode),
-      el('span', { className: 'topbar-rating', testid: 'topbar-culture' }, el('span', { className: 'topbar-label', text: 'CULTURE' }), cultureNode),
-      el('span', { className: 'topbar-rating', testid: 'topbar-stability' }, el('span', { className: 'topbar-label', text: 'STABILITY' }), stabilityNode),
-      el('span', { className: 'topbar-rating', testid: 'topbar-favor' }, el('span', { className: 'topbar-label', text: 'FAVOR' }), favorNode),
+      el('span', { className: 'topbar-rating', testid: 'topbar-prosperity' }, el('span', { className: 'topbar-label uppercase', text: 'PROSPERITY' }), prosperityNode),
+      el('span', { className: 'topbar-rating', testid: 'topbar-happiness' }, el('span', { className: 'topbar-label uppercase', text: 'HAPPINESS' }), happinessNode),
+      el('span', { className: 'topbar-rating', testid: 'topbar-culture' }, el('span', { className: 'topbar-label uppercase', text: 'CULTURE' }), cultureNode),
+      el('span', { className: 'topbar-rating', testid: 'topbar-stability' }, el('span', { className: 'topbar-label uppercase', text: 'STABILITY' }), stabilityNode),
+      el('span', { className: 'topbar-rating', testid: 'topbar-favor' }, el('span', { className: 'topbar-label uppercase', text: 'FAVOR' }), favorNode),
     ),
   );
 

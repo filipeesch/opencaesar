@@ -5,8 +5,11 @@
  * `advisorPanels(source)` composer (src/game/advisors.ts — the single data
  * seam) and returns the drawer tree plus the keyboard contract surface:
  * `open()/close()/isOpen()`, `selectAdvisor(id)/activeTab()`, and the tab
- * metadata `tabs()`. Tab labels are the 18-UI-SPEC titles rendered UPPERCASE
- * (case-only transform — UI-RED-06). Panel bodies are live-rendered by
+ * metadata `tabs()`. Tab labels render UPPERCASE via the `.uppercase` CSS
+ * utility (UI-RED-06) — the single place the case transform lives: the DOM
+ * text stays the canonical 18-UI-SPEC title (accessibility + golden cases
+ * see as-authored wording, T-20-06); the `tabs()` meta label keeps the
+ * UPPERCASE form for the unit contract. Panel bodies are live-rendered by
  * HUDScene under the tick-change guard; this module owns the frame.
  */
 import { el, type UiNode } from './dom';
@@ -14,7 +17,7 @@ import type { AdvisorPanel } from '../advisors';
 
 export interface AdvisorTabMeta {
   id: string;
-  label: string; // UPPERCASE 18-UI-SPEC title
+  label: string; // UPPERCASE 18-UI-SPEC title (meta contract)
   feed: string; // runner feed the panel consumes
   panel: UiNode; // panel host element
 }
@@ -41,11 +44,13 @@ export function buildAdvisorDrawer(panels: AdvisorPanel[]): AdvisorDrawerDom {
 
   const tabs: AdvisorTabMeta[] = panels.map((panel) => {
     const label = panel.title.toUpperCase();
+    // DOM text stays the canonical 18-UI-SPEC title; the .uppercase CSS
+    // utility is the single place the case transform lives (UI-RED-06).
     const tab = el('button', {
-      className: 'advisor-tab',
+      className: 'advisor-tab uppercase',
       testid: `advisor-tab-${panel.id}`,
       dataset: { advisor: panel.id },
-      text: label,
+      text: panel.title,
     });
     tab.addEventListener('click', () => selectAdvisor(panel.id));
     tabHost.appendChild(tab);
@@ -61,7 +66,7 @@ export function buildAdvisorDrawer(panels: AdvisorPanel[]): AdvisorDrawerDom {
     return { id: panel.id, label, feed: 'advisorPanels', panel: host };
   });
 
-  const activeTabEl = el('span', { className: 'advisor-active-tab', testid: 'advisor-active-tab' });
+  const activeTabEl = el('span', { className: 'advisor-active-tab uppercase', testid: 'advisor-active-tab' });
   const root = el('div', { className: 'advisor-drawer sidebar-drawer', testid: 'advisor-drawer' },
     el('div', { className: 'hud-subtitle', text: 'ADVISORS' }, activeTabEl),
     tabHost,
@@ -92,7 +97,7 @@ export function buildAdvisorDrawer(panels: AdvisorPanel[]): AdvisorDrawerDom {
       if (tabEl) setActiveClass(tabEl, tab.id === id);
       tab.panel.style.display = tab.id === id ? 'block' : 'none';
     }
-    activeTabEl.textContent = byId.get(id)?.title.toUpperCase() ?? id;
+    activeTabEl.textContent = byId.get(id)?.title ?? id;
   }
 
   function openDrawer(): void {

@@ -101,3 +101,26 @@ test('advisor drawer panel re-renders live data on tick change', async ({ page }
   // And the tab strip keeps the full 13-tab catalog while the drawer is open.
   await expect(page.locator('[data-testid^="advisor-tab-"]')).toHaveCount(13);
 });
+
+// Wave 5 (UI-RED-06 / UI-FIX-03): UPPERCASE is a CSS-only presentation. The
+// computed style shows the transform (+1px letter-spacing) while the DOM text
+// stays the canonical 18-UI-SPEC wording (T-20-06: accept).
+test('UPPERCASE labels render via CSS transform with canonical DOM wording', async ({ page }) => {
+  await openGame(page);
+
+  // Overlay toggle: CSS-uppercased 'Water' — DOM text stays as-authored.
+  await page.getByTestId('controls-overlays').click();
+  const waterLabel = page.getByTestId('overlay-water').locator('.uppercase');
+  await expect(waterLabel).toHaveCSS('text-transform', 'uppercase');
+  await expect(waterLabel).toHaveText('Water');
+
+  // Advisor tab: CSS-uppercased + 1px letter-spacing, DOM text canonical.
+  await page.keyboard.press('A');
+  const ratings = page.getByTestId('advisor-tab-ratings');
+  await expect(ratings).toHaveCSS('text-transform', 'uppercase');
+  await expect(ratings).toHaveCSS('letter-spacing', '1px');
+  await expect(ratings).toHaveText('Ratings');
+
+  // Topbar label span carries the transform.
+  await expect(page.locator('[data-testid="topbar-population"] .topbar-label')).toHaveCSS('text-transform', 'uppercase');
+});

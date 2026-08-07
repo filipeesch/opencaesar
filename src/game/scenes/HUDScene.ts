@@ -648,7 +648,7 @@ export class HUDScene extends Phaser.Scene {
         rowEl.className = 'legend-row legend-service-row';
         rowEl.dataset.testid = `legend-service-${s.id}`;
         const name = document.createElement('span');
-        name.className = 'legend-service-name';
+        name.className = 'legend-service-name uppercase';
         name.textContent = s.label;
         const rampHost = document.createElement('span');
         rampHost.className = 'legend-ramp';
@@ -672,6 +672,7 @@ export class HUDScene extends Phaser.Scene {
         swatch.className = 'legend-swatch';
         swatch.style.background = overlayHue(id, b);
         const lab = document.createElement('span');
+        lab.className = 'uppercase';
         lab.textContent = labels[b];
         rowEl.append(swatch, lab);
         legend.appendChild(rowEl);
