@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { openGame } from './helpers';
+import { openGame, placeOn, runTicks } from './helpers';
 // Phase 20 Wave 0 RED scaffold (e2e): sidebar layout contract.
 // FAILS TODAY: the game page has no .sidebar / .topbar — Wave 1+ lands them.
 
@@ -51,4 +51,53 @@ test('top status bar renders population, date, treasury, ratings', async ({ page
   const expectedMonth = Math.floor((state.tick % 360) / 40) + 1;
   await expect(page.locator('[data-testid="topbar-date"]')).toContainText(`YEAR ${expectedYear}`);
   await expect(page.locator('[data-testid="topbar-date"]')).toContainText(`MONTH ${expectedMonth}`);
+});
+
+// Wave 2 (20-02-01): the advisors drawer re-renders from the live composer on
+// tick change — no stale values while the drawer stays open.
+test('advisor drawer panel re-renders live data on tick change', async ({ page }) => {
+  await openGame(page);
+
+  // Build a working city (management-ui pattern) so wages drain treasury:
+  // roads + farm + granary + market + well + houses → evolve → employment.
+  const roads: [number, number][] = [
+    [2, 15], [4, 15], [5, 15], [6, 15],
+    [2, 16], [2, 17], [2, 18], [3, 18], [4, 18], [5, 18], [1, 18],
+  ];
+  for (const [x, y] of roads) {
+    expect((await placeOn(page, 'road', x, y)).ok, `road@${x},${y}`).toBe(true);
+  }
+  for (const [type, x, y] of [
+    ['farm', 3, 16], ['granary', 5, 16], ['market', 6, 18], ['well', 1, 19],
+  ] as const) {
+    expect((await placeOn(page, type, x, y)).ok, `${type}@${x},${y}`).toBe(true);
+  }
+  for (const [x, y] of [[2, 19], [3, 19], [4, 19], [5, 19]] as const) {
+    expect((await placeOn(page, 'house', x, y)).ok, `house@${x},${y}`).toBe(true);
+  }
+  await runTicks(page, 500); // evolve houses → employed workforce
+  const wage = page.getByTestId('policy-wage');
+  await wage.evaluate((el: HTMLInputElement) => {
+    el.value = '100';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await runTicks(page, 120); // wage spend drains the treasury
+
+  // Open the drawer via the keyboard contract (A) and select Finance.
+  await page.keyboard.press('A');
+  await expect(page.locator('[data-testid="advisor-drawer"]')).toBeVisible();
+  await page.getByTestId('advisor-tab-finance').click();
+
+  const balance = page.locator('[data-testid="advisor-panel-finance"] .row', { hasText: 'Balance' }).locator('b');
+  await expect(balance).toBeVisible();
+  const before = Number(await balance.textContent());
+
+  // Advance the sim with the drawer open — the panel must reflect the new tick.
+  await runTicks(page, 100);
+
+  const after = Number(await balance.textContent());
+  expect(after).not.toBe(before);
+
+  // And the tab strip keeps the full 13-tab catalog while the drawer is open.
+  await expect(page.locator('[data-testid^="advisor-tab-"]')).toHaveCount(13);
 });
