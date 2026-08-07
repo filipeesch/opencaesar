@@ -58,6 +58,11 @@ export class HUDScene extends Phaser.Scene {
   private activeCategory: CategoryFilter = 'all';
   /** Building id currently shown in the detail popup, or null when closed. */
   private inspectId: number | null = null;
+  /** Walker id currently shown in the walker popup (WR-04: separate from
+   *  inspectId so the tick guard can refresh walkers too — walkers move every
+   *  tick and the card must track the live entity and auto-close when it
+   *  dies). */
+  private inspectWalkerId: number | null = null;
   /** Same-kind entity ids for the inspector Next/Prev cycling (stable id order). */
   private inspectList: number[] = [];
   /** Index into inspectList of the currently shown entity (-1 for 'other'). */
@@ -111,6 +116,8 @@ export class HUDScene extends Phaser.Scene {
     if (id === null) {
       this.closePopup();
     } else {
+      // A building inspection replaces any walker card (WR-04 id spaces).
+      this.inspectWalkerId = null;
       this.inspectId = id;
       const state = this.main?.runner.getState();
       const building = state?.buildings.find((b) => b.id === id);
@@ -122,6 +129,7 @@ export class HUDScene extends Phaser.Scene {
       this.closePopup();
     } else {
       this.inspectId = null;
+      this.inspectWalkerId = id;
       // CR-01: walker ids share the building id space — the kind must be explicit
       // or a colliding walker would resolve to the building and never open.
       const inspector = this.main?.runner.getInspector(id, 'walker');
@@ -202,7 +210,16 @@ export class HUDScene extends Phaser.Scene {
       this.renderAdvisor(this.main.runner);
     }
 
-    if (this.inspectId !== null) this.renderPopup(state.buildings.find((b) => b.id === this.inspectId) ?? null);
+    // Building popups re-render every tick from live state. WR-04: walker
+    // cards get the same tick guard — re-resolve the live walker and re-render
+    // while it exists; auto-close the card when it dies (getInspector null).
+    if (this.inspectId !== null) {
+      this.renderPopup(state.buildings.find((b) => b.id === this.inspectId) ?? null);
+    } else if (this.inspectWalkerId !== null) {
+      const inspector = this.main?.runner.getInspector(this.inspectWalkerId, 'walker');
+      if (inspector?.kind === 'walker' && inspector.walker) this.renderWalkerInspector(inspector.walker);
+      else this.closePopup();
+    }
   }
 
   // ---- Public surface consumed by the MainScene key-router (Wave 1) ----
@@ -718,6 +735,7 @@ export class HUDScene extends Phaser.Scene {
 
   private closePopup(): void {
     this.inspectId = null;
+    this.inspectWalkerId = null;
     this.inspectList = [];
     this.inspectIndex = -1;
     this.popupEl = null;
@@ -949,10 +967,12 @@ export class HUDScene extends Phaser.Scene {
     if (inspector.kind === 'walker' && inspector.walker) {
       this.inspectKind = 'walker';
       this.inspectId = null;
+      this.inspectWalkerId = id; // WR-04: the tick guard refreshes this card
       this.inspectIndex = nextIndex;
       this.renderWalkerInspector(inspector.walker);
     } else if (inspector.kind === 'building' && inspector.building) {
       this.inspectKind = 'building';
+      this.inspectWalkerId = null;
       this.inspectId = id;
       this.inspectIndex = nextIndex;
       this.renderPopup(inspector.building);
