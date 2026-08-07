@@ -22,6 +22,9 @@ export interface UiNode {
   querySelectorAll(sel: string): UiNode[];
   addEventListener(type: string, fn: unknown): void;
   setAttribute(key: string, value: string): void;
+  /** Browser-mirror attribute read (setAttribute stores here, not in dataset —
+   *  IN-03: the stub used to write dataset, which never happens in a browser). */
+  getAttribute(key: string): string | null;
 }
 
 export type Child = UiNode | string | number | null | undefined;
@@ -91,6 +94,10 @@ class StubNode implements UiNode {
   readonly children: UiNode[] = [];
   parent: UiNode | null = null;
   private listeners: Record<string, unknown> = {};
+  /** IN-03: attributes are stored separately from dataset, mirroring the
+   *  browser — setAttribute('disabled', '') sets the attribute, never
+   *  dataset.disabled (real dataset only reflects data-* attributes). */
+  private attributes: Record<string, string> = {};
 
   constructor(tag: string, attrs: Record<string, unknown> = {}, children: Child[] = []) {
     this.tag = tag;
@@ -106,7 +113,13 @@ class StubNode implements UiNode {
   }
 
   setAttribute(key: string, value: string): void {
-    this.dataset[key] = value;
+    this.attributes[key] = value;
+    // Browser mirror: only data-* attributes reflect into dataset.
+    if (key.startsWith('data-')) this.dataset[key.slice(5)] = value;
+  }
+
+  getAttribute(key: string): string | null {
+    return this.attributes[key] ?? null;
   }
 
   addEventListener(type: string, fn: unknown): void {

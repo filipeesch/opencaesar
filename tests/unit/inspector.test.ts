@@ -33,7 +33,9 @@ describe('inspector card builder (UI-RED-05)', () => {
       title: 'House', rows: ROWS, position: '—', canPrev: false, canNext: false,
     });
     expect(card.close.dataset.testid).toBe('popup-close');
-    expect(card.close.dataset['aria-label']).toBe('Close');
+    // IN-03: aria-label is a real attribute — it must read via getAttribute,
+    // never dataset (dataset only reflects data-* in a real browser).
+    expect(card.close.getAttribute('aria-label')).toBe('Close');
     expect(card.close.textContent).toBe('×');
   });
 
@@ -47,23 +49,26 @@ describe('inspector card builder (UI-RED-05)', () => {
   });
 
   it('nav buttons reflect canPrev/canNext (disabled attribute)', () => {
+    // IN-03: the disabled state is a real ATTRIBUTE — assert it via
+    // getAttribute, matching what the shipped DOM actually has (dataset
+    // never carries `disabled` in a real browser).
     const blocked = buildInspectorCard({
       title: 'House', rows: ROWS, position: '—', canPrev: false, canNext: false,
     });
-    expect(blocked.prev.dataset.disabled).toBeDefined();
-    expect(blocked.next.dataset.disabled).toBeDefined();
+    expect(blocked.prev.getAttribute('disabled')).not.toBeNull();
+    expect(blocked.next.getAttribute('disabled')).not.toBeNull();
 
     const middle = buildInspectorCard({
       title: 'House', rows: ROWS, position: '2/3', canPrev: true, canNext: true,
     });
-    expect(middle.prev.dataset.disabled).toBeUndefined();
-    expect(middle.next.dataset.disabled).toBeUndefined();
+    expect(middle.prev.getAttribute('disabled')).toBeNull();
+    expect(middle.next.getAttribute('disabled')).toBeNull();
 
     const first = buildInspectorCard({
       title: 'House', rows: ROWS, position: '1/2', canPrev: false, canNext: true,
     });
-    expect(first.prev.dataset.disabled).toBeDefined();
-    expect(first.next.dataset.disabled).toBeUndefined();
+    expect(first.prev.getAttribute('disabled')).not.toBeNull();
+    expect(first.next.getAttribute('disabled')).toBeNull();
   });
 
   it('nav label text comes from the data position (— when no cycling list)', () => {
