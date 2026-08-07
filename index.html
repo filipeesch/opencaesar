@@ -770,6 +770,23 @@
       .hud-sidebar .sidebar-overlay-group {
         pointer-events: auto;
       }
+      /* Wave 4 (UI-RED-05): the inspector card mounts INSIDE the sidebar
+         inspector host — static in-flow layout (not the Phase-18 fixed
+         centered popup), and the host opts in to pointer events like the
+         other interactive sidebar groups (close × / Next ◀ ▶ must click). */
+      .hud-sidebar .sidebar-inspector-host {
+        pointer-events: auto;
+      }
+      .sidebar-inspector-host .hud-popup {
+        position: static;
+        top: auto;
+        left: auto;
+        transform: none;
+        min-width: 0;
+        max-width: none;
+        max-height: 32vh;
+        margin: 8px 0 0;
+      }
 
     </style>
   </head>

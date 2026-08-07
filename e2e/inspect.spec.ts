@@ -1,7 +1,15 @@
 import { expect, test } from '@playwright/test';
 import { getState, openGame, pickTile, placeOn, runTicks, tileCenter, zoomOut } from './helpers';
 
-test('clicking a house opens a popup with tier and desirability', async ({ page }) => {
+// Phase 20 Wave 4 (20-04-01): the building/walker inspector is a CARD inside
+// the sidebar inspector host (UI-RED-05) — the Phase-18 fixed bottom-center
+// popup host is gone. Every assertion below targets the sidebar-hosted card;
+// the legacy `building-popup` testid is preserved on the card root.
+function inspectorCard(page: import('@playwright/test').Page) {
+  return page.getByTestId('sidebar-inspector-host').getByTestId('building-popup');
+}
+
+test('clicking a house opens an inspector card in the sidebar with tier and desirability', async ({ page }) => {
   await openGame(page);
   await zoomOut(page);
 
@@ -14,10 +22,13 @@ test('clicking a house opens a popup with tier and desirability', async ({ page 
   await page.mouse.click(point.x, point.y);
   await page.waitForTimeout(200);
 
-  const popup = page.getByTestId('building-popup');
-  await expect(popup).toBeVisible();
-  await expect(popup).toContainText('House');
-  await expect(popup).toContainText('Desirability');
+  // The card lives INSIDE the sidebar inspector host (not a fixed popup).
+  const sidebar = page.getByTestId('sidebar');
+  await expect(sidebar).toBeVisible();
+  const card = inspectorCard(page);
+  await expect(card).toBeVisible();
+  await expect(card).toContainText('House');
+  await expect(card).toContainText('Desirability');
 });
 
 test('clicking a farm shows its wheat stock', async ({ page }) => {
@@ -44,13 +55,13 @@ test('clicking a farm shows its wheat stock', async ({ page }) => {
   await page.mouse.click(point.x, point.y);
   await page.waitForTimeout(200);
 
-  const popup = page.getByTestId('building-popup');
-  await expect(popup).toBeVisible();
-  await expect(popup).toContainText('Farm');
-  await expect(popup).toContainText('Wheat');
+  const card = inspectorCard(page);
+  await expect(card).toBeVisible();
+  await expect(card).toContainText('Farm');
+  await expect(card).toContainText('Wheat');
 });
 
-test('clicking empty terrain closes the popup', async ({ page }) => {
+test('clicking empty terrain closes the inspector card', async ({ page }) => {
   await openGame(page);
   await zoomOut(page);
 
@@ -62,7 +73,7 @@ test('clicking empty terrain closes the popup', async ({ page }) => {
   const point = await tileCenter(page, earth!.tx, earth!.ty + 1);
   await page.mouse.click(point.x, point.y);
   await page.waitForTimeout(200);
-  await expect(page.getByTestId('building-popup')).toBeVisible();
+  await expect(inspectorCard(page)).toBeVisible();
 
   // Click a different earth tile that has no building.
   const empty = await pickTile(page, (t, x, y) => t[y][x] === 'earth' && !(x === earth!.tx && (y === earth!.ty || y === earth!.ty + 1)));
@@ -71,10 +82,10 @@ test('clicking empty terrain closes the popup', async ({ page }) => {
   await page.mouse.click(emptyPoint.x, emptyPoint.y);
   await page.waitForTimeout(200);
 
-  await expect(page.getByTestId('building-popup')).toBeHidden();
+  await expect(inspectorCard(page)).toBeHidden();
 });
 
-test('ESC closes an open popup', async ({ page }) => {
+test('ESC closes an open inspector card', async ({ page }) => {
   await openGame(page);
   await zoomOut(page);
 
@@ -86,14 +97,14 @@ test('ESC closes an open popup', async ({ page }) => {
   const point = await tileCenter(page, earth!.tx, earth!.ty + 1);
   await page.mouse.click(point.x, point.y);
   await page.waitForTimeout(200);
-  await expect(page.getByTestId('building-popup')).toBeVisible();
+  await expect(inspectorCard(page)).toBeVisible();
 
   await page.keyboard.press('Escape');
   await page.waitForTimeout(200);
-  await expect(page.getByTestId('building-popup')).toBeHidden();
+  await expect(inspectorCard(page)).toBeHidden();
 });
 
-test('residence inspector shows enriched live fields (UI-04)', async ({ page }) => {
+test('residence inspector card shows enriched live fields (UI-04)', async ({ page }) => {
   await openGame(page);
   await zoomOut(page);
 
@@ -107,13 +118,13 @@ test('residence inspector shows enriched live fields (UI-04)', async ({ page }) 
   await page.mouse.click(point.x, point.y);
   await page.waitForTimeout(200);
 
-  const popup = page.getByTestId('building-popup');
-  await expect(popup).toBeVisible();
+  const card = inspectorCard(page);
+  await expect(card).toBeVisible();
   // Enriched fields (level + tier + safety) are rendered from live internals.
-  await expect(popup).toContainText('House');
-  await expect(popup).toContainText('Level');
-  await expect(popup).toContainText('Tier');
-  await expect(popup).toContainText('Desirability');
+  await expect(card).toContainText('House');
+  await expect(card).toContainText('Level');
+  await expect(card).toContainText('Tier');
+  await expect(card).toContainText('Desirability');
 });
 
 test('inspector Next/Prev cycles same-kind houses in stable id order (UI-04)', async ({ page }) => {
@@ -139,8 +150,8 @@ test('inspector Next/Prev cycles same-kind houses in stable id order (UI-04)', a
   const p1 = await tileCenter(page, s1!.tx, s1!.ty + 1);
   await page.mouse.click(p1.x, p1.y);
   await page.waitForTimeout(200);
-  const popup = page.getByTestId('building-popup');
-  await expect(popup).toBeVisible();
+  const card = inspectorCard(page);
+  await expect(card).toBeVisible();
 
   const navLabel = page.getByTestId('inspector-nav-label');
   await expect(navLabel).toHaveText(/1\/2/);
@@ -156,12 +167,53 @@ test('inspector Next/Prev cycles same-kind houses in stable id order (UI-04)', a
   await page.waitForTimeout(120);
   await expect(navLabel).toHaveText(/1\/2/);
 
-  // Close × closes the popup.
+  // Close × closes the card.
   await page.getByTestId('popup-close').click();
-  await expect(popup).toBeHidden();
+  await expect(card).toBeHidden();
 });
 
-test('clicking a walker tile opens the walker inspector (UI-04)', async ({ page }) => {
+test('←/→ and Escape drive the sidebar inspector card (key-router precedence)', async ({ page }) => {
+  await openGame(page);
+  await zoomOut(page);
+
+  // Two houses so the same-kind list has 2 entries.
+  const s1 = await pickTile(page, (t, x, y) => t[y][x] === 'earth');
+  expect(s1).not.toBeNull();
+  await placeOn(page, 'road', s1!.tx, s1!.ty);
+  expect((await placeOn(page, 'house', s1!.tx, s1!.ty + 1)).ok).toBe(true);
+  const s2 = await pickTile(
+    page,
+    (t, x, y) => t[y][x] === 'earth' && !(x === s1!.tx && (y === s1!.ty || y === s1!.ty + 1)),
+  );
+  expect(s2).not.toBeNull();
+  await placeOn(page, 'road', s2!.tx, s2!.ty);
+  expect((await placeOn(page, 'house', s2!.tx, s2!.ty + 1)).ok).toBe(true);
+  await runTicks(page, 2);
+
+  const p1 = await tileCenter(page, s1!.tx, s1!.ty + 1);
+  await page.mouse.click(p1.x, p1.y);
+  await page.waitForTimeout(200);
+  const card = inspectorCard(page);
+  await expect(card).toBeVisible();
+
+  // → steps to the next house, ← steps back (inspector precedence: the
+  // arrows must never leak to the drawer/build/pause).
+  const navLabel = page.getByTestId('inspector-nav-label');
+  await expect(navLabel).toHaveText(/1\/2/);
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(120);
+  await expect(navLabel).toHaveText(/2\/2/);
+  await page.keyboard.press('ArrowLeft');
+  await page.waitForTimeout(120);
+  await expect(navLabel).toHaveText(/1\/2/);
+
+  // Escape closes the card first (before build/pause fall-through).
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(120);
+  await expect(card).toBeHidden();
+});
+
+test('clicking a walker tile opens the walker inspector card (UI-04)', async ({ page }) => {
   await openGame(page);
   await zoomOut(page);
 
@@ -193,11 +245,11 @@ test('clicking a walker tile opens the walker inspector (UI-04)', async ({ page 
       const point = await tileCenter(page, walker.x, walker.y);
       await page.mouse.click(point.x, point.y);
       await page.waitForTimeout(80);
-      const popup = page.getByTestId('building-popup');
-      const visible = await popup.isVisible().catch(() => false);
+      const card = inspectorCard(page);
+      const visible = await card.isVisible().catch(() => false);
       if (visible) {
         opened = true;
-        await expect(popup).toContainText(/Walker/);
+        await expect(card).toContainText(/Walker/);
         break;
       }
     }
@@ -205,4 +257,3 @@ test('clicking a walker tile opens the walker inspector (UI-04)', async ({ page 
   }
   expect(opened, 'expected the walker inspector to open on a walker tile click').toBe(true);
 });
-

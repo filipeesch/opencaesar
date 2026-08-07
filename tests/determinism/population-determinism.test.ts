@@ -217,7 +217,9 @@ describe('POP-01/02 UI, walker, and serialization guarantees (source audit)', ()
     // The real per-residence rows are appended behind the foodInventory-style guard.
     expect(src).toContain("typeof insp.residents === 'object'");
     for (const row of ["'Class'", "'Age Bands'", "'Employed'"]) {
-      expect(src).toContain(`appendRow(body, ${row}`);
+      // Wave 4: rows are collected into the card builder's row list (push)
+      // instead of appended straight to the popup body (appendRow).
+      expect(src).toContain(`push(${row}`);
     }
   });
 

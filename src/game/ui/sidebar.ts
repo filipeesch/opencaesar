@@ -204,7 +204,8 @@ export function buildSidebarDom(state: SimState, _derived: DerivedSnapshot): Sid
   // --- Hosts: advisor drawer (module root mounts here), inspector, log,
   //     overlay legend, toast. ---
   const drawerHost = el('div', { className: 'sidebar-drawer-host' });
-  const inspectorHost = el('div', { className: 'sidebar-inspector-host' });
+  // Wave 4: the inspector card mounts here (sidebar-driven inspectors).
+  const inspectorHost = el('div', { className: 'sidebar-inspector-host', testid: 'sidebar-inspector-host' });
   const logHost = el('div', { className: 'hud-panel hud-log sidebar-log', testid: 'log-panel' },
     el('div', { className: 'hud-subtitle', text: 'MESSAGES' }),
     el('ul', { testid: 'message-log' }),

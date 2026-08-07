@@ -6,8 +6,9 @@
  * speed, advisor drawer, overlay group, action group, message log, toast).
  * The Phase-18 top-edge HUD column and its template-string-era DOM are gone —
  * every surface is composed via createElement/textContent builders
- * (UI-RED-08). The building/walker inspector popup keeps its Phase-18
- * bottom-center host until Wave 4 relocates it into the sidebar.
+ * (UI-RED-08). The building/walker inspector renders as a CARD inside the
+ * sidebar inspector host (Wave 4, UI-RED-05) — fed read-only from
+ * getInspector/getWalkerInternals, with close × + Next/Prev cycling.
  *
  * DOM is still driven by a Phaser scene reading sim state every frame, but
  * the tree structure now comes from the pure builders in src/game/ui/.
@@ -35,6 +36,7 @@ import type { MainScene } from './MainScene';
 import { buildSidebarDom, type SidebarDom } from '../ui/sidebar';
 import { buildTopBarDom, type TopBarDom } from '../ui/topbar';
 import { buildAdvisorDrawer, type AdvisorDrawerDom } from '../ui/advisorDrawer';
+import { buildInspectorCard, navState, type InspectorRow } from '../ui/inspector';
 import type { UiNode } from '../ui/dom';
 
 type InspectorKind = 'house' | 'production' | 'storage' | 'market' | 'other';
@@ -48,6 +50,9 @@ function asEl(node: UiNode): HTMLElement {
 export class HUDScene extends Phaser.Scene {
   private main: MainScene | null = null;
   private els: Record<string, HTMLElement> = {};
+  /** The mounted inspector card root, or null while the card is closed
+   *  (Wave 4: the card mounts into the sidebar inspector host on demand). */
+  private popupEl: HTMLElement | null = null;
   private lastTick = -1;
   private lastMsgCount = -1;
   private activeCategory: CategoryFilter = 'all';
@@ -208,7 +213,8 @@ export class HUDScene extends Phaser.Scene {
   }
 
   isInspectorOpen(): boolean {
-    return this.els.popup?.style.display !== 'none';
+    // The card is "open" exactly while a card root is mounted in the host.
+    return this.popupEl !== null;
   }
 
   toggleAdvisors(force?: boolean): void {
@@ -300,13 +306,6 @@ export class HUDScene extends Phaser.Scene {
     overlay.appendChild(card);
     root.appendChild(overlay);
 
-    // Inspector popup (Phase-18 host — Wave 4 relocates it to the sidebar).
-    const popup = document.createElement('div');
-    popup.className = 'hud-popup';
-    popup.dataset.testid = 'building-popup';
-    popup.style.display = 'none';
-    root.appendChild(popup);
-
     document.getElementById('hud')?.appendChild(root);
     this.hudRoot = root;
 
@@ -325,9 +324,10 @@ export class HUDScene extends Phaser.Scene {
     this.els.log = root.querySelector('[data-testid="message-log"]') as HTMLElement;
     this.els.logPanel = root.querySelector('[data-testid="log-panel"]') as HTMLElement;
     this.els.toast = root.querySelector('[data-testid="toast"]') as HTMLElement;
-    // The pause overlay and inspector popup live on the HUD wrapper (full-screen
-    // surfaces), not inside the sidebar — query the wrapper, not the sidebar.
-    this.els.popup = this.hudRoot?.querySelector('[data-testid="building-popup"]') as HTMLElement;
+    // The pause overlay lives on the HUD wrapper (full-screen surface), not
+    // inside the sidebar — query the wrapper, not the sidebar. The inspector
+    // card has no element at build time: renderInspectorShell mounts it into
+    // the sidebar inspector host and records it in els.popup on open.
     this.els.overlay = this.hudRoot?.querySelector('[data-testid="pause-overlay"]') as HTMLElement;
     this.els.cats = root.querySelector('[data-testid="sidebar-category-tabs"]') as HTMLElement;
     this.els.build = root.querySelector('[data-testid="sidebar-build-grid"]') as HTMLElement;
@@ -704,8 +704,9 @@ export class HUDScene extends Phaser.Scene {
     this.inspectId = null;
     this.inspectList = [];
     this.inspectIndex = -1;
-    this.els.popup.style.display = 'none';
-    this.els.popup.textContent = '';
+    this.popupEl = null;
+    const host = this.sidebar?.inspectorHost;
+    if (host) asEl(host).replaceChildren();
   }
 
   private saveGame(): void {
@@ -727,10 +728,10 @@ export class HUDScene extends Phaser.Scene {
     // Same-kind cycling (UI-04): stable entity-id order.
     this.inspectList = this.kindEntityIds(state, kind);
     this.inspectIndex = kind === 'other' ? -1 : this.inspectList.indexOf(building.id);
-    this.renderInspectorShell(this.inspectorTitle(building), (body) => this.renderBuildingRows(building, body));
+    this.renderInspectorShell(this.inspectorTitle(building), this.buildingRows(building));
   }
 
-  /** Render the walker inspector popup (opened via hud-walker-inspect). */
+  /** Render the walker inspector card (opened via hud-walker-inspect). */
   private renderWalkerInspector(walker: WalkerState): void {
     // CR-01: the walker id may collide with a live building id — resolve by kind.
     const inspector = this.main?.runner.getInspector(walker.id, 'walker');
@@ -740,53 +741,47 @@ export class HUDScene extends Phaser.Scene {
     const insp = walkerInspection(
       walker.id, walker.x, walker.y, walker.state, stepsUsed, maxSteps, internals,
     ) as Record<string, unknown>;
-    this.renderInspectorShell(`Walker ${walker.type}`, (body) => {
-      const rows: [string, unknown][] = [
-        ['State', insp.status ?? walker.state],
-        ['Type', insp.type ?? walker.type],
-        ['Origin', insp.origin ? `${(insp.origin as Vec2).x},${(insp.origin as Vec2).y}` : '—'],
-        ['Path Length', insp.path ? String((insp.path as unknown[]).length) : '0'],
-        ['Carried', String(insp.carriedAmount ?? 0)],
-        ['Target', String(insp.targetBuildingId ?? '—')],
-      ];
-      for (const [label, value] of rows) appendRow(body, label, String(value));
-    });
+    const rows: InspectorRow[] = [
+      { label: 'State', value: String(insp.status ?? walker.state) },
+      { label: 'Type', value: String(insp.type ?? walker.type) },
+      { label: 'Origin', value: insp.origin ? `${(insp.origin as Vec2).x},${(insp.origin as Vec2).y}` : '—' },
+      { label: 'Path Length', value: insp.path ? String((insp.path as unknown[]).length) : '0' },
+      { label: 'Carried', value: String(insp.carriedAmount ?? 0) },
+      { label: 'Target', value: String(insp.targetBuildingId ?? '—') },
+    ];
+    this.renderInspectorShell(`Walker ${walker.type}`, rows);
   }
 
-  /** Build the shared popup shell (header + body + inspector nav). The header
-   *  title/close and every body row are created via createElement/textContent. */
+  /** Build the shared card shell (header + body rows + close × + inspector
+   *  nav) and mount it into the sidebar inspector host. The header title and
+   *  every body row are created via createElement/textContent (UI-RED-08). */
   private renderInspectorShell(
     title: string,
-    bodyFn: (body: HTMLElement) => void,
+    rows: InspectorRow[],
   ): void {
-    const popup = this.els.popup;
-    popup.textContent = '';
-
-    const header = document.createElement('div');
-    header.className = 'hud-popup-header';
-    const titleEl = document.createElement('span');
-    titleEl.className = 'hud-popup-title';
-    titleEl.textContent = title;
-    const close = document.createElement('button');
-    close.className = 'hud-popup-close';
-    close.dataset.testid = 'popup-close';
-    close.setAttribute('aria-label', 'Close');
-    close.textContent = '×';
-    close.addEventListener('click', () => this.closePopup());
-    header.append(titleEl, close);
-    popup.appendChild(header);
-
-    const body = document.createElement('div');
-    body.className = 'hud-popup-body';
-    bodyFn(body);
-    popup.appendChild(body);
-
-    popup.appendChild(this.buildInspectorNav());
-    popup.style.display = 'block';
+    const host = this.sidebar?.inspectorHost;
+    if (!host) return;
+    const nav = navState(this.inspectList.length, this.inspectIndex);
+    const card = buildInspectorCard({
+      title,
+      rows,
+      position: nav.position,
+      canPrev: nav.canPrev,
+      canNext: nav.canNext,
+    });
+    const hostEl = asEl(host);
+    hostEl.replaceChildren();
+    hostEl.appendChild(asEl(card.root));
+    this.popupEl = asEl(card.root);
+    card.close.addEventListener('click', () => this.closePopup());
+    card.prev.addEventListener('click', () => this.navInspector(-1));
+    card.next.addEventListener('click', () => this.navInspector(1));
   }
 
   /** Enriched rows per inspector kind, fed from getInspector internals. */
-  private renderBuildingRows(building: BuildingState, body: HTMLElement): void {
+  private buildingRows(building: BuildingState): InspectorRow[] {
+    const rows: InspectorRow[] = [];
+    const push = (label: string, value: string): void => { rows.push({ label, value }); };
     const inspector = this.main?.runner.getInspector(building.id, 'building');
     const internals = inspector?.internals as BuildingInstance | undefined;
     const ok = (b: boolean): string => (b ? 'Yes' : 'No');
@@ -810,42 +805,42 @@ export class HUDScene extends Phaser.Scene {
         { house: houseInternals, safety, happiness: h.happiness, desirability: h.desirability },
       );
       const lvl = insp.level != null ? Number(insp.level) : h.level;
-      appendRow(body, 'Level', `${lvl} — ${housingLevelName(lvl)}`);
-      appendRow(body, 'Tier', `${HOUSE_TIERS[h.tier].name} (${h.tier + 1}/5)`);
-      if (typeof insp.satisfiedTicks === 'number') appendRow(body, 'Satisfied Ticks', String(insp.satisfiedTicks));
+      push('Level', `${lvl} — ${housingLevelName(lvl)}`);
+      push('Tier', `${HOUSE_TIERS[h.tier].name} (${h.tier + 1}/5)`);
+      if (typeof insp.satisfiedTicks === 'number') push('Satisfied Ticks', String(insp.satisfiedTicks));
       const liveCount = insp.residents && typeof insp.residents === 'object'
         ? String((insp.residents as { count: number }).count)
         : String(h.populationCapacity);
-      appendRow(body, 'Population', liveCount);
-      appendRow(body, 'Food', ok(h.foodCooldown > 0));
-      appendRow(body, 'Water', ok(h.waterCooldown > 0));
-      appendRow(body, 'Labor', ok(h.laborCooldown > 0));
+      push('Population', liveCount);
+      push('Food', ok(h.foodCooldown > 0));
+      push('Water', ok(h.waterCooldown > 0));
+      push('Labor', ok(h.laborCooldown > 0));
       if (houseInternals?.civic) {
-        appendRow(body, 'Health', String(Math.round(houseInternals.civic.health)));
-        appendRow(body, 'Literacy', String(Math.round(houseInternals.civic.literacy)));
-        appendRow(body, 'Entertainment', String(Math.round(houseInternals.civic.entertainment)));
+        push('Health', String(Math.round(houseInternals.civic.health)));
+        push('Literacy', String(Math.round(houseInternals.civic.literacy)));
+        push('Entertainment', String(Math.round(houseInternals.civic.entertainment)));
       }
       if (insp.foodInventory && typeof insp.foodInventory === 'object') {
         const fi = insp.foodInventory as Record<string, number>;
-        for (const [g, v] of Object.entries(fi)) appendRow(body, `${g} stock`, String(Math.floor(v)));
+        for (const [g, v] of Object.entries(fi)) push(`${g} stock`, String(Math.floor(v)));
       }
       // POP-01: real per-residence class/age/employment rows (guard mirrors the
       // foodInventory guard — appended only when the live cohort is present).
       if (typeof insp.residents === 'object') {
         const rs = insp.residents as { count: number; classBreakdown: Record<string, number>; ageBands: Record<string, number>; employed: number };
-        appendRow(body, 'Class', `${rs.classBreakdown.plebeian} plebeian / ${rs.classBreakdown.patrician} patrician`);
-        appendRow(body, 'Age Bands', `${rs.ageBands.children} children / ${rs.ageBands.workforce} working age / ${rs.ageBands.elderly} elderly`);
-        appendRow(body, 'Employed', `${rs.employed}/${rs.count}`);
+        push('Class', `${rs.classBreakdown.plebeian} plebeian / ${rs.classBreakdown.patrician} patrician`);
+        push('Age Bands', `${rs.ageBands.children} children / ${rs.ageBands.workforce} working age / ${rs.ageBands.elderly} elderly`);
+        push('Employed', `${rs.employed}/${rs.count}`);
       }
       if (safety) {
-        appendRow(body, 'Fire', safety.fire);
-        appendRow(body, 'Danger', ok(safety.danger));
-        appendRow(body, 'Collapse Risk', cap(safety.collapseRisk));
-        appendRow(body, 'Crime', cap(safety.crime));
+        push('Fire', safety.fire);
+        push('Danger', ok(safety.danger));
+        push('Collapse Risk', cap(safety.collapseRisk));
+        push('Crime', cap(safety.crime));
       }
-      appendRow(body, 'Desirability', String(h.desirability));
-      if (typeof insp.happiness === 'number') appendRow(body, 'Happiness', String(insp.happiness));
-      return;
+      push('Desirability', String(h.desirability));
+      if (typeof insp.happiness === 'number') push('Happiness', String(insp.happiness));
+      return rows;
     }
 
     if (WORKSHOP_BUILDING_TYPES[building.type] || EXTRACTION_BUILDING_TYPES[building.type]) {
@@ -865,14 +860,14 @@ export class HUDScene extends Phaser.Scene {
           laborConnected: building.laborConnected,
         },
       );
-      appendRow(body, 'Workers', `${building.workersAssigned}/${building.workersRequired}`);
-      appendRow(body, 'Active', ok(building.active));
-      appendRow(body, 'Labor Connected', ok(building.laborConnected));
-      appendRow(body, 'Status', String(insp.status ?? liveStatus));
-      appendRow(body, 'Blocked', String(insp.blocked ?? false));
-      for (const [g, v] of Object.entries(insp.inputs ?? {})) appendRow(body, `In ${g}`, String(Math.floor(Number(v))));
-      for (const [g, v] of Object.entries(insp.output ?? {})) appendRow(body, `Out ${g}`, String(Math.floor(Number(v))));
-      return;
+      push('Workers', `${building.workersAssigned}/${building.workersRequired}`);
+      push('Active', ok(building.active));
+      push('Labor Connected', ok(building.laborConnected));
+      push('Status', String(insp.status ?? liveStatus));
+      push('Blocked', String(insp.blocked ?? false));
+      for (const [g, v] of Object.entries(insp.inputs ?? {})) push(`In ${g}`, String(Math.floor(Number(v))));
+      for (const [g, v] of Object.entries(insp.output ?? {})) push(`Out ${g}`, String(Math.floor(Number(v))));
+      return rows;
     }
 
     if (building.type === 'market') {
@@ -880,10 +875,10 @@ export class HUDScene extends Phaser.Scene {
         { ...building.stock }, 2,
         { workersAssigned: building.workersAssigned, housesServed: 0, enabled: [] },
       );
-      appendRow(body, 'Workers', `${building.workersAssigned}/${building.workersRequired}`);
-      appendRow(body, 'Active', ok(building.active));
-      for (const [g, v] of Object.entries(insp.inventory ?? {})) appendRow(body, g, String(Math.floor(Number(v))));
-      return;
+      push('Workers', `${building.workersAssigned}/${building.workersRequired}`);
+      push('Active', ok(building.active));
+      for (const [g, v] of Object.entries(insp.inventory ?? {})) push(g, String(Math.floor(Number(v))));
+      return rows;
     }
 
     if (building.type === 'granary' || building.type === 'warehouse') {
@@ -893,59 +888,34 @@ export class HUDScene extends Phaser.Scene {
       // enriched reserved/inTransit fields render only when real internals
       // supply them (never fabricated zeros).
       const insp = storageInspection({ ...building.stock }, Math.min(slotCap, Math.floor(used)), slotCap);
-      appendRow(body, 'Workers', `${building.workersAssigned}/${building.workersRequired}`);
-      appendRow(body, 'Active', ok(building.active));
-      appendRow(body, 'Used', String(typeof insp.usedSlots === 'number' ? insp.usedSlots : Math.floor(used)));
-      appendRow(body, 'Capacity', String(typeof insp.capacity === 'number' ? insp.capacity : slotCap));
+      push('Workers', `${building.workersAssigned}/${building.workersRequired}`);
+      push('Active', ok(building.active));
+      push('Used', String(typeof insp.usedSlots === 'number' ? insp.usedSlots : Math.floor(used)));
+      push('Capacity', String(typeof insp.capacity === 'number' ? insp.capacity : slotCap));
       const totalOf = (rec: Record<string, number> | undefined): number =>
         rec ? Object.values(rec).reduce((a, b) => a + (Number(b) || 0), 0) : 0;
       const reserved = totalOf(insp.reserved as Record<string, number> | undefined);
       const inTransit = totalOf(insp.inTransit as Record<string, number> | undefined);
-      if (reserved > 0) appendRow(body, 'Reserved', String(reserved));
-      if (inTransit > 0) appendRow(body, 'In Transit', String(inTransit));
-      for (const [g, v] of Object.entries(insp.stock ?? building.stock)) appendRow(body, g, String(Math.floor(v)));
-      return;
+      if (reserved > 0) push('Reserved', String(reserved));
+      if (inTransit > 0) push('In Transit', String(inTransit));
+      for (const [g, v] of Object.entries(insp.stock ?? building.stock)) push(g, String(Math.floor(v)));
+      return rows;
     }
 
     // Generic fallback (farm, garden, well, service buildings…).
-    appendRow(body, 'Workers', `${building.workersAssigned}/${building.workersRequired}`);
-    appendRow(body, 'Active', ok(building.active));
+    push('Workers', `${building.workersAssigned}/${building.workersRequired}`);
+    push('Active', ok(building.active));
     const stock = building.stock;
     if (building.type === 'farm') {
-      appendRow(body, 'Wheat', `${Math.floor(stock.wheat ?? 0)}/${BUILDINGS.farm.production?.localCapacity ?? 0}`);
+      push('Wheat', `${Math.floor(stock.wheat ?? 0)}/${BUILDINGS.farm.production?.localCapacity ?? 0}`);
     }
-    for (const [g, v] of Object.entries(stock)) if (g !== 'wheat') appendRow(body, g, String(Math.floor(v)));
+    for (const [g, v] of Object.entries(stock)) if (g !== 'wheat') push(g, String(Math.floor(v)));
+    return rows;
   }
 
-  /** The inspector Next ◀/▶ controller row (wired cycling, UI-04). */
-  private buildInspectorNav(): HTMLElement {
-    const nav = document.createElement('div');
-    nav.className = 'inspector-nav';
-    const prev = document.createElement('button');
-    prev.dataset.testid = 'inspector-prev';
-    prev.textContent = '◀';
-    prev.setAttribute('aria-label', 'Previous');
-    prev.addEventListener('click', () => this.navInspector(-1));
-    const label = document.createElement('span');
-    label.className = 'inspector-nav-label';
-    label.dataset.testid = 'inspector-nav-label';
-    label.textContent = this.inspectorNavLabel();
-    const next = document.createElement('button');
-    next.dataset.testid = 'inspector-next';
-    next.textContent = '▶';
-    next.setAttribute('aria-label', 'Next');
-    next.addEventListener('click', () => this.navInspector(1));
-    nav.append(prev, label, next);
-    prev.disabled = this.inspectList.length < 2 || this.inspectIndex <= 0;
-    next.disabled = this.inspectList.length < 2 || this.inspectIndex < 0 || this.inspectIndex >= this.inspectList.length - 1;
-    return nav;
-  }
-
-  /** The same-kind position shown between the inspector nav buttons. */
-  private inspectorNavLabel(): string {
-    if (this.inspectList.length === 0 || this.inspectIndex < 0) return '—';
-    return `${this.inspectIndex + 1}/${this.inspectList.length}`;
-  }
+  /** The inspector Next ◀/▶ controller row is built by the pure card builder
+   *  (ui/inspector.ts) with navState(); the nav label/disabled rules are
+   *  unit-tested there (inspector.test.ts). */
 
   /** Cycle to the previous/next same-kind entity and re-render. */
   private navInspector(dir: number): void {
@@ -1006,18 +976,6 @@ export class HUDScene extends Phaser.Scene {
   private inspectorTitle(building: BuildingState): string {
     return BUILDINGS[building.type].name;
   }
-}
-
-/** Append a label/value row to the popup body via createElement + textContent. */
-function appendRow(parent: HTMLElement, label: string, value: string): void {
-  const rowEl = document.createElement('div');
-  rowEl.className = 'row';
-  const lab = document.createElement('span');
-  lab.textContent = label;
-  const val = document.createElement('b');
-  val.textContent = value;
-  rowEl.append(lab, val);
-  parent.appendChild(rowEl);
 }
 
 /** Parse a 0..1 audio slider value defensively (finite + clamped to the unit

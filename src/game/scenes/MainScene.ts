@@ -181,7 +181,10 @@ export class MainScene extends Phaser.Scene {
       // Inspector: Escape closes it; ←/→ walk the popup list (card flips).
       if (!result.inspector.open && ctx.inspector.open) hud.closeInspector();
       if (result.inspector.card !== ctx.inspector.card && ctx.inspector.open) {
-        hud.cycleInspector(result.inspector.card === 'walker' ? -1 : 1);
+        // The router's 2-entry card flip (building↔walker) is symmetric — it
+        // cannot encode direction, so the real key decides: ← steps back,
+        // → steps forward through the same-kind selection list (Wave 4).
+        hud.cycleInspector(key === 'ArrowLeft' ? -1 : 1);
       }
 
       // Build panel: B toggles it via the router's buildMode; an Escape-driven
