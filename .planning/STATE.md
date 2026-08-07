@@ -59,11 +59,13 @@ Last activity: 2026-08-07 — Milestone v1.1 roadmap created (Phase 20, 6 plans)
 - [Phase ?]: Type-based labor sector map (granary/market→utility, warehouse→commerce) because the storage category splits between utility and commerce; [ASSUMED] tunings A1 (imperial ref 0.3) / A2 (unemployment band thresholds) / A3 (priority map) / A5 (attractiveness weights) kept as-authored
 - [Phase ?]: Per-residence population derived from level/tick history (never serialized); wage/unemployment bands reported as pure DerivedSnapshot projections — zero SaveData growth, zero golden delta
 
+- [Phase 20 Wave 0]: Sidebar & advisor redesign — control-to-runner-seam inventory verified (0 decorative controls in HUDScene.ts); SPEC.md locks the target sidebar/topbar DOM tree, keyboard precedence (drawer > inspector > build > pause), per-service overlay hue table, and the tick→year/month date rule (year=floor(tick/360), month=floor((tick%360)/40)+1). 8 RED scaffolds (6 unit + 2 e2e) committed against the Wave 1+ target API; all verified failing today (module-absent RED + the 8 real innerHTML sites: 5 in HUDScene.ts, 3 in HomeScene.ts).
+
 ## Session
 
-**Last session:** 2026-08-06T20:02:06.293Z
-**Stopped at:** Completed 19.1-PLAN.md
-**Resume file:** None
+**Last session:** 2026-08-06T06:30:00.000Z
+**Stopped at:** Completed Phase 20 Wave 0 — inventory + SPEC.md + 8 RED scaffolds (all verified failing; typecheck errors are only the intended missing-module RED)
+**Resume file:** .planning/phases/20/SPEC.md
 
 ## Operator Next Steps
 
