@@ -14,6 +14,16 @@ A deterministic, frame-rate-independent city simulation where buildings, goods,
 services, and residents interact through physical, road-delivered systems — never
 an opaque "teleporting stock" or radious-only model.
 
+## Current Milestone: v1.1 UI Redesign — Caesar III Sidebar & Advisors
+
+**Goal:** Redesign the management UI into a Caesar III-style sidebar + advisor panels: replace the current HUD with a right-sidebar build panel and advisor drawer, apply the three deferred Phase-18 UI-review fixes (keyboard A/←/→ bindings, per-service coverage hues, UPPERCASE labels), and keep the sim core byte-identical.
+
+**Target features:**
+- Caesar III-style sidebar (build panel, tools, speed controls) replacing the top HUD
+- 13 advisor panels in a sidebar drawer with live sim data and keyboard navigation
+- Overlay system with per-service color hues, legends, and click-through
+- Deferred UI-review fixes: keyboard bindings (A/←/→), per-service coverage hues, UPPERCASE labels
+
 ## Requirements
 
 ### Validated
